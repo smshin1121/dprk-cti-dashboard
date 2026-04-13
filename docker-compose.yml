@@ -1,0 +1,136 @@
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks: [backend]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  cache:
+    image: redis:7-alpine
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+    command: ["sh", "-c", "exec redis-server --requirepass \"$$REDIS_PASSWORD\""]
+    networks: [backend]
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli --no-auth-warning -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: services/api/Dockerfile
+    env_file:
+      - envs/api.env
+    ports:
+      - "${API_PORT:-8000}:8000"
+    networks: [backend]
+    depends_on:
+      db:
+        condition: service_healthy
+      cache:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: .
+      dockerfile: services/worker/Dockerfile
+    env_file:
+      - envs/worker.env
+    networks: [backend]
+    depends_on:
+      db:
+        condition: service_healthy
+      cache:
+        condition: service_healthy
+
+  llm-proxy:
+    build:
+      context: .
+      dockerfile: services/llm-proxy/Dockerfile
+    env_file:
+      - envs/llm-proxy.env
+    ports:
+      - "${LLM_PROXY_PORT:-8010}:8010"
+    networks: [backend]
+    depends_on:
+      cache:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: .
+      dockerfile: apps/frontend/Dockerfile
+    environment:
+      API_URL: ${FRONTEND_API_URL:-/api/v1}
+      LLM_PROXY_URL: ${FRONTEND_LLM_PROXY_URL:-}
+      APP_ENV: ${APP_ENV:-dev}
+    ports:
+      - "${FRONTEND_PORT:-5173}:8080"
+    networks: [backend]
+    depends_on:
+      api:
+        condition: service_started
+      llm-proxy:
+        condition: service_started
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.104.0
+    container_name: cti-otel
+    command: ["--config=/etc/otel/config.yaml"]
+    volumes:
+      - ./infra/otel/config.yaml:/etc/otel/config.yaml:ro
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+    networks: [backend]
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v2.54.0
+    container_name: cti-prometheus
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.retention.time=7d'
+    ports:
+      - "9090:9090"
+    networks: [backend]
+    depends_on: [otel-collector]
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    container_name: cti-grafana
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD is required}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+    ports:
+      - "3001:3000"
+    networks: [backend]
+    depends_on: [prometheus]
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  backend:
+    driver: bridge

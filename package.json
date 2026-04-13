@@ -1,0 +1,10 @@
+{
+  "name": "dprk-cti-monorepo",
+  "private": true,
+  "packageManager": "pnpm@9.15.9",
+  "scripts": {
+    "dev:frontend": "pnpm --dir apps/frontend dev",
+    "build:frontend": "pnpm --dir apps/frontend build",
+    "lint:frontend": "pnpm --dir apps/frontend lint"
+  }
+}

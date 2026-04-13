@@ -1,0 +1,92 @@
+name: ci
+
+on:
+  push:
+    branches: ["main", "feat/**"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+      - run: pnpm install
+      - run: pnpm --dir apps/frontend build
+
+  python-services:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [api, worker, llm-proxy]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: uv sync --project services/${{ matrix.service }} --no-install-project
+      - run: uv run --project services/${{ matrix.service }} python -c "print('ok')"
+
+  db-migrations:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: dprk_cti_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v4
+      - name: Install alembic deps from services/api
+        run: uv sync --project services/api --no-install-project
+      - name: Run alembic upgrade head
+        env:
+          ALEMBIC_DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/dprk_cti_test
+        run: uv run --project services/api alembic -c db/alembic.ini upgrade head
+      - name: Verify pgvector and pg_trgm extensions
+        run: |
+          uv run --project services/api python -c "
+          import psycopg
+          c = psycopg.connect('postgresql://postgres:postgres@localhost:5432/dprk_cti_test')
+          cur = c.cursor()
+          cur.execute('SELECT extname FROM pg_extension WHERE extname IN (%s, %s) ORDER BY extname', ('pg_trgm', 'vector'))
+          rows = cur.fetchall()
+          assert rows == [('pg_trgm',), ('vector',)], f'Missing extensions: {rows}'
+          print('extensions ok:', rows)
+          "
+      - name: Verify staging table exists
+        run: |
+          uv run --project services/api python -c "
+          import psycopg
+          c = psycopg.connect('postgresql://postgres:postgres@localhost:5432/dprk_cti_test')
+          cur = c.cursor()
+          cur.execute(\"SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_name='staging'\")
+          assert cur.fetchone() is not None, 'staging table missing'
+          print('staging table ok')
+          "
+      - name: Verify downgrade/upgrade reversibility
+        env:
+          ALEMBIC_DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/dprk_cti_test
+        run: |
+          uv run --project services/api alembic -c db/alembic.ini downgrade -1
+          uv run --project services/api alembic -c db/alembic.ini upgrade head
