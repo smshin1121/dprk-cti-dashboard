@@ -19,6 +19,8 @@ build/
 *.sqlite3
 coverage/
 htmlcov/
+.coverage
+.coverage.*
 .idea/
 .vscode/
 

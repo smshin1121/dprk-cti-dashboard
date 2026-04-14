@@ -5,7 +5,7 @@ router = APIRouter()
 
 
 @router.get("/stix")
-def export_stix() -> JSONResponse:
+async def export_stix() -> JSONResponse:
     """§5.6 Export indicators and reports as STIX 2.1 bundle."""
     return JSONResponse(
         status_code=501,
@@ -14,7 +14,7 @@ def export_stix() -> JSONResponse:
 
 
 @router.get("/pdf")
-def export_pdf() -> JSONResponse:
+async def export_pdf() -> JSONResponse:
     """§5.6 Export a rendered PDF briefing for the selected report(s)."""
     return JSONResponse(
         status_code=501,
@@ -23,7 +23,7 @@ def export_pdf() -> JSONResponse:
 
 
 @router.get("/csv")
-def export_csv() -> JSONResponse:
+async def export_csv() -> JSONResponse:
     """§5.6 Export tabular data (IoCs, alerts, reports) as CSV."""
     return JSONResponse(
         status_code=501,

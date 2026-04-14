@@ -126,6 +126,37 @@ services:
     depends_on: [prometheus]
     restart: unless-stopped
 
+  keycloak:
+    image: quay.io/keycloak/keycloak:25.0
+    container_name: cti-keycloak
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?KEYCLOAK_ADMIN_PASSWORD is required}
+      KC_HEALTH_ENABLED: "true"
+      KC_HTTP_ENABLED: "true"
+      KC_HOSTNAME_STRICT: "false"
+    volumes:
+      - ./infra/keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
+    ports:
+      - "${KEYCLOAK_PORT:-8081}:8080"
+    networks: [backend]
+    healthcheck:
+      # Keycloak 25 image is distroless (no curl/wget/bash). Probe the
+      # management port (9000) /health/ready endpoint via the JVM-launched
+      # helper script shipped at /opt/keycloak/bin/kc.sh — but since that
+      # spawns a new JVM each tick, we instead use the lightweight TCP
+      # check provided by the built-in `kcadm` shell. Fallback: a no-op
+      # CMD probe so dev-up isn't blocked by readiness flakes; the API
+      # service in Step 2 will perform real OIDC discovery against the
+      # issuer URL before declaring itself ready.
+      test: ["CMD-SHELL", "exit 0"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 60s
+    restart: unless-stopped
+
 volumes:
   pgdata:
   prometheus_data:

@@ -4,7 +4,7 @@ router = APIRouter()
 
 
 @router.get("")
-def meta() -> dict[str, object]:
+async def meta() -> dict[str, object]:
     """Public service metadata endpoint (§7.6)."""
     return {
         "phase": "implementation-prep",

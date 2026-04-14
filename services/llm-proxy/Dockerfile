@@ -3,6 +3,10 @@ FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
+# uv writes its cache to $HOME/.cache/uv by default; the non-root `app` user
+# (uid 1001, no real home) can't write there. Put the cache under /app so
+# the existing chown -R app:app /app step grants write access.
+ENV UV_CACHE_DIR=/app/.uv-cache
 
 # Create non-root user before any app setup
 RUN groupadd --system --gid 1001 app && \

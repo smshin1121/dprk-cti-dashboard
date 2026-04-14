@@ -1,31 +1,337 @@
-from fastapi import APIRouter
-from fastapi.responses import JSONResponse
+"""OIDC authentication router (Keycloak).
+
+Flow:
+
+1. ``GET /login`` — generate state + PKCE verifier, stash them in Redis
+   under ``oidc_state:<state>`` (60s TTL), redirect to Keycloak.
+2. ``GET /callback`` — pop the state, exchange the code for tokens, verify
+   the ID token via JWKS, create a Redis session, set the signed cookie,
+   redirect back to the user's original target.
+3. ``GET /me`` — return the current ``CurrentUser`` based on the cookie.
+4. ``POST /logout`` — destroy the session and clear the cookie.
+
+Refresh tokens are intentionally not persisted in P1.1; users re-log in
+when their session expires.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import secrets
+from datetime import datetime, timezone
+from urllib.parse import urlparse
+
+from authlib.common.security import generate_token
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi.responses import RedirectResponse
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from ..auth.audit import write_audit
+from ..auth.jwt_verifier import (
+    KidNotFoundError,
+    TokenError,
+    TokenExpiredError,
+    TokenInvalidError,
+    extract_identity,
+    extract_roles,
+    verify_token as verify_jwt_token,
+)
+from ..auth.oidc_client import (
+    build_authorization_url,
+    build_logout_url,
+    exchange_code,
+)
+from ..auth.schemas import CurrentUser, SessionData
+from ..auth.session import (
+    SessionStore,
+    get_session_store,
+    pop_oidc_state,
+    store_oidc_state,
+)
+from ..config import get_settings
+from ..db import get_db
+from ..deps import verify_token
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
 
-@router.get("/login")
-def login() -> dict[str, str]:
-    """§7.6 OIDC login entry point (Keycloak redirect)."""
-    return {"status": "todo", "detail": "OIDC login scaffold"}
+# ---------------------------------------------------------------------------
+# Redirect sanitization helpers (open-redirect protection — C-1 / C-2)
+# ---------------------------------------------------------------------------
+def _safe_redirect_target(value: str | None) -> str:
+    """Sanitize a post-login redirect target to prevent open-redirect.
+
+    Only relative paths starting with a single ``/`` are allowed; ``//`` is
+    rejected because browsers interpret it as a protocol-relative URL. Any
+    absolute URL is rejected. The default is ``/``.
+    """
+    if not value:
+        return "/"
+    if not value.startswith("/") or value.startswith("//"):
+        return "/"
+    # Defensive: reject any value containing a scheme separator or backslash
+    # (Windows path / browser normalization quirks).
+    if "://" in value or "\\" in value:
+        return "/"
+    return value
 
 
-@router.get("/me")
-def me() -> JSONResponse:
-    """§7.6 Return the current authenticated user profile."""
-    return JSONResponse(
-        status_code=501,
-        content={"status": "not_implemented", "endpoint": "auth.me"},
+def _safe_logout_redirect(value: str | None, allowed_origins: list[str]) -> str:
+    """Validate a post-logout redirect URI against the CORS allowlist.
+
+    Allows either:
+      * An absolute URL whose ``scheme://netloc`` is in ``allowed_origins``, or
+      * A relative path that passes :func:`_safe_redirect_target`.
+
+    Falls back to the first allowed origin (or ``/`` if none) on rejection.
+    """
+    default = allowed_origins[0] if allowed_origins else "/"
+    if not value:
+        return default
+    parsed = urlparse(value)
+    if parsed.scheme and parsed.netloc:
+        origin = f"{parsed.scheme}://{parsed.netloc}"
+        if origin in allowed_origins:
+            return value
+        return default
+    sanitized = _safe_redirect_target(value)
+    # If it degraded to "/" but we have a configured default, prefer that.
+    if sanitized == "/" and default != "/":
+        return default
+    return sanitized
+
+
+def _callback_url() -> str:
+    settings = get_settings()
+    return f"{settings.oidc_redirect_base_url.rstrip('/')}/api/v1/auth/callback"
+
+
+def _set_session_cookie(response: Response, value: str) -> None:
+    settings = get_settings()
+    response.set_cookie(
+        key=settings.session_cookie_name,
+        value=value,
+        max_age=settings.session_ttl_seconds,
+        httponly=True,
+        secure=settings.session_cookie_secure,
+        samesite=settings.session_cookie_samesite,  # type: ignore[arg-type]
+        path="/",
     )
 
 
+def _clear_session_cookie(response: Response) -> None:
+    settings = get_settings()
+    response.delete_cookie(
+        key=settings.session_cookie_name,
+        path="/",
+        secure=settings.session_cookie_secure,
+        httponly=True,
+        samesite=settings.session_cookie_samesite,  # type: ignore[arg-type]
+    )
+
+
+@router.get("/login")
+async def login(redirect: str | None = Query(default=None)) -> RedirectResponse:
+    """Begin the OIDC login dance — generate state + PKCE, redirect to Keycloak."""
+    state = secrets.token_urlsafe(32)
+    # PKCE: use Authlib's helper so the verifier conforms to RFC 7636.
+    code_verifier = generate_token(48)
+
+    # Sanitize the redirect target BEFORE persisting it in Redis (defense in
+    # depth — even if /callback forgot to re-sanitize, the stored value is
+    # already safe).
+    safe_redirect = _safe_redirect_target(redirect)
+    payload = json.dumps({"verifier": code_verifier, "redirect": safe_redirect})
+    await store_oidc_state(state, payload)
+
+    url = await build_authorization_url(
+        redirect_uri=_callback_url(),
+        state=state,
+        code_verifier=code_verifier,
+    )
+    return RedirectResponse(url=url, status_code=302)
+
+
 @router.get("/callback")
-def callback() -> dict[str, str]:
-    # TODO (SECURITY): Before this goes to production the real implementation MUST:
-    #   1. Verify the `state` query parameter matches the value stored in the
-    #      user's session to prevent CSRF attacks on the OAuth2 callback.
-    #   2. Exchange the authorization `code` for tokens using authlib's
-    #      AsyncOAuth2Client and validate the id_token signature + claims.
-    #   3. Set a signed, HttpOnly, SameSite=Strict session cookie (never expose
-    #      raw tokens to JavaScript).
-    return {"status": "todo", "detail": "OIDC callback scaffold"}
+async def callback(
+    request: Request,
+    code: str = Query(...),
+    state: str = Query(...),
+    session_store: SessionStore = Depends(get_session_store),
+    db: AsyncSession = Depends(get_db),
+) -> RedirectResponse:
+    """Handle Keycloak's redirect: validate state, exchange code, build session."""
+    raw_state = await pop_oidc_state(state)
+    if raw_state is None:
+        await _audit_failure(db, request, "invalid_state")
+        raise HTTPException(status_code=400, detail="invalid or expired state")
+
+    try:
+        state_payload = json.loads(raw_state)
+        verifier = state_payload["verifier"]
+        target_redirect = state_payload.get("redirect") or "/"
+    except (ValueError, KeyError):
+        await _audit_failure(db, request, "malformed_state_payload")
+        raise HTTPException(status_code=400, detail="malformed state payload") from None
+
+    # Defense in depth: re-sanitize on the way out, so a tainted Redis value
+    # (injected by a future bug or attacker with Redis access) cannot become
+    # an open redirect.
+    target_redirect = _safe_redirect_target(target_redirect)
+
+    try:
+        token = await exchange_code(
+            code=code,
+            redirect_uri=_callback_url(),
+            code_verifier=verifier,
+        )
+    except Exception as exc:  # noqa: BLE001 — authlib raises a wide range
+        logger.exception("token exchange failed")
+        await _audit_failure(
+            db, request, "token_exchange_failed", exc_type=type(exc).__name__
+        )
+        raise HTTPException(status_code=401, detail="token exchange failed") from exc
+
+    id_token = token.get("id_token") or token.get("access_token")
+    if not id_token:
+        await _audit_failure(db, request, "missing_id_token")
+        raise HTTPException(status_code=401, detail="no id_token in token response")
+
+    try:
+        claims = await verify_jwt_token(id_token)
+    except TokenExpiredError as exc:
+        await _audit_failure(db, request, "token_expired")
+        raise HTTPException(status_code=401, detail="token expired") from exc
+    except (TokenInvalidError, KidNotFoundError, TokenError) as exc:
+        logger.exception("token validation failed")
+        await _audit_failure(
+            db, request, "token_invalid", exc_type=type(exc).__name__
+        )
+        raise HTTPException(status_code=401, detail="invalid token") from exc
+
+    sub, email, name = extract_identity(claims)
+    roles = extract_roles(claims)
+    now = datetime.now(timezone.utc)
+
+    session = SessionData(
+        sub=sub,
+        email=email,
+        name=name or None,
+        roles=roles,
+        created_at=now,
+        last_activity=now,
+    )
+    cookie_value = await session_store.create(session)
+
+    await write_audit(
+        db,
+        actor=email or sub or "unknown",
+        action="login_success",
+        entity="auth",
+        entity_id=sub or None,
+        extra={
+            "ip": request.client.host if request.client else None,
+            "user_agent": request.headers.get("user-agent"),
+            "roles": roles,
+        },
+    )
+
+    response = RedirectResponse(url=target_redirect, status_code=302)
+    _set_session_cookie(response, cookie_value)
+    return response
+
+
+@router.get("/me", response_model=CurrentUser)
+async def me(user: CurrentUser = Depends(verify_token)) -> CurrentUser:
+    """Return the current authenticated user (401 if no/expired session)."""
+    return user
+
+
+@router.post("/logout", status_code=204)
+async def logout(
+    request: Request,
+    session_store: SessionStore = Depends(get_session_store),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """Destroy the session, write an audit row, and clear the cookie."""
+    settings = get_settings()
+    cookie = request.cookies.get(settings.session_cookie_name)
+
+    actor = "anonymous"
+    if cookie:
+        data = await session_store.load(cookie)
+        if data is not None:
+            actor = data.email or data.sub or "unknown"
+        await session_store.destroy(cookie)
+
+    await write_audit(
+        db,
+        actor=actor,
+        action="logout",
+        entity="auth",
+        extra={
+            "ip": request.client.host if request.client else None,
+            "user_agent": request.headers.get("user-agent"),
+        },
+    )
+
+    response = Response(status_code=204)
+    _clear_session_cookie(response)
+    return response
+
+
+@router.get("/logout-url")
+async def logout_url(redirect: str | None = Query(default=None)) -> dict[str, str]:
+    """Return the Keycloak end-session URL for browser-initiated logout.
+
+    Useful when the SPA wants to fully log the user out of Keycloak after
+    calling ``POST /logout``.
+    """
+    settings = get_settings()
+    # Validate the inbound redirect against the CORS allowlist to prevent
+    # open-redirect via the Keycloak ``post_logout_redirect_uri`` parameter.
+    target = _safe_logout_redirect(redirect, settings.cors_origins)
+    if target == "/":
+        # Keycloak requires an absolute URL for post_logout_redirect_uri; fall
+        # back to the API's public base URL when no allowlist entry exists.
+        target = settings.oidc_redirect_base_url
+    return {"url": await build_logout_url(target)}
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+async def _audit_failure(
+    db: AsyncSession,
+    request: Request,
+    reason: str,
+    *,
+    exc_type: str | None = None,
+) -> None:
+    """Record a login failure. Best-effort — never raises.
+
+    Only accepts a stable ``reason`` enum-like string plus an optional
+    exception class name. Raw exception messages are intentionally excluded
+    from the audit log to prevent leaking tokens, URLs, or PII.
+    """
+    try:
+        extra: dict[str, object | None] = {
+            "ip": request.client.host if request.client else None,
+            "user_agent": request.headers.get("user-agent"),
+            "reason": reason,
+        }
+        if exc_type:
+            extra["exc_type"] = exc_type
+        await write_audit(
+            db,
+            actor="anonymous",
+            action="login_failure",
+            entity="auth",
+            extra=extra,
+        )
+    except Exception:  # noqa: BLE001
+        # Never let an audit failure mask the real auth failure.
+        pass

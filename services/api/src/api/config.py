@@ -6,6 +6,21 @@ from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
+def _parse_str_list(v: object, field_name: str) -> list[str]:
+    """Accept comma-separated string, JSON array, or list."""
+    if v is None or v == "":
+        return []
+    if isinstance(v, list):
+        return [str(s).strip() for s in v if str(s).strip()]
+    if isinstance(v, str):
+        s = v.strip()
+        if s.startswith("["):
+            parsed = json.loads(s)
+            return [str(x).strip() for x in parsed if str(x).strip()]
+        return [part.strip() for part in s.split(",") if part.strip()]
+    raise ValueError(f"Unsupported {field_name} value: {type(v).__name__}")
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
@@ -16,6 +31,10 @@ class Settings(BaseSettings):
     # env values so the validator below can accept the ergonomic
     # comma-separated form without a `SettingsError`.
     cors_origins: Annotated[list[str], NoDecode] = Field(default_factory=list)
+    # Additional trusted JWT ``iss`` values accepted during token verification.
+    # Useful when the discovery ``issuer`` value differs from the public-facing
+    # hostname Keycloak stamps into tokens (e.g., reverse proxies / test envs).
+    oidc_trusted_issuers: Annotated[list[str], NoDecode] = Field(default_factory=list)
 
     @field_validator("cors_origins", mode="before")
     @classmethod
@@ -25,32 +44,38 @@ class Settings(BaseSettings):
         Env-var form `CORS_ORIGINS=http://a.com,http://b.com` is supported in
         addition to JSON (`["http://a.com","http://b.com"]`).
         """
-        if v is None or v == "":
-            return []
-        if isinstance(v, list):
-            return [str(s).strip() for s in v if str(s).strip()]
-        if isinstance(v, str):
-            s = v.strip()
-            if s.startswith("["):
-                parsed = json.loads(s)
-                return [str(x).strip() for x in parsed if str(x).strip()]
-            return [part.strip() for part in s.split(",") if part.strip()]
-        raise ValueError(f"Unsupported cors_origins value: {type(v).__name__}")
+        return _parse_str_list(v, "cors_origins")
+
+    @field_validator("oidc_trusted_issuers", mode="before")
+    @classmethod
+    def _parse_trusted_issuers(cls, v: object) -> list[str]:
+        """Same parsing rules as ``cors_origins`` for trusted issuer list."""
+        return _parse_str_list(v, "oidc_trusted_issuers")
 
     # CRITICAL: no fallback values — startup fails if these are absent from env
     database_url: str = Field(...)
     redis_url: str = Field(...)
+    # TODO(P1.x): remove jwt_secret. Keycloak now issues + signs the JWT, the
+    # API only ever verifies it via JWKS, so the platform no longer needs a
+    # local symmetric secret. Kept for one release to avoid a breaking env
+    # change.
     jwt_secret: str = Field(...)
     oidc_client_id: str = Field(...)
     oidc_client_secret: str = Field(...)
     oidc_issuer_url: str = Field(...)
 
+    # Public base URL the API is reachable at — used to build the OIDC
+    # callback URL we hand to Keycloak (e.g. http://localhost:8000).
+    oidc_redirect_base_url: str = Field(...)
+
+    # Session cookie + Redis-backed session store
+    session_cookie_name: str = "dprk_cti_session"
+    session_cookie_secure: bool = False
+    session_cookie_samesite: str = "lax"
+    session_signing_key: str = Field(...)
+    session_ttl_seconds: int = 3600
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     return Settings()
-
-
-# Convenience alias so existing `from .config import settings` callers still work.
-# Do not use this alias in new code; call get_settings() directly.
-settings = get_settings()
