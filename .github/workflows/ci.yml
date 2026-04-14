@@ -62,6 +62,42 @@ jobs:
           path: services/api/coverage.xml
           if-no-files-found: warn
 
+  worker-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Sync worker dev dependencies
+        working-directory: services/worker
+        run: uv sync
+      - name: Run pytest with coverage gate
+        working-directory: services/worker
+        run: |
+          uv run pytest \
+            --cov=src/worker/bootstrap \
+            --cov-report=term-missing \
+            --cov-report=xml:coverage.xml \
+            --cov-fail-under=70
+      - name: Regenerate Bootstrap ETL fixture from YAML
+        # Regenerating in CI proves the generator + YAML source stay
+        # in sync with the committed workbook. The unit tests still
+        # use the committed xlsx (which has stable metadata) so this
+        # step only asserts that the script runs without error and
+        # that the regenerated file parses.
+        working-directory: services/worker
+        run: |
+          uv run python ../../scripts/generate_bootstrap_fixture.py
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: worker-coverage-xml
+          path: services/worker/coverage.xml
+          if-no-files-found: warn
+
   db-migrations:
     runs-on: ubuntu-latest
     services:
