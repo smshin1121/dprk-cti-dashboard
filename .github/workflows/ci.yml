@@ -44,14 +44,15 @@ jobs:
         with:
           python-version: "3.12"
       - name: Sync api dev dependencies
-        run: uv sync --project services/api
+        working-directory: services/api
+        run: uv sync
       - name: Run pytest with coverage gate
+        working-directory: services/api
         run: |
-          uv run --project services/api pytest \
-            -c services/api/pytest.ini \
-            --cov=services/api/src/api \
+          uv run pytest \
+            --cov=src/api \
             --cov-report=term-missing \
-            --cov-report=xml:services/api/coverage.xml \
+            --cov-report=xml:coverage.xml \
             --cov-fail-under=70
       - name: Upload coverage report
         if: always()
