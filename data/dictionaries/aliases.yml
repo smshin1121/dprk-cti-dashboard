@@ -1,0 +1,73 @@
+# Alias dictionary — canonical-name normalization for DPRK CTI entities.
+#
+# Each top-level key is an entity *type*. Inside a type, each key is the
+# **canonical name** and the value is a list of known aliases that should
+# normalize to that canonical. Aliases are case-insensitive at lookup time;
+# the loader stores a lowercased index.
+#
+# Invariants enforced by `services/worker/src/worker/bootstrap/aliases.py`:
+#   1. Bijection per type: an alias may appear under at most one canonical.
+#      Violation raises AliasDictionaryError at load time.
+#   2. Canonical names do not appear in their own alias list (redundant).
+#   3. Empty strings are rejected as both canonicals and aliases.
+#
+# Attribution history for each alias (which vendor coined it, when) is
+# deliberately out of scope for this file. Track that in `codenames.aliases`
+# at the DB level, not here.
+
+groups:
+  Lazarus:
+    - APT38
+    - Hidden Cobra
+    - HIDDEN COBRA
+    - ZINC
+    - Diamond Sleet
+    - Labyrinth Chollima
+    - Guardians of Peace
+  Kimsuky:
+    - APT43
+    - Velvet Chollima
+    - Black Banshee
+    - Thallium
+    - Emerald Sleet
+  BlueNoroff:
+    - Stardust Chollima
+    - Sapphire Sleet
+    - CryptoMimic
+  ScarCruft:
+    - APT37
+    - Reaper
+    - InkySquid
+    - Ricochet Chollima
+    - Group123
+  Andariel:
+    - Onyx Sleet
+    - Silent Chollima
+    - PLUTONIUM
+  Konni:
+    - Opal Sleet
+    - TA406
+
+malware:
+  # Malware entries here exist so the tag classifier can recognize
+  # `#appleseed`, `#bluelight`, `#rokrat` as known canonicals even
+  # though no vendor-variant aliases are tracked yet. Real aliases
+  # (e.g. "FAST_ROPE" vs "FastRope") will land with Phase 4 LLM
+  # enrichment. Lowercase variants of the canonical are handled by the
+  # case-insensitive lookup and do not need to be listed explicitly.
+  AppleSeed: []
+  BlueLight: []
+  RokRat: []
+
+# CVE type exists so the alias loader's schema is stable, but real CVE
+# aliases are identity-only (CVE-YYYY-N maps to itself) and handled by
+# the tag classifier, not by this dictionary. Leaving the section
+# present-but-empty documents intent without triggering the bijection
+# lint.
+cve: {}
+
+campaigns:
+  Operation Stealthy Tiger:
+    - operation-stealthy-tiger
+  Operation Ghost Scribe:
+    - operation-ghost-scribe
