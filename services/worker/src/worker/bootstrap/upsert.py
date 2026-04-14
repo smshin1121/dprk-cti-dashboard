@@ -292,42 +292,54 @@ async def upsert_report(
     url_canonical = canonicalize_url(row.url)
     title_hash = sha256_title(row.title)
 
-    # Check for an existing report BEFORE touching `sources`. If two
-    # workbook rows collapse to the same canonical URL but differ in
-    # author, upserting the second author first would leave an orphan
-    # sources row because the second report insert is rejected as a
-    # duplicate. Query the reports table first so only the
-    # surviving-row's author ever reaches `sources`.
-    #
-    # The lookup checks BOTH keys: `url_canonical` is the primary
-    # dedupe dimension, but `sha256_title` acts as the documented
-    # fallback for the "same report, new URL" case where a vendor
-    # moves the article between domains or rewrites its slug. Either
-    # match collapses the incoming row onto the existing report.
+    # First pass: look up by `url_canonical` alone — it is a global
+    # unique key, no source context needed. This also runs BEFORE
+    # `upsert_source` so that a duplicate URL arriving from a new
+    # vendor does not insert an orphan sources row that the report
+    # never references.
     existing = await session.execute(
         sa.select(reports_table.c.id).where(
-            sa.or_(
-                reports_table.c.url_canonical == url_canonical,
-                reports_table.c.sha256_title == title_hash,
-            )
+            reports_table.c.url_canonical == url_canonical
         )
     )
     row_id_tuple = existing.first()
     if row_id_tuple is not None:
         report_id = row_id_tuple[0]
-        # Still attach this row's tags even though the report already
-        # existed. If two workbook rows share a canonical URL or a
-        # title hash, tags from both must survive — otherwise the
-        # second row is silent data loss, not a true no-op.
-        # `_attach_report_tags` is itself idempotent: already-linked
-        # tags are skipped.
         await _attach_report_tags(session, report_id, row.tags, aliases)
         return UpsertOutcome(id=report_id, action=UpsertAction.EXISTING)
 
+    # Second pass: resolve the source for this row, then look up by
+    # the title-hash fallback scoped to that source. `sha256_title`
+    # exists so a vendor moving an article to a new URL still
+    # collapses onto the existing report, but matching it globally
+    # would also collapse unrelated reports across vendors that share
+    # a templated headline (e.g. "Threat Update" — the exact example
+    # Codex flagged in PR #5 round 4). Scoping the match to
+    # `source_id` keeps the intended fallback while rejecting
+    # cross-vendor collisions.
+    #
+    # Orphan-sources note: if the scoped lookup finds a hit, it means
+    # the existing report already references THIS source, so the
+    # source was necessarily pre-existing — `upsert_source` returned
+    # EXISTING, not INSERTED, so nothing we just wrote is left
+    # dangling. If the lookup misses, the report insert below
+    # consumes the source immediately.
     source = await upsert_source(
         session,
         row.author or "unknown",
     )
+
+    title_existing = await session.execute(
+        sa.select(reports_table.c.id).where(
+            (reports_table.c.sha256_title == title_hash)
+            & (reports_table.c.source_id == source.id)
+        )
+    )
+    title_row = title_existing.first()
+    if title_row is not None:
+        report_id = title_row[0]
+        await _attach_report_tags(session, report_id, row.tags, aliases)
+        return UpsertOutcome(id=report_id, action=UpsertAction.EXISTING)
 
     insert_result = await session.execute(
         sa.insert(reports_table)

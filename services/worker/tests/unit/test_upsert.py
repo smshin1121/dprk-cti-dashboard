@@ -278,12 +278,13 @@ async def test_upsert_report_url_canonical_collapses_tracking_params(
     assert await _count(db_session, reports_table) == 1
 
 
-async def test_upsert_report_dedupes_by_sha256_title_fallback(
+async def test_upsert_report_dedupes_by_sha256_title_fallback_same_source(
     db_session: AsyncSession, aliases
 ) -> None:
     """The module doc advertises `sha256_title` as the fallback
     identity when a vendor moves a report to a new URL. The upsert
-    must honor that and collapse the second row onto the first."""
+    must honor that and collapse the second row onto the first — but
+    only when both rows come from the same source."""
     first = ReportRow(
         published=dt.date(2024, 3, 15),
         author="Mandiant",
@@ -291,8 +292,8 @@ async def test_upsert_report_dedupes_by_sha256_title_fallback(
         url="https://example.com/original-url",
         tags="#lazarus",
     )
-    # Same title, totally different URL — sha256_title should collapse
-    # the two onto a single report row.
+    # Same vendor, same title, totally different URL. The fallback
+    # should collapse the two onto a single report.
     second = ReportRow(
         published=dt.date(2024, 3, 15),
         author="Mandiant",
@@ -306,8 +307,43 @@ async def test_upsert_report_dedupes_by_sha256_title_fallback(
     assert first_outcome.id == second_outcome.id
     assert second_outcome.action is UpsertAction.EXISTING
     assert await _count(db_session, reports_table) == 1
-    # Both rows' tags are attached to the single report.
     assert await _count(db_session, tags_table) == 2
+    assert await _count(db_session, report_tags_table) == 2
+
+
+async def test_upsert_report_does_not_collapse_titles_across_vendors(
+    db_session: AsyncSession, aliases
+) -> None:
+    """Two vendors publishing the same headline must NOT be merged.
+    The sha256_title fallback is scoped to the source that authored
+    the first report — otherwise templated titles like "Threat
+    Update" would collapse unrelated reports and corrupt
+    `reports.source_id`, the URL, and the publication metadata.
+    Codex raised this in the PR #5 round 4 review."""
+    vendor_a = ReportRow(
+        published=dt.date(2024, 6, 1),
+        author="Vendor A",
+        title="Threat Update",
+        url="https://vendor-a.example/advisory/2024-06-threat-update",
+        tags="#lazarus",
+    )
+    vendor_b = ReportRow(
+        published=dt.date(2024, 7, 15),
+        author="Vendor B",
+        title="Threat Update",
+        url="https://vendor-b.example/post/threat-update-july",
+        tags="#kimsuky",
+    )
+    a_outcome = await upsert_report(db_session, vendor_a, aliases)
+    b_outcome = await upsert_report(db_session, vendor_b, aliases)
+
+    assert a_outcome.id != b_outcome.id
+    assert a_outcome.action is UpsertAction.INSERTED
+    assert b_outcome.action is UpsertAction.INSERTED
+    # Two distinct reports, two distinct sources.
+    assert await _count(db_session, reports_table) == 2
+    assert await _count(db_session, sources_table) == 2
+    # Each report carries its own tag set.
     assert await _count(db_session, report_tags_table) == 2
 
 
