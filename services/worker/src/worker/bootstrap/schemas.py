@@ -41,20 +41,48 @@ from pydantic import ValidationError as RowValidationError  # noqa: E402
 # Country-code validation
 # ---------------------------------------------------------------------------
 #
-# ISO 3166-1 alpha-2 reserves the entire "X*" range (XA..XZ) as
-# user-assigned / private-use. Real countries never use these codes, so
-# we reject them categorically. This catches the fixture's "XX" failure
-# case without pulling in a pycountry dependency for a single check.
+# Full ISO 3166-1 alpha-2 list as of 2025. Vendored rather than pulled
+# from pycountry so the worker has no transitive dependency on an ISO
+# package that is maintained out of tree. The list is static in
+# practice — new country codes are assigned every few years at most —
+# and easy to review.
 _ISO3166_ALPHA2_PATTERN = re.compile(r"^[A-Z]{2}$")
-_ISO3166_USER_ASSIGNED_PREFIX = "X"
+
+_ISO3166_ALPHA2_CODES: frozenset[str] = frozenset(
+    {
+        "AD", "AE", "AF", "AG", "AI", "AL", "AM", "AO", "AQ", "AR",
+        "AS", "AT", "AU", "AW", "AX", "AZ", "BA", "BB", "BD", "BE",
+        "BF", "BG", "BH", "BI", "BJ", "BL", "BM", "BN", "BO", "BQ",
+        "BR", "BS", "BT", "BV", "BW", "BY", "BZ", "CA", "CC", "CD",
+        "CF", "CG", "CH", "CI", "CK", "CL", "CM", "CN", "CO", "CR",
+        "CU", "CV", "CW", "CX", "CY", "CZ", "DE", "DJ", "DK", "DM",
+        "DO", "DZ", "EC", "EE", "EG", "EH", "ER", "ES", "ET", "FI",
+        "FJ", "FK", "FM", "FO", "FR", "GA", "GB", "GD", "GE", "GF",
+        "GG", "GH", "GI", "GL", "GM", "GN", "GP", "GQ", "GR", "GS",
+        "GT", "GU", "GW", "GY", "HK", "HM", "HN", "HR", "HT", "HU",
+        "ID", "IE", "IL", "IM", "IN", "IO", "IQ", "IR", "IS", "IT",
+        "JE", "JM", "JO", "JP", "KE", "KG", "KH", "KI", "KM", "KN",
+        "KP", "KR", "KW", "KY", "KZ", "LA", "LB", "LC", "LI", "LK",
+        "LR", "LS", "LT", "LU", "LV", "LY", "MA", "MC", "MD", "ME",
+        "MF", "MG", "MH", "MK", "ML", "MM", "MN", "MO", "MP", "MQ",
+        "MR", "MS", "MT", "MU", "MV", "MW", "MX", "MY", "MZ", "NA",
+        "NC", "NE", "NF", "NG", "NI", "NL", "NO", "NP", "NR", "NU",
+        "NZ", "OM", "PA", "PE", "PF", "PG", "PH", "PK", "PL", "PM",
+        "PN", "PR", "PS", "PT", "PW", "PY", "QA", "RE", "RO", "RS",
+        "RU", "RW", "SA", "SB", "SC", "SD", "SE", "SG", "SH", "SI",
+        "SJ", "SK", "SL", "SM", "SN", "SO", "SR", "SS", "ST", "SV",
+        "SX", "SY", "SZ", "TC", "TD", "TF", "TG", "TH", "TJ", "TK",
+        "TL", "TM", "TN", "TO", "TR", "TT", "TV", "TW", "TZ", "UA",
+        "UG", "UM", "US", "UY", "UZ", "VA", "VC", "VE", "VG", "VI",
+        "VN", "VU", "WF", "WS", "YE", "YT", "ZA", "ZM", "ZW",
+    }
+)
 
 
 def _is_valid_iso3166_alpha2(value: str) -> bool:
     if not _ISO3166_ALPHA2_PATTERN.match(value):
         return False
-    if value[0] == _ISO3166_USER_ASSIGNED_PREFIX:
-        return False
-    return True
+    return value in _ISO3166_ALPHA2_CODES
 
 
 # ---------------------------------------------------------------------------

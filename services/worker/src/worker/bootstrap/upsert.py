@@ -289,13 +289,14 @@ async def upsert_report(
     tags via the ``tags`` / ``report_tags`` tables and any actor tags
     via ``report_codenames``.
     """
-    source = await upsert_source(
-        session,
-        row.author or "unknown",
-    )
     url_canonical = canonicalize_url(row.url)
-    title_hash = sha256_title(row.title)
 
+    # Check for an existing report BEFORE touching `sources`. If two
+    # workbook rows collapse to the same canonical URL but differ in
+    # author, upserting the second author first would leave an orphan
+    # sources row because the second report insert is rejected as a
+    # duplicate. Query the reports table first so only the
+    # surviving-row's author ever reaches `sources`.
     existing = await session.execute(
         sa.select(reports_table.c.id).where(
             reports_table.c.url_canonical == url_canonical
@@ -311,6 +312,12 @@ async def upsert_report(
         # idempotent: already-linked tags are skipped.
         await _attach_report_tags(session, report_id, row.tags, aliases)
         return UpsertOutcome(id=report_id, action=UpsertAction.EXISTING)
+
+    source = await upsert_source(
+        session,
+        row.author or "unknown",
+    )
+    title_hash = sha256_title(row.title)
 
     insert_result = await session.execute(
         sa.insert(reports_table)

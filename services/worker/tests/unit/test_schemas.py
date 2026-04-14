@@ -252,6 +252,11 @@ def test_incident_uppercases_lowercase_country() -> None:
         "XX",  # user-assigned range
         "XA",  # user-assigned range
         "XZ",  # user-assigned range
+        "ZZ",  # well-formed but not an assigned code
+        "QQ",  # well-formed but not an assigned code
+        "AA",  # well-formed but not an assigned code
+        "EU",  # common mistake — EU is not ISO 3166-1 alpha-2
+        "UK",  # common mistake — UK is not ISO 3166-1 alpha-2 (GB is)
         "123",
         "U",
         "USA",

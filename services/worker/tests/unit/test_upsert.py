@@ -278,6 +278,41 @@ async def test_upsert_report_url_canonical_collapses_tracking_params(
     assert await _count(db_session, reports_table) == 1
 
 
+async def test_upsert_report_duplicate_url_does_not_orphan_source(
+    db_session: AsyncSession, aliases
+) -> None:
+    """Second Codex review round: if two rows share a url_canonical
+    but differ in author, the second row must not insert a new source.
+    Otherwise `sources` accumulates orphaned rows for every
+    inconsistent duplicate."""
+    first = ReportRow(
+        published=dt.date(2024, 3, 15),
+        author="Mandiant",
+        title="Lazarus macOS backdoor",
+        url="https://example.com/threat/lazarus-macos",
+        tags="#lazarus",
+    )
+    # Same URL, different author. Second row's `Other Vendor` must
+    # never reach the sources table — the report row is rejected as
+    # a duplicate and the author would otherwise be an orphan.
+    second = ReportRow(
+        published=dt.date(2024, 3, 15),
+        author="Other Vendor",
+        title="Lazarus macOS backdoor",
+        url="https://example.com/threat/lazarus-macos",
+        tags="#lazarus",
+    )
+    await upsert_report(db_session, first, aliases)
+    await upsert_report(db_session, second, aliases)
+
+    source_names = (
+        await db_session.execute(sa.select(sources_table.c.name))
+    ).scalars().all()
+    assert source_names == ["Mandiant"]
+    assert await _count(db_session, sources_table) == 1
+    assert await _count(db_session, reports_table) == 1
+
+
 async def test_upsert_report_duplicate_url_merges_tags(
     db_session: AsyncSession, aliases
 ) -> None:

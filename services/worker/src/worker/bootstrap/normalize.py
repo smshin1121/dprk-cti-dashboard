@@ -154,14 +154,23 @@ def canonicalize_url(url: str) -> str:
     if not host:
         raise ValueError(f"url must have a host; got {url!r}")
 
+    # IPv6 literals must be bracketed in the netloc to form a valid
+    # authority component. ``parts.hostname`` strips the brackets, so
+    # we re-add them here when the host contains ``:`` (the unambiguous
+    # marker for an IPv6 literal — DNS names cannot contain ``:``).
+    if ":" in host:
+        netloc_host = f"[{host}]"
+    else:
+        netloc_host = host
+
     # Drop default ports.
     port = parts.port
     if port is not None and not (
         (scheme == "http" and port == 80) or (scheme == "https" and port == 443)
     ):
-        netloc = f"{host}:{port}"
+        netloc = f"{netloc_host}:{port}"
     else:
-        netloc = host
+        netloc = netloc_host
 
     # Strip userinfo — unusual in feed data but would defeat dedupe.
     path = _normalize_path(parts.path)

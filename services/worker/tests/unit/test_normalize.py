@@ -83,6 +83,42 @@ def test_canonicalize_keeps_nondefault_port() -> None:
 
 
 # ---------------------------------------------------------------------------
+# canonicalize_url — IPv6 host literals
+# ---------------------------------------------------------------------------
+
+
+def test_canonicalize_preserves_ipv6_brackets() -> None:
+    """``urllib.parse.urlsplit().hostname`` strips the brackets around
+    an IPv6 literal, so the canonicalizer must re-add them to produce
+    a valid authority component."""
+    assert (
+        canonicalize_url("https://[2001:db8::1]/a")
+        == "https://[2001:db8::1]/a"
+    )
+
+
+def test_canonicalize_ipv6_with_nondefault_port() -> None:
+    assert (
+        canonicalize_url("https://[2001:db8::1]:8443/a")
+        == "https://[2001:db8::1]:8443/a"
+    )
+
+
+def test_canonicalize_ipv6_drops_default_port() -> None:
+    assert (
+        canonicalize_url("https://[2001:db8::1]:443/a")
+        == "https://[2001:db8::1]/a"
+    )
+
+
+def test_canonicalize_ipv6_is_idempotent() -> None:
+    once = canonicalize_url("https://[2001:db8::1]:8443/a?utm_source=x")
+    twice = canonicalize_url(once)
+    assert once == twice
+    assert once == "https://[2001:db8::1]:8443/a"
+
+
+# ---------------------------------------------------------------------------
 # canonicalize_url — tracking-param stripping
 # ---------------------------------------------------------------------------
 
