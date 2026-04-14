@@ -21,6 +21,7 @@ coverage/
 htmlcov/
 .coverage
 .coverage.*
+coverage.xml
 .idea/
 .vscode/
 

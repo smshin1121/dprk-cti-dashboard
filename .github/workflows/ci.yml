@@ -35,6 +35,32 @@ jobs:
       - run: uv sync --project services/${{ matrix.service }} --no-install-project
       - run: uv run --project services/${{ matrix.service }} python -c "print('ok')"
 
+  api-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Sync api dev dependencies
+        run: uv sync --project services/api
+      - name: Run pytest with coverage gate
+        run: |
+          uv run --project services/api pytest \
+            -c services/api/pytest.ini \
+            --cov=services/api/src/api \
+            --cov-report=term-missing \
+            --cov-report=xml:services/api/coverage.xml \
+            --cov-fail-under=70
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-coverage-xml
+          path: services/api/coverage.xml
+          if-no-files-found: warn
+
   db-migrations:
     runs-on: ubuntu-latest
     services:
