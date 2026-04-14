@@ -81,15 +81,36 @@ jobs:
             --cov-report=term-missing \
             --cov-report=xml:coverage.xml \
             --cov-fail-under=70
-      - name: Regenerate Bootstrap ETL fixture from YAML
-        # Regenerating in CI proves the generator + YAML source stay
-        # in sync with the committed workbook. The unit tests still
-        # use the committed xlsx (which has stable metadata) so this
-        # step only asserts that the script runs without error and
-        # that the regenerated file parses.
+      - name: Verify Bootstrap ETL fixture matches YAML source
+        # Regenerate the fixture workbook to a temporary path and
+        # semantic-diff every cell against the committed xlsx. This
+        # catches the case where someone edits bootstrap_sample.yaml
+        # but forgets to commit the rebuilt workbook. openpyxl's
+        # xlsx output is not byte-stable across runs (zip entry
+        # metadata drifts), so git diff is not a reliable check;
+        # the loader-based cell-by-cell comparison is.
         working-directory: services/worker
         run: |
-          uv run python ../../scripts/generate_bootstrap_fixture.py
+          mkdir -p "${RUNNER_TEMP}/fixture-check"
+          REGEN_PATH="${RUNNER_TEMP}/fixture-check/bootstrap_sample.xlsx"
+          uv run python ../../scripts/generate_bootstrap_fixture.py --output "$REGEN_PATH"
+          uv run python -c "
+          from openpyxl import load_workbook
+          committed = load_workbook('tests/fixtures/bootstrap_sample.xlsx', data_only=True)
+          regenerated = load_workbook('$REGEN_PATH', data_only=True)
+          assert committed.sheetnames == regenerated.sheetnames, (
+              f'sheet list drift: {committed.sheetnames} vs {regenerated.sheetnames}'
+          )
+          for sheet in committed.sheetnames:
+              c_rows = [tuple(cell.value for cell in row) for row in committed[sheet].iter_rows()]
+              r_rows = [tuple(cell.value for cell in row) for row in regenerated[sheet].iter_rows()]
+              assert c_rows == r_rows, (
+                  f'sheet {sheet!r} cell drift: committed vs regenerated differ. '
+                  f'Edit services/worker/tests/fixtures/bootstrap_sample.yaml and '
+                  f'rerun scripts/generate_bootstrap_fixture.py to commit the new xlsx.'
+              )
+          print('fixture drift check: OK')
+          "
       - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@v4

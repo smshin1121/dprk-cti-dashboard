@@ -249,6 +249,45 @@ def test_writer_close_is_idempotent(tmp_path: Path) -> None:
     assert target.exists()
 
 
+def test_writer_enter_clears_stale_file_from_prior_run(tmp_path: Path) -> None:
+    """Contract: the dead-letter file exists iff *this* run had
+    failures. If a previous run left a file at the same path, a
+    subsequent clean run must delete it on entry so the file's
+    existence still means "failures happened"."""
+    target = tmp_path / "errors.jsonl"
+    target.write_text("stale-content-from-previous-run\n", encoding="utf-8")
+    assert target.exists()
+
+    with DeadLetterWriter(target) as dl:
+        # Clean run — no writes.
+        pass
+
+    assert not target.exists()
+    assert dl.count == 0
+
+
+def test_writer_enter_keeps_file_when_run_writes_fresh_failures(tmp_path: Path) -> None:
+    """The stale-file cleanup must not eat legitimate failures from
+    the current run."""
+    target = tmp_path / "errors.jsonl"
+    target.write_text("stale\n", encoding="utf-8")
+
+    with DeadLetterWriter(target) as dl:
+        dl.write(_entry(message="fresh failure"))
+
+    assert target.exists()
+    contents = target.read_text(encoding="utf-8")
+    assert "stale" not in contents
+    assert "fresh failure" in contents
+
+
+def test_writer_enter_is_idempotent_for_missing_file(tmp_path: Path) -> None:
+    target = tmp_path / "nested" / "errors.jsonl"
+    with DeadLetterWriter(target) as dl:
+        pass
+    assert not target.exists()
+
+
 def test_writer_context_manager_closes_on_exception(tmp_path: Path) -> None:
     target = tmp_path / "errors.jsonl"
     with pytest.raises(RuntimeError):

@@ -94,15 +94,14 @@ def test_resolve_dead_letter_path_wraps_string_as_path() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_main_without_database_url_returns_1(
+def test_main_without_database_url_on_real_run_returns_1(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
     tmp_path: Path,
 ) -> None:
-    """No --database-url and no BOOTSTRAP_DATABASE_URL env var means
-    the CLI cannot open a session. It must exit 1 (reserved for
-    CLI-layer errors) and write a diagnostic to stderr — not
-    silently exit 0."""
+    """A NON-dry-run without --database-url or $BOOTSTRAP_DATABASE_URL
+    must exit 1 with a stderr diagnostic, not silently exit 0 or
+    hang on a connection attempt."""
     monkeypatch.delenv("BOOTSTRAP_DATABASE_URL", raising=False)
 
     # Create a placeholder workbook so argparse's existence check
@@ -121,3 +120,33 @@ def test_main_without_database_url_returns_1(
     assert exit_code == 1
     captured = capsys.readouterr()
     assert "BOOTSTRAP_DATABASE_URL" in captured.err or "--database-url" in captured.err
+
+
+def test_main_dry_run_without_database_url_uses_in_memory_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """The Codex round-1 finding: dry-run must not require a
+    database URL. With --dry-run set and no DB configured, the CLI
+    falls back to an in-memory sqlite engine, provisions the schema
+    on the fly, and runs the pipeline end-to-end."""
+    monkeypatch.delenv("BOOTSTRAP_DATABASE_URL", raising=False)
+
+    repo_root = Path(__file__).resolve().parents[4]
+    fixture = repo_root / "services/worker/tests/fixtures/bootstrap_sample.xlsx"
+
+    exit_code = main(
+        [
+            "--workbook",
+            str(fixture),
+            "--dry-run",
+            "--errors-path",
+            "",
+        ]
+    )
+
+    # The committed stress fixture trips the 5% threshold, so the
+    # exit code reflects that (2), NOT 1. 1 would indicate the CLI
+    # refused to run, which is exactly the regression this test
+    # prevents.
+    assert exit_code in (0, 2)

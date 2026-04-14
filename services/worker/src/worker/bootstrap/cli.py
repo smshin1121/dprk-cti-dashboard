@@ -275,17 +275,37 @@ async def run_bootstrap(
     return decision
 
 
+_DRY_RUN_FALLBACK_URL = "sqlite+aiosqlite:///:memory:"
+
+
 async def _main_async(args: argparse.Namespace) -> int:
     database_url = args.database_url or os.environ.get(_DATABASE_URL_ENV_VAR)
+
     if not database_url:
-        sys.stderr.write(
-            f"error: --database-url or ${_DATABASE_URL_ENV_VAR} is required\n"
-        )
-        return 1
+        if not args.dry_run:
+            sys.stderr.write(
+                f"error: --database-url or ${_DATABASE_URL_ENV_VAR} is "
+                f"required for non-dry-run invocations\n"
+            )
+            return 1
+        # Dry-run with no configured database. Fall back to an
+        # in-memory sqlite engine and provision the bootstrap schema
+        # on the fly so the pipeline can still exercise validation,
+        # normalization, and upsert logic without any external
+        # infrastructure. No data is ever persisted.
+        database_url = _DRY_RUN_FALLBACK_URL
 
     engine = create_async_engine(database_url)
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
     try:
+        if args.dry_run and database_url == _DRY_RUN_FALLBACK_URL:
+            # Import locally to keep the hot path import-light for
+            # production invocations that already have a real schema.
+            from worker.bootstrap.tables import metadata
+
+            async with engine.begin() as conn:
+                await conn.run_sync(metadata.create_all)
+
         async with session_factory() as session:
             decision = await run_bootstrap(
                 session,

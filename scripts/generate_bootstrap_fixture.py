@@ -19,6 +19,7 @@ fields prefixed with `_` before writing cells.
 
 from __future__ import annotations
 
+import argparse
 import datetime as dt
 import sys
 from pathlib import Path
@@ -137,16 +138,37 @@ def build_workbook(source: Mapping[str, list[Mapping[str, Any]]]) -> Workbook:
     return wb
 
 
-def main() -> int:
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Regenerate services/worker/tests/fixtures/bootstrap_sample.xlsx from its YAML source.",
+    )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=OUTPUT_XLSX,
+        help=(
+            "Destination path for the regenerated workbook. Defaults "
+            "to the committed fixture location. CI drift checks pass "
+            "a temporary path and compare the result against the "
+            "committed copy."
+        ),
+    )
+    return parser
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    args = _build_parser().parse_args(argv)
+    output_path = args.output
+
     if not SOURCE_YAML.exists():
         print(f"error: source YAML not found at {SOURCE_YAML}", file=sys.stderr)
         return 2
     source = _load_yaml(SOURCE_YAML)
     wb = build_workbook(source)
-    OUTPUT_XLSX.parent.mkdir(parents=True, exist_ok=True)
-    wb.save(OUTPUT_XLSX)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    wb.save(output_path)
     rows_per_sheet = {key: len(source.get(key, [])) for key, _, _ in SHEETS}
-    print(f"wrote {OUTPUT_XLSX} ({rows_per_sheet})")
+    print(f"wrote {output_path} ({rows_per_sheet})")
     return 0
 
 

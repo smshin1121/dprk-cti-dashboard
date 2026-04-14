@@ -143,6 +143,13 @@ class DeadLetterWriter:
             self._handle = None
 
     def __enter__(self) -> "DeadLetterWriter":
+        # Clear any stale artifact from a previous run at the same
+        # path. Without this, a clean run that follows a failing run
+        # would leave the old JSONL in place and operators would
+        # falsely conclude that the current run had failures. The
+        # contract is "file exists iff *this* run had failures".
+        if self._path is not None and self._path.exists():
+            self._path.unlink()
         return self
 
     def __exit__(
