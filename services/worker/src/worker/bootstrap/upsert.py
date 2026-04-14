@@ -188,16 +188,29 @@ async def upsert_codename(
         sa.select(
             codenames_table.c.id,
             codenames_table.c.group_id,
+            codenames_table.c.named_by_source_id,
             codenames_table.c.first_seen,
             codenames_table.c.last_seen,
         ).where(codenames_table.c.name == name)
     )
     row = existing.first()
     if row is not None:
-        codename_id, current_group_id, current_first, current_last = row
+        (
+            codename_id,
+            current_group_id,
+            current_source_id,
+            current_first,
+            current_last,
+        ) = row
         patches: dict[str, object] = {}
         if current_group_id is None and group_id is not None:
             patches["group_id"] = group_id
+        if current_source_id is None and named_by_source_id is not None:
+            # Report tags create codenames without a source; the
+            # Actors sheet is the authoritative origin for the
+            # "named by" attribution. Backfill it the first time the
+            # Actors row for this codename arrives.
+            patches["named_by_source_id"] = named_by_source_id
         if current_first is None and first_seen is not None:
             patches["first_seen"] = first_seen
         if current_last is None and last_seen is not None:
@@ -330,14 +343,28 @@ async def upsert_report(
     )
 
     title_existing = await session.execute(
-        sa.select(reports_table.c.id).where(
+        sa.select(
+            reports_table.c.id,
+            reports_table.c.url_canonical,
+        ).where(
             (reports_table.c.sha256_title == title_hash)
             & (reports_table.c.source_id == source.id)
         )
     )
     title_row = title_existing.first()
     if title_row is not None:
-        report_id = title_row[0]
+        report_id, existing_url_canonical = title_row
+        # The whole point of the title-hash fallback is "same article,
+        # new URL": the existing row is the earlier URL, the incoming
+        # row carries the current one. Update the stored URL and
+        # `url_canonical` to reflect the latest known location so
+        # later lookups by the new URL still find the record.
+        if existing_url_canonical != url_canonical:
+            await session.execute(
+                sa.update(reports_table)
+                .where(reports_table.c.id == report_id)
+                .values(url=row.url, url_canonical=url_canonical)
+            )
         await _attach_report_tags(session, report_id, row.tags, aliases)
         return UpsertOutcome(id=report_id, action=UpsertAction.EXISTING)
 

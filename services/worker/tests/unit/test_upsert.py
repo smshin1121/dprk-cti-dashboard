@@ -134,6 +134,42 @@ async def test_upsert_codename_inserts(db_session: AsyncSession) -> None:
     assert row[1] == dt.date(2009, 2, 1)
 
 
+async def test_upsert_codename_backfills_named_by_source_id(
+    db_session: AsyncSession,
+) -> None:
+    """Codex round 5: a codename created by a report tag has no
+    `named_by_source_id`. When the Actors-sheet row later arrives
+    with `named_by` populated, the source attribution must be
+    backfilled instead of silently discarded."""
+    group = await upsert_group(db_session, "Kimsuky")
+
+    # Pass 1: tag-driven upsert with no source.
+    first = await upsert_codename(
+        db_session,
+        name="Kimsuky",
+        group_id=group.id,
+    )
+    assert first.action is UpsertAction.INSERTED
+
+    # Pass 2: Actors sheet arrives with a source.
+    source = await upsert_source(db_session, "Kaspersky")
+    second = await upsert_codename(
+        db_session,
+        name="Kimsuky",
+        group_id=group.id,
+        named_by_source_id=source.id,
+    )
+    assert second.id == first.id
+    assert second.action is UpsertAction.EXISTING
+
+    row = (await db_session.execute(
+        sa.select(codenames_table.c.named_by_source_id)
+        .where(codenames_table.c.id == first.id)
+    )).first()
+    assert row[0] == source.id
+    assert await _count(db_session, codenames_table) == 1
+
+
 async def test_upsert_codename_fills_in_null_group_id(db_session: AsyncSession) -> None:
     # First insert codename with no group_id (unclassified).
     first = await upsert_codename(db_session, name="HIDDEN COBRA", group_id=None)
@@ -309,6 +345,42 @@ async def test_upsert_report_dedupes_by_sha256_title_fallback_same_source(
     assert await _count(db_session, reports_table) == 1
     assert await _count(db_session, tags_table) == 2
     assert await _count(db_session, report_tags_table) == 2
+
+
+async def test_upsert_report_title_hash_dedupe_updates_stored_url(
+    db_session: AsyncSession, aliases
+) -> None:
+    """Codex round 5: the title-hash fallback is meant for "same
+    article, new URL". When it triggers, the stored `url` and
+    `url_canonical` should be updated to the incoming row's values
+    so subsequent lookups by the new URL still find the record."""
+    first = ReportRow(
+        published=dt.date(2024, 3, 15),
+        author="Mandiant",
+        title="Lazarus returns with new macOS backdoor",
+        url="https://old.example.com/old-slug",
+        tags="#lazarus",
+    )
+    second = ReportRow(
+        published=dt.date(2024, 3, 15),
+        author="Mandiant",
+        title="Lazarus returns with new macOS backdoor",
+        url="https://new.example.com/new-slug",
+        tags="#crypto",
+    )
+    first_outcome = await upsert_report(db_session, first, aliases)
+    second_outcome = await upsert_report(db_session, second, aliases)
+
+    assert first_outcome.id == second_outcome.id
+    assert second_outcome.action is UpsertAction.EXISTING
+
+    stored = (await db_session.execute(
+        sa.select(reports_table.c.url, reports_table.c.url_canonical)
+        .where(reports_table.c.id == first_outcome.id)
+    )).first()
+    assert stored[0] == "https://new.example.com/new-slug"
+    assert stored[1] == "https://new.example.com/new-slug"
+    assert await _count(db_session, reports_table) == 1
 
 
 async def test_upsert_report_does_not_collapse_titles_across_vendors(
