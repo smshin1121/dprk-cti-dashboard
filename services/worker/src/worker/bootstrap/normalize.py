@@ -150,9 +150,20 @@ def canonicalize_url(url: str) -> str:
             f"url scheme must be http or https; got {parts.scheme!r} in {url!r}"
         )
 
-    host = (parts.hostname or "").lower()
-    if not host:
+    raw_host = parts.hostname or ""
+    if not raw_host:
         raise ValueError(f"url must have a host; got {url!r}")
+
+    # Normalize Unicode IDN hosts to punycode so that ``пример.рф`` and
+    # ``xn--e1afmkfd.xn--p1ai`` collapse to the same canonical key. The
+    # stdlib IDNA codec handles both directions: ASCII hosts round-trip
+    # unchanged, Unicode hosts encode to ``xn--*``, and already-encoded
+    # hosts remain stable. Non-IDN inputs (IPv6 literals with ``:``,
+    # bare IPs, etc.) fall through to a plain lowercase.
+    try:
+        host = raw_host.encode("idna").decode("ascii").lower()
+    except (UnicodeError, UnicodeDecodeError):
+        host = raw_host.lower()
 
     # IPv6 literals must be bracketed in the netloc to form a valid
     # authority component. ``parts.hostname`` strips the brackets, so

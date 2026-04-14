@@ -290,6 +290,7 @@ async def upsert_report(
     via ``report_codenames``.
     """
     url_canonical = canonicalize_url(row.url)
+    title_hash = sha256_title(row.title)
 
     # Check for an existing report BEFORE touching `sources`. If two
     # workbook rows collapse to the same canonical URL but differ in
@@ -297,19 +298,29 @@ async def upsert_report(
     # sources row because the second report insert is rejected as a
     # duplicate. Query the reports table first so only the
     # surviving-row's author ever reaches `sources`.
+    #
+    # The lookup checks BOTH keys: `url_canonical` is the primary
+    # dedupe dimension, but `sha256_title` acts as the documented
+    # fallback for the "same report, new URL" case where a vendor
+    # moves the article between domains or rewrites its slug. Either
+    # match collapses the incoming row onto the existing report.
     existing = await session.execute(
         sa.select(reports_table.c.id).where(
-            reports_table.c.url_canonical == url_canonical
+            sa.or_(
+                reports_table.c.url_canonical == url_canonical,
+                reports_table.c.sha256_title == title_hash,
+            )
         )
     )
     row_id_tuple = existing.first()
     if row_id_tuple is not None:
         report_id = row_id_tuple[0]
         # Still attach this row's tags even though the report already
-        # existed. If two workbook rows share a canonical URL, tags
-        # from both must survive — otherwise the second row is silent
-        # data loss, not a true no-op. `_attach_report_tags` is itself
-        # idempotent: already-linked tags are skipped.
+        # existed. If two workbook rows share a canonical URL or a
+        # title hash, tags from both must survive — otherwise the
+        # second row is silent data loss, not a true no-op.
+        # `_attach_report_tags` is itself idempotent: already-linked
+        # tags are skipped.
         await _attach_report_tags(session, report_id, row.tags, aliases)
         return UpsertOutcome(id=report_id, action=UpsertAction.EXISTING)
 
@@ -317,7 +328,6 @@ async def upsert_report(
         session,
         row.author or "unknown",
     )
-    title_hash = sha256_title(row.title)
 
     insert_result = await session.execute(
         sa.insert(reports_table)
@@ -400,6 +410,34 @@ async def _attach_report_tags(
 # ---------------------------------------------------------------------------
 
 
+async def _ensure_incident_mapping(
+    session: AsyncSession,
+    table: sa.Table,
+    incident_id: int,
+    value_column: str,
+    value: str,
+) -> None:
+    """Idempotent insert into one of the incident_* mapping tables.
+
+    Each mapping table has a composite PK of
+    ``(incident_id, <value_column>)``, so a simple check-then-insert
+    guarantees a duplicate row is a no-op instead of an
+    IntegrityError.
+    """
+    col = table.c[value_column]
+    existing = await session.execute(
+        sa.select(col).where(
+            (table.c.incident_id == incident_id) & (col == value)
+        )
+    )
+    if existing.first() is None:
+        await session.execute(
+            sa.insert(table).values(
+                **{"incident_id": incident_id, value_column: value}
+            )
+        )
+
+
 async def upsert_incident(
     session: AsyncSession,
     row: IncidentRow,
@@ -409,6 +447,12 @@ async def upsert_incident(
     Natural key is ``(title, reported)`` since v1.0 does not carry a
     stable incident ID. Title is derived from the ``victims`` cell
     because the v1.0 workbook reuses "Victims" as the headline text.
+
+    When a second workbook row resolves to the same incident but
+    carries a different motivation / sector / country, the extra
+    mapping rows are still merged onto the existing incident. That
+    is what the multi-valued mapping tables exist for, and dropping
+    them on duplicate-key would be silent data loss.
     """
     title = row.victims
     existing = await session.execute(
@@ -419,38 +463,43 @@ async def upsert_incident(
     )
     row_tuple = existing.first()
     if row_tuple is not None:
-        return UpsertOutcome(id=row_tuple[0], action=UpsertAction.EXISTING)
-
-    insert_result = await session.execute(
-        sa.insert(incidents_table)
-        .values(
-            reported=row.reported,
-            title=title,
+        incident_id = row_tuple[0]
+        action = UpsertAction.EXISTING
+    else:
+        insert_result = await session.execute(
+            sa.insert(incidents_table)
+            .values(
+                reported=row.reported,
+                title=title,
+            )
+            .returning(incidents_table.c.id)
         )
-        .returning(incidents_table.c.id)
-    )
-    incident_id = insert_result.scalar_one()
+        incident_id = insert_result.scalar_one()
+        action = UpsertAction.INSERTED
 
     if row.motivations:
-        await session.execute(
-            sa.insert(incident_motivations_table).values(
-                incident_id=incident_id,
-                motivation=row.motivations.strip(),
-            )
+        await _ensure_incident_mapping(
+            session,
+            incident_motivations_table,
+            incident_id,
+            "motivation",
+            row.motivations.strip(),
         )
     if row.sectors:
-        await session.execute(
-            sa.insert(incident_sectors_table).values(
-                incident_id=incident_id,
-                sector_code=row.sectors.strip(),
-            )
+        await _ensure_incident_mapping(
+            session,
+            incident_sectors_table,
+            incident_id,
+            "sector_code",
+            row.sectors.strip(),
         )
     if row.countries:
-        await session.execute(
-            sa.insert(incident_countries_table).values(
-                incident_id=incident_id,
-                country_iso2=row.countries,
-            )
+        await _ensure_incident_mapping(
+            session,
+            incident_countries_table,
+            incident_id,
+            "country_iso2",
+            row.countries,
         )
 
-    return UpsertOutcome(id=incident_id, action=UpsertAction.INSERTED)
+    return UpsertOutcome(id=incident_id, action=action)

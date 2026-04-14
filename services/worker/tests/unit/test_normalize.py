@@ -119,6 +119,42 @@ def test_canonicalize_ipv6_is_idempotent() -> None:
 
 
 # ---------------------------------------------------------------------------
+# canonicalize_url — IDN host normalization (Codex round 3)
+# ---------------------------------------------------------------------------
+
+
+def test_canonicalize_idn_unicode_to_punycode() -> None:
+    """A Unicode IDN host must canonicalize to the same key as its
+    punycode form so reports that spell the same origin two ways
+    collapse onto a single row."""
+    unicode_form = canonicalize_url("https://пример.рф/a")
+    punycode_form = canonicalize_url("https://xn--e1afmkfd.xn--p1ai/a")
+    assert unicode_form == punycode_form
+    assert unicode_form == "https://xn--e1afmkfd.xn--p1ai/a"
+
+
+def test_canonicalize_idn_is_idempotent() -> None:
+    once = canonicalize_url("https://пример.рф/a?utm_source=x")
+    twice = canonicalize_url(once)
+    assert once == twice
+
+
+def test_canonicalize_ascii_host_unchanged_by_idna_pass() -> None:
+    """ASCII hosts must survive the IDNA normalization step
+    unchanged — the encode/decode round-trip must be the identity
+    function for the common case."""
+    assert (
+        canonicalize_url("https://example.com/a")
+        == "https://example.com/a"
+    )
+    # Punycode form of a host that was never Unicode stays stable.
+    assert (
+        canonicalize_url("https://xn--e1afmkfd.xn--p1ai/a")
+        == "https://xn--e1afmkfd.xn--p1ai/a"
+    )
+
+
+# ---------------------------------------------------------------------------
 # canonicalize_url — tracking-param stripping
 # ---------------------------------------------------------------------------
 

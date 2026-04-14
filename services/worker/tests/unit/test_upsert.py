@@ -278,6 +278,39 @@ async def test_upsert_report_url_canonical_collapses_tracking_params(
     assert await _count(db_session, reports_table) == 1
 
 
+async def test_upsert_report_dedupes_by_sha256_title_fallback(
+    db_session: AsyncSession, aliases
+) -> None:
+    """The module doc advertises `sha256_title` as the fallback
+    identity when a vendor moves a report to a new URL. The upsert
+    must honor that and collapse the second row onto the first."""
+    first = ReportRow(
+        published=dt.date(2024, 3, 15),
+        author="Mandiant",
+        title="Lazarus returns with new macOS backdoor",
+        url="https://example.com/original-url",
+        tags="#lazarus",
+    )
+    # Same title, totally different URL — sha256_title should collapse
+    # the two onto a single report row.
+    second = ReportRow(
+        published=dt.date(2024, 3, 15),
+        author="Mandiant",
+        title="Lazarus returns with new macOS backdoor",
+        url="https://example.org/new-slug-after-redirect",
+        tags="#crypto",
+    )
+    first_outcome = await upsert_report(db_session, first, aliases)
+    second_outcome = await upsert_report(db_session, second, aliases)
+
+    assert first_outcome.id == second_outcome.id
+    assert second_outcome.action is UpsertAction.EXISTING
+    assert await _count(db_session, reports_table) == 1
+    # Both rows' tags are attached to the single report.
+    assert await _count(db_session, tags_table) == 2
+    assert await _count(db_session, report_tags_table) == 2
+
+
 async def test_upsert_report_duplicate_url_does_not_orphan_source(
     db_session: AsyncSession, aliases
 ) -> None:
@@ -417,6 +450,65 @@ async def test_upsert_incident_is_idempotent_by_title_and_date(
     assert await _count(db_session, incidents_table) == 1
     # Mapping rows are inserted once on the first call and not duplicated.
     assert await _count(db_session, incident_motivations_table) == 1
+
+
+async def test_upsert_incident_duplicate_merges_mapping_rows(
+    db_session: AsyncSession,
+) -> None:
+    """Second Codex round 3 issue: when a later workbook row resolves
+    to the same `(title, reported)` incident but carries a different
+    country / sector / motivation, the extra mapping values must
+    still land. The mapping tables exist specifically to preserve
+    multi-valued attributes, so dropping them on duplicate-key is
+    silent data loss."""
+    first = IncidentRow(
+        reported=dt.date(2022, 3, 23),
+        victims="Ronin Network",
+        motivations="financial",
+        sectors="crypto",
+        countries="VN",
+    )
+    # Same incident, different country / sector / motivation.
+    second = IncidentRow(
+        reported=dt.date(2022, 3, 23),
+        victims="Ronin Network",
+        motivations="espionage",
+        sectors="finance",
+        countries="US",
+    )
+    first_outcome = await upsert_incident(db_session, first)
+    second_outcome = await upsert_incident(db_session, second)
+
+    assert first_outcome.id == second_outcome.id
+    assert second_outcome.action is UpsertAction.EXISTING
+    assert await _count(db_session, incidents_table) == 1
+
+    # Each mapping table now has two rows — both from the first and
+    # second pass — attached to the single incident.
+    assert await _count(db_session, incident_motivations_table) == 2
+    assert await _count(db_session, incident_sectors_table) == 2
+    assert await _count(db_session, incident_countries_table) == 2
+
+
+async def test_upsert_incident_duplicate_exact_row_is_noop(
+    db_session: AsyncSession,
+) -> None:
+    """Loading the exact same incident row twice is a pure no-op.
+    This is a stricter version of the idempotency test above, for
+    the case where second row has no new mapping values."""
+    row = IncidentRow(
+        reported=dt.date(2022, 3, 23),
+        victims="Ronin Network",
+        motivations="financial",
+        sectors="crypto",
+        countries="VN",
+    )
+    await upsert_incident(db_session, row)
+    await upsert_incident(db_session, row)
+    assert await _count(db_session, incidents_table) == 1
+    assert await _count(db_session, incident_motivations_table) == 1
+    assert await _count(db_session, incident_sectors_table) == 1
+    assert await _count(db_session, incident_countries_table) == 1
 
 
 async def test_upsert_incident_with_no_optional_fields(db_session: AsyncSession) -> None:
