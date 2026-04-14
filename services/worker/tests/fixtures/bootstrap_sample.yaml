@@ -1,0 +1,234 @@
+# Source-of-truth for services/worker/tests/fixtures/bootstrap_sample.xlsx.
+#
+# Regenerate the xlsx with:
+#     python scripts/generate_bootstrap_fixture.py
+#
+# Conventions:
+#   - Keys prefixed with an underscore (_tag, _reason) are metadata for
+#     reviewers and test harnesses. The generator writes only the
+#     v1.0-schema columns to the workbook.
+#   - `_tag` is one of:
+#       happy         — row is valid input; the pipeline must accept it
+#       failure_case  — row exercises a specific validation / normalization
+#                       error path; the pipeline must reject it with the
+#                       reason documented in `_reason`
+#   - Failure rows are kept at a low enough ratio that the happy-fixture
+#     run stays under the D5 5% fail-rate gate.
+#
+# Sheet column order matches the v1.0 workbook so the loader's column map
+# in services/worker can match the fixture against real data.
+
+actors:
+  # ----- happy path -----
+  - name: Lazarus Group
+    named_by: Kaspersky
+    associated_group: Lazarus
+    first_seen: 2009-02-01
+    last_seen: 2025-12-15
+    _tag: happy
+  - name: APT38
+    named_by: FireEye
+    associated_group: Lazarus
+    first_seen: 2014-05-01
+    last_seen: 2024-11-20
+    _tag: happy
+    _note: alias that should normalize to canonical Lazarus via aliases.yml
+  - name: Kimsuky
+    named_by: Kaspersky
+    associated_group: Kimsuky
+    first_seen: 2012-09-10
+    last_seen: 2025-10-01
+    _tag: happy
+  - name: BlueNoroff
+    named_by: Kaspersky
+    associated_group: BlueNoroff
+    first_seen: 2015-06-15
+    last_seen: 2025-09-05
+    _tag: happy
+  - name: ScarCruft
+    named_by: Kaspersky
+    associated_group: ScarCruft
+    first_seen: 2012-11-01
+    last_seen: 2025-08-22
+    _tag: happy
+  - name: Andariel
+    named_by: Kaspersky
+    associated_group: Andariel
+    first_seen: 2015-05-10
+    last_seen: 2025-07-11
+    _tag: happy
+  - name: Konni
+    named_by: Cisco Talos
+    associated_group: Konni
+    first_seen: 2014-01-20
+    last_seen: 2025-03-19
+    _tag: happy
+  - name: Hidden Cobra
+    named_by: US-CERT
+    associated_group: Lazarus
+    first_seen: 2017-06-13
+    last_seen: 2024-02-28
+    _tag: happy
+    _note: second alias path for Lazarus; idempotent upsert check
+  # ----- failure cases -----
+  - name: ""
+    named_by: Mandiant
+    associated_group: Lazarus
+    first_seen: 2020-01-01
+    last_seen: 2024-01-01
+    _tag: failure_case
+    _reason: empty-required-field (name is required)
+  - name: UnknownActor
+    named_by: Acme Intel
+    associated_group: NonExistentGroup
+    first_seen: 2022-04-01
+    last_seen: 2023-12-31
+    _tag: failure_case
+    _reason: alias-not-in-dictionary (associated_group has no canonical mapping)
+
+reports:
+  # ----- happy path -----
+  - published: 2024-03-15
+    author: Mandiant
+    title: "Lazarus returns with new macOS backdoor targeting crypto exchanges"
+    url: https://example.com/threat/lazarus-macos-2024
+    tags: "#lazarus #malware #appleseed #cve-2024-1234 #crypto"
+    _tag: happy
+  - published: 2024-06-21
+    author: Kaspersky
+    title: "Kimsuky spear-phishing campaign against South Korean think-tanks"
+    url: https://example.com/research/kimsuky-spear-phish
+    tags: "#kimsuky #operation-stealthy-tiger #finance"
+    _tag: happy
+  - published: 2023-11-08
+    author: Cisco Talos
+    title: "Konni RAT evolves with anti-analysis"
+    url: https://example.com/posts/konni-rat-update
+    tags: "#konni #malware #bluelight"
+    _tag: happy
+  - published: 2025-01-14
+    author: CrowdStrike
+    title: "ScarCruft exploits zero-day in Hangul Word Processor"
+    url: https://example.com/adv/scarcruft-hwp-zeroday
+    tags: "#scarcruft #cve-2024-9876 #operation-ghost-scribe"
+    _tag: happy
+  - published: 2024-09-02
+    author: Mandiant
+    title: "BlueNoroff targets venture capital firms with new loader"
+    url: https://example.com/threat/bluenoroff-vc
+    tags: "#bluenoroff #finance #crypto"
+    _tag: happy
+  - published: 2023-07-19
+    author: US-CERT
+    title: "Hidden Cobra activity update — Q3 advisory"
+    url: https://example.com/advisory/hidden-cobra-q3-2023
+    tags: "#lazarus #finance"
+    _tag: happy
+    _note: author is Hidden Cobra but tag references canonical Lazarus
+  - published: 2024-12-03
+    author: Recorded Future
+    title: "Andariel targeting defense contractors"
+    url: https://example.com/report/andariel-defense
+    tags: "#andariel #defense"
+    _tag: happy
+  - published: 2025-02-27
+    author: Mandiant
+    title: "Lazarus laundering path via DeFi protocols"
+    url: "https://example.com/threat/lazarus-defi?utm_source=newsletter&utm_campaign=march"
+    tags: "#lazarus #crypto #finance"
+    _tag: happy
+    _note: URL carries tracking params that canonicalize should strip
+  - published: 2024-08-11
+    author: Kaspersky
+    title: "Kimsuky deploys new PowerShell implant"
+    url: https://example.com/research/kimsuky-ps-implant
+    tags: "#kimsuky"
+    _tag: happy
+  # ----- failure cases -----
+  - published: 2024-03-15
+    author: Mandiant
+    title: "Lazarus macOS backdoor (duplicate of row 1)"
+    url: https://example.com/threat/lazarus-macos-2024
+    tags: "#lazarus"
+    _tag: failure_case
+    _reason: duplicate-url (same url_canonical as first happy row; second upsert must be a no-op, not an insert)
+  - published: 2024-07-04
+    author: Mandiant
+    title: ""
+    url: https://example.com/threat/missing-title-row
+    tags: "#lazarus"
+    _tag: failure_case
+    _reason: empty-required-field (title is required)
+  - published: 2024-05-10
+    author: Recorded Future
+    title: "Report with malformed tag syntax"
+    url: https://example.com/research/malformed-tag
+    tags: "notahashtag lazarus also-not-a-tag"
+    _tag: failure_case
+    _reason: no-parseable-tags (tags string contains no `#` tokens, classifier must mark all as unknown_type)
+
+incidents:
+  # ----- happy path -----
+  - reported: 2022-03-23
+    victims: Ronin Network
+    motivations: financial
+    sectors: crypto
+    countries: VN
+    _tag: happy
+  - reported: 2017-05-12
+    victims: WannaCry global outbreak
+    motivations: financial
+    sectors: healthcare
+    countries: GB
+    _tag: happy
+  - reported: 2014-11-24
+    victims: Sony Pictures Entertainment
+    motivations: destructive
+    sectors: media
+    countries: US
+    _tag: happy
+  - reported: 2016-02-04
+    victims: Bangladesh Bank
+    motivations: financial
+    sectors: finance
+    countries: BD
+    _tag: happy
+  - reported: 2020-09-15
+    victims: AstraZeneca
+    motivations: espionage
+    sectors: healthcare
+    countries: GB
+    _tag: happy
+  - reported: 2022-06-23
+    victims: Harmony Horizon Bridge
+    motivations: financial
+    sectors: crypto
+    countries: US
+    _tag: happy
+  - reported: 2023-09-22
+    victims: CoinEx
+    motivations: financial
+    sectors: crypto
+    countries: HK
+    _tag: happy
+  - reported: 2024-05-31
+    victims: DMM Bitcoin
+    motivations: financial
+    sectors: crypto
+    countries: JP
+    _tag: happy
+  # ----- failure cases -----
+  - reported: 2021-10-15
+    victims: Fictional Corp
+    motivations: financial
+    sectors: finance
+    countries: XX
+    _tag: failure_case
+    _reason: invalid-country (XX is not a valid ISO-3166 alpha-2 code)
+  - reported: null
+    victims: Undated Incident
+    motivations: espionage
+    sectors: defense
+    countries: KR
+    _tag: failure_case
+    _reason: missing-required-field (reported date is required)
