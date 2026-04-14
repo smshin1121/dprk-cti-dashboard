@@ -392,6 +392,48 @@ async def upsert_report(
         await _attach_report_tags(session, report_id, row.tags, aliases)
         return UpsertOutcome(id=report_id, action=UpsertAction.EXISTING)
 
+    # Anonymous-promotion path: if the incoming row has a real vendor
+    # name and an earlier row for the same title landed under the
+    # synthetic `unknown` source (because it arrived without an
+    # author), promote the existing row to this vendor. This is the
+    # superset of the url_canonical-based backfill above — it also
+    # catches the "anonymous first load, moved URL, attributed
+    # later" case that neither the URL branch nor the source-scoped
+    # title-hash branch handles on its own.
+    real_author = (row.author or "").strip()
+    if real_author and real_author != "unknown":
+        unknown_source_row = await session.execute(
+            sa.select(sources_table.c.id).where(
+                sources_table.c.name == "unknown"
+            )
+        )
+        unknown_source_id_tuple = unknown_source_row.first()
+        if unknown_source_id_tuple is not None:
+            unknown_source_id = unknown_source_id_tuple[0]
+            promote_row = await session.execute(
+                sa.select(
+                    reports_table.c.id,
+                    reports_table.c.url_canonical,
+                ).where(
+                    (reports_table.c.sha256_title == title_hash)
+                    & (reports_table.c.source_id == unknown_source_id)
+                )
+            )
+            promote_tuple = promote_row.first()
+            if promote_tuple is not None:
+                report_id, existing_url_canonical = promote_tuple
+                update_values: dict[str, object] = {"source_id": source.id}
+                if existing_url_canonical != url_canonical:
+                    update_values["url"] = row.url
+                    update_values["url_canonical"] = url_canonical
+                await session.execute(
+                    sa.update(reports_table)
+                    .where(reports_table.c.id == report_id)
+                    .values(**update_values)
+                )
+                await _attach_report_tags(session, report_id, row.tags, aliases)
+                return UpsertOutcome(id=report_id, action=UpsertAction.EXISTING)
+
     insert_result = await session.execute(
         sa.insert(reports_table)
         .values(

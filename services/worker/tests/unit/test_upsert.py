@@ -383,6 +383,87 @@ async def test_upsert_report_title_hash_dedupe_updates_stored_url(
     assert await _count(db_session, reports_table) == 1
 
 
+async def test_upsert_report_promotes_anonymous_to_real_vendor_on_moved_url(
+    db_session: AsyncSession, aliases
+) -> None:
+    """External review: the combination "first row anonymous, second
+    row has real vendor and a different URL but the same title" must
+    collapse onto the first report and promote it to the real vendor.
+    Before the fix, the url_canonical branch missed the match
+    (different URLs) and the source-scoped title-hash branch missed
+    it too (existing row's source_id pointed at `unknown`, new row
+    looked up the real vendor), so a duplicate report was inserted
+    instead of a single promoted row."""
+    anonymous_first = ReportRow(
+        published=dt.date(2024, 3, 15),
+        title="Lazarus returns with new macOS backdoor",
+        url="https://example.com/anon-slug",
+        tags="#lazarus",
+    )
+    attributed_second = ReportRow(
+        published=dt.date(2024, 3, 15),
+        author="Mandiant",
+        title="Lazarus returns with new macOS backdoor",
+        url="https://example.org/mandiant-slug",
+        tags="#crypto",
+    )
+    first = await upsert_report(db_session, anonymous_first, aliases)
+    second = await upsert_report(db_session, attributed_second, aliases)
+
+    assert first.id == second.id
+    assert second.action is UpsertAction.EXISTING
+    assert await _count(db_session, reports_table) == 1
+
+    # The existing report is now attributed to Mandiant, not `unknown`.
+    resolved = (await db_session.execute(
+        sa.select(sources_table.c.name, reports_table.c.url_canonical)
+        .select_from(reports_table.join(
+            sources_table, reports_table.c.source_id == sources_table.c.id
+        ))
+        .where(reports_table.c.id == first.id)
+    )).first()
+    assert resolved[0] == "Mandiant"
+    # URL was also updated to the attributed row's canonical form.
+    assert resolved[1] == "https://example.org/mandiant-slug"
+    # Both tag sets survive on the single report.
+    assert await _count(db_session, report_tags_table) == 2
+
+
+async def test_upsert_report_promotion_leaves_unrelated_vendors_alone(
+    db_session: AsyncSession, aliases
+) -> None:
+    """Guard: the anonymous-promotion path must not pull an unrelated
+    earlier anonymous report under a new vendor just because it
+    shares a templated headline with a different article."""
+    # Vendor A publishes first. Real vendor, not anonymous.
+    await upsert_report(
+        db_session,
+        ReportRow(
+            published=dt.date(2024, 6, 1),
+            author="Vendor A",
+            title="Threat Update",
+            url="https://vendor-a.example/post/june",
+            tags="#lazarus",
+        ),
+        aliases,
+    )
+    # Vendor B now publishes under the same headline. Vendor A's
+    # record is NOT anonymous, so it must not be promoted / merged.
+    await upsert_report(
+        db_session,
+        ReportRow(
+            published=dt.date(2024, 7, 1),
+            author="Vendor B",
+            title="Threat Update",
+            url="https://vendor-b.example/post/july",
+            tags="#kimsuky",
+        ),
+        aliases,
+    )
+    # Two distinct reports survive.
+    assert await _count(db_session, reports_table) == 2
+
+
 async def test_upsert_report_does_not_collapse_titles_across_vendors(
     db_session: AsyncSession, aliases
 ) -> None:
