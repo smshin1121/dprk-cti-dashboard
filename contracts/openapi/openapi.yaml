@@ -1,0 +1,250 @@
+openapi: 3.1.0
+info:
+  title: DPRK CTI API
+  version: 0.1.0
+  description: >
+    Implementation-prep contract that reflects actual runtime behavior of the
+    stub-phase API. Every protected endpoint currently returns 501 because the
+    router is mounted behind Depends(verify_token), and verify_token is a
+    fail-closed stub (see services/api/src/api/deps.py). Public endpoints
+    (meta, auth/login, auth/callback, healthz) are not protected and return
+    their scaffold 200 bodies. This contract will be updated once real JWT/OIDC
+    authentication replaces the verify_token stub.
+servers:
+  - url: /
+paths:
+  # ---------------------------------------------------------------------------
+  # Public endpoints (no verify_token dependency) — document what handlers
+  # actually return at runtime.
+  # ---------------------------------------------------------------------------
+  /healthz:
+    get:
+      summary: Service health
+      description: Public ops endpoint. Returns a static OK payload.
+      operationId: healthcheck
+      tags: [ops]
+      responses:
+        "200":
+          description: OK
+  /api/v1/meta:
+    get:
+      summary: Service metadata
+      description: Public metadata endpoint. Returns phase, services, and planned endpoints.
+      operationId: meta
+      tags: [meta]
+      responses:
+        "200":
+          description: OK
+  /api/v1/auth/login:
+    get:
+      summary: OIDC login entry point
+      description: >
+        Public stub. Currently returns a 200 scaffold body;
+        will redirect to the OIDC provider (Keycloak) once auth is implemented.
+      operationId: auth_login
+      tags: [auth]
+      responses:
+        "200":
+          description: OK (scaffold)
+  /api/v1/auth/callback:
+    get:
+      summary: OIDC callback
+      description: >
+        Public stub. Currently returns a 200 scaffold body;
+        will exchange the OAuth2 code for tokens and set a session cookie
+        once auth is implemented. See TODO (SECURITY) notes in the handler.
+      operationId: auth_callback
+      tags: [auth]
+      responses:
+        "200":
+          description: OK (scaffold)
+  /api/v1/auth/me:
+    get:
+      summary: Current authenticated user
+      description: >
+        Public route, but the handler itself returns 501 because there is no
+        session to resolve yet. Will return the user profile once auth is
+        implemented.
+      operationId: auth_me
+      tags: [auth]
+      responses:
+        "501":
+          description: Not implemented (handler stub)
+  # ---------------------------------------------------------------------------
+  # Protected endpoints (mounted behind Depends(verify_token)).
+  # verify_token is a fail-closed stub that always raises 501, so every
+  # endpoint below returns 501 at runtime regardless of handler body.
+  # Once real auth is implemented, these will return their intended 2xx.
+  # ---------------------------------------------------------------------------
+  /api/v1/ingest/rss/run:
+    post:
+      summary: Trigger a manual RSS ingest run
+      description: Currently returns 501 via verify_token stub; will return 200 once auth is implemented.
+      operationId: ingest_rss_run
+      tags: [ingest]
+      responses:
+        "501":
+          description: Not implemented (verify_token stub)
+  /api/v1/ingest/status:
+    get:
+      summary: Ingest pipeline status
+      description: Currently returns 501 via verify_token stub; will return 200 once auth is implemented.
+      operationId: ingest_status
+      tags: [ingest]
+      responses:
+        "501":
+          description: Not implemented (verify_token stub)
+  /api/v1/reports/{id}/similar:
+    get:
+      summary: Similar reports via pgvector
+      description: Currently returns 501 via verify_token stub; will return 200 once auth is implemented.
+      operationId: reports_similar
+      tags: [reports]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: k
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 10
+      responses:
+        "501":
+          description: Not implemented (verify_token stub)
+  /api/v1/reports/review/{id}:
+    post:
+      summary: Human review approve/reject
+      description: Currently returns 501 via verify_token stub; will return 200 once auth is implemented.
+      operationId: reports_review
+      tags: [reports]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "501":
+          description: Not implemented (verify_token stub)
+  /api/v1/analytics/attack-heatmap:
+    get:
+      summary: ATT&CK tactic/technique heatmap
+      description: Currently returns 501 via verify_token stub; will return 200 once auth is implemented.
+      operationId: analytics_attack_heatmap
+      tags: [analytics]
+      responses:
+        "501":
+          description: Not implemented (verify_token stub)
+  /api/v1/analytics/attribution-graph:
+    get:
+      summary: Threat actor attribution graph
+      description: Currently returns 501 via verify_token stub; will return 200 once auth is implemented.
+      operationId: analytics_attribution_graph
+      tags: [analytics]
+      responses:
+        "501":
+          description: Not implemented (verify_token stub)
+  /api/v1/analytics/geopolitical:
+    get:
+      summary: Geopolitical context correlation
+      description: Currently returns 501 via verify_token stub; will return 200 once auth is implemented.
+      operationId: analytics_geopolitical
+      tags: [analytics]
+      responses:
+        "501":
+          description: Not implemented (verify_token stub)
+  /api/v1/analytics/forecast:
+    get:
+      summary: Short-term threat forecast
+      description: Currently returns 501 via verify_token stub; will return 200 once auth is implemented.
+      operationId: analytics_forecast
+      tags: [analytics]
+      responses:
+        "501":
+          description: Not implemented (verify_token stub)
+  /api/v1/search:
+    get:
+      summary: Global full-text + semantic search
+      description: Currently returns 501 via verify_token stub; will return 200 once auth is implemented.
+      operationId: search
+      tags: [search]
+      parameters:
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+            default: ""
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "501":
+          description: Not implemented (verify_token stub)
+  /api/v1/alerts:
+    get:
+      summary: List alerts
+      description: Currently returns 501 via verify_token stub; will return 200 once auth is implemented.
+      operationId: alerts_list
+      tags: [alerts]
+      responses:
+        "501":
+          description: Not implemented (verify_token stub)
+  /api/v1/alerts/{id}/ack:
+    post:
+      summary: Acknowledge an alert
+      description: Currently returns 501 via verify_token stub; will return 200 once auth is implemented.
+      operationId: alerts_ack
+      tags: [alerts]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "501":
+          description: Not implemented (verify_token stub)
+  /api/v1/alerts/rules:
+    post:
+      summary: Create an alert rule
+      description: Currently returns 501 via verify_token stub; will return 200 once auth is implemented.
+      operationId: alerts_rules_create
+      tags: [alerts]
+      responses:
+        "501":
+          description: Not implemented (verify_token stub)
+  /api/v1/export/stix:
+    get:
+      summary: Export STIX 2.1 bundle
+      description: Currently returns 501 via verify_token stub; will return 200 once auth is implemented.
+      operationId: export_stix
+      tags: [export]
+      responses:
+        "501":
+          description: Not implemented (verify_token stub)
+  /api/v1/export/pdf:
+    get:
+      summary: Export rendered PDF briefing
+      description: Currently returns 501 via verify_token stub; will return 200 once auth is implemented.
+      operationId: export_pdf
+      tags: [export]
+      responses:
+        "501":
+          description: Not implemented (verify_token stub)
+  /api/v1/export/csv:
+    get:
+      summary: Export tabular data as CSV
+      description: Currently returns 501 via verify_token stub; will return 200 once auth is implemented.
+      operationId: export_csv
+      tags: [export]
+      responses:
+        "501":
+          description: Not implemented (verify_token stub)

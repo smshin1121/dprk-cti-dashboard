@@ -164,6 +164,8 @@ audit_log         (id, actor, action, entity, entity_id, timestamp, diff_jsonb)
                                      └──────────────┘
 ```
 
+> 상세 컨테이너 구성과 프로토콜 레이블은 §7.2 컨테이너 뷰를 참조한다.
+
 ### 3.2 Bootstrap ETL (v1.0 시트 → DB)
 
 - **Phase 1 Week 1–2**: `openpyxl` + `pandas`로 3시트 로드, pydantic 스키마 검증, 동의어 사전 적용, `url_canonical`·`sha256_title` 산출, `tags` 정규화.
@@ -314,7 +316,224 @@ v1.0의 15개 기능을 유지하고, v2.0에서 다음 7개 기능을 추가한
 
 ## 7. 기술 스택 및 아키텍처 (Technical Architecture)
 
-### 7.1 스택 (v1.0 대비 변경점 **굵게**)
+### 7.1 아키텍처 개요 (C4 System Context)
+
+플랫폼은 분석가·연구자·정책 담당·SOC 오퍼레이터가 DPRK 사이버 위협 정보를 수집·정규화·분석·공유하도록 지원하는 단일 시스템이다. 외부 경계에는 벤더 RSS / TAXII 2.1 피드, LLM 제공자, OIDC IdP, Slack/웹훅, UN·지정학 이벤트 피드가 위치한다. §1.4 페르소나 및 §3.1 파이프라인의 상위 뷰에 해당한다.
+
+```mermaid
+flowchart LR
+    subgraph Users[사용자]
+        A1[Analyst]
+        A2[Researcher]
+        A3[Policy]
+        A4[SOC Operator]
+    end
+
+    subgraph System[DPRK CTI Platform]
+        P[대시보드 · 분석 · 알림 · Export]
+    end
+
+    subgraph External[외부 시스템]
+        E1[Vendor RSS]
+        E2[TAXII 2.1 Collections]
+        E3[LLM Provider]
+        E4[OIDC IdP<br/>Google · Azure AD]
+        E5[Slack / Webhook]
+        E6[UN · Geopolitical Feed]
+    end
+
+    A1 -->|HTTPS| P
+    A2 -->|HTTPS| P
+    A3 -->|HTTPS| P
+    A4 -->|HTTPS| P
+
+    P -->|Pull| E1
+    P -->|Pull| E2
+    P -->|HTTPS / JSON| E3
+    P -->|OIDC| E4
+    P -->|Notify| E5
+    P -->|Pull| E6
+```
+
+### 7.2 컨테이너 뷰 (C4 L2)
+
+런타임 컨테이너와 프로토콜 레이블. 컨테이너 이름은 §7.5 스택 표와 §9.1 트러스트 경계에 표현된 요소들과 1:1 대응한다.
+
+```mermaid
+flowchart TB
+    subgraph Client[Client]
+        FE[frontend<br/>React SPA · Vite]
+    end
+
+    subgraph Platform[DPRK CTI Platform]
+        API[api<br/>FastAPI]
+        WK[worker<br/>Prefect 2 agent]
+        LP[llm-proxy<br/>프롬프트 캐시 · 키 관리]
+        DB[(db<br/>Postgres 16<br/>pgvector · pg_trgm)]
+        RC[(cache<br/>Redis)]
+        OT[otel collector<br/>+ Grafana / Prometheus]
+    end
+
+    subgraph External[External]
+        FEED[Vendor RSS · TAXII 2.1]
+        LLM[LLM Provider]
+        IDP[OIDC IdP]
+        SLK[Slack / Webhook]
+    end
+
+    FE -->|HTTPS / JSON| API
+    FE -->|OIDC redirect| IDP
+    API -->|SQL / TLS| DB
+    API -->|RESP| RC
+    API -->|OIDC verify| IDP
+    API -->|OTLP| OT
+    WK -->|SQL / TLS| DB
+    WK -->|HTTPS| FEED
+    WK -->|HTTPS| LP
+    WK -->|HTTPS| SLK
+    WK -->|OTLP| OT
+    LP -->|HTTPS| LLM
+    LP -->|OTLP| OT
+```
+
+v1.0의 평면 서비스 목록(frontend / api / worker / llm-proxy / db / cache / otel / grafana)은 이 다이어그램으로 대체된다.
+
+### 7.3 런타임 시나리오
+
+세 가지 핵심 경로를 sequence diagram으로 고정한다.
+
+**(1) RSS 수집 → Staging → Human Review → Production** — §3.3 · §3.4 · §6.1 F-7 대응.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant F as Feed (RSS/TAXII)
+    participant W as worker
+    participant L as llm-proxy
+    participant D as db
+    participant A as api
+    participant U as Analyst
+
+    W->>F: HTTPS poll (schedule)
+    W->>D: upsert staging<br/>(url_canonical, hash)
+    W->>L: summarize + tag + embed<br/>(cached prompt)
+    L->>D: write summary · tags · embedding · confidence
+    U->>A: GET /reports/review (queue)
+    A->>D: SELECT staging WHERE status='pending'
+    U->>A: POST /reports/review/{id} (approve)
+    A->>D: promote staging → production
+    A->>D: INSERT audit_log
+```
+
+**(2) Similar Reports 쿼리 (pgvector kNN + 캐시)** — §5.5 · §6.1 F-1 · §7.6 엔드포인트 대응.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant FE as frontend
+    participant A as api
+    participant R as cache (Redis)
+    participant D as db
+
+    FE->>A: GET /reports/{id}/similar?k=10
+    A->>R: GET similar:{id}:10
+    alt cache hit
+        R-->>A: top-k payload
+    else cache miss
+        A->>D: SELECT ... ORDER BY embedding <-> $1<br/>(ivfflat / hnsw)
+        D-->>A: top-k rows + tags
+        A->>R: SET 5min TTL (SWR)
+    end
+    A-->>FE: top-k reports + 공통 태그
+```
+
+**(3) Anomaly Rule → Alert → Acknowledge** — §3.5 · §5.6 대응.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant S as scheduler
+    participant W as worker
+    participant D as db
+    participant SLK as Slack / Webhook
+    participant FE as frontend
+    participant A as api
+    participant U as SOC
+
+    S->>W: tick (rule window)
+    W->>D: evaluate rules (3σ · threshold)
+    alt match
+        W->>D: INSERT alerts
+        W->>SLK: HTTPS POST (channel payload)
+    end
+    FE->>A: GET /alerts (poll)
+    A->>D: SELECT alerts WHERE status='open'
+    A-->>FE: alert list
+    U->>A: POST /alerts/{id}/ack
+    A->>D: UPDATE alerts SET ack_by=...
+    A->>D: INSERT audit_log
+```
+
+### 7.4 배포 토폴로지
+
+**개발 환경 — Docker Compose (단일 호스트)**
+
+```mermaid
+flowchart LR
+    Dev[developer]
+    subgraph Host[dev host · docker compose]
+        FE[frontend]
+        API[api]
+        WK[worker]
+        LP[llm-proxy]
+        DB[(db volume)]
+        RC[(cache)]
+        OT[otel + grafana]
+    end
+    Dev -->|localhost| FE
+    FE --> API
+    API --> DB
+    API --> RC
+    API --> OT
+    WK --> DB
+    WK --> LP
+    WK --> OT
+    LP --> OT
+```
+
+**운영 환경 — Terraform · 관리형 서비스**
+
+```mermaid
+flowchart TB
+    Net[Internet]
+    CDN[CDN / WAF]
+    ALB[ALB / Ingress]
+    FE[frontend<br/>static hosting]
+    API[api<br/>N replicas]
+    WK[worker<br/>ECS · k8s job set]
+    LP[llm-proxy<br/>격리 · 별도 시크릿 스코프]
+    DB[(Managed Postgres<br/>+ pgvector)]
+    RC[(Managed Redis)]
+    OBS[Observability<br/>Prom · Grafana · Sentry]
+    SEC[Vault / SSM<br/>비밀 관리]
+
+    Net --> CDN --> ALB
+    ALB --> FE
+    ALB --> API
+    API --> DB
+    API --> RC
+    API --> SEC
+    API --> OBS
+    WK --> DB
+    WK --> LP
+    WK --> OBS
+    LP --> SEC
+    LP --> OBS
+```
+
+배포는 GitHub Actions + OIDC로 수행하며(§9.5), 모든 비밀은 Vault/SSM에서 런타임 주입한다(§9.4). `llm-proxy`는 독립된 시크릿 스코프와 네트워크 egress 정책을 가진다.
+
+### 7.5 기술 스택 (v1.0 대비 변경점 **굵게**)
 
 | 계층 | 기술 | 비고 |
 |:---|:---|:---|
@@ -332,20 +551,7 @@ v1.0의 15개 기능을 유지하고, v2.0에서 다음 7개 기능을 추가한
 | CI/CD | **GitHub Actions + Docker + pre-commit** | lint·type·test 게이트 |
 | IaC | **Docker Compose (dev) / Terraform (prod)** | — |
 
-### 7.2 서비스 구성
-
-```
-frontend  (Next.js static export 또는 SPA)
-api       (FastAPI, /api/v1)
-worker    (Prefect agent)
-llm-proxy (프롬프트 캐시, 키 관리, 사용량 모니터링)
-db        (Postgres16 + pgvector)
-cache     (Redis)
-otel      (OpenTelemetry Collector)
-grafana   (대시보드)
-```
-
-### 7.3 API 엔드포인트 (v2.0 추가분)
+### 7.6 API 엔드포인트 (v2.0 추가분)
 
 v1.0의 15개 엔드포인트를 유지하고 다음을 추가한다:
 
@@ -380,7 +586,7 @@ GET  /api/v1/export/csv?entity=reports     CSV
 
 모든 엔드포인트는 OpenAPI 3.1 스펙으로 문서화되며, Pact 계약 테스트로 프론트/백엔드 호환성을 검증한다.
 
-### 7.4 성능 전략
+### 7.7 성능 전략
 
 - **Materialized Views**: `mv_year_group_sector`, `mv_country_motivation_year` 등. Prefect가 야간 재계산.
 - **Redis 캐시**: aggregate 응답 5분 TTL, `stale-while-revalidate`.
@@ -431,6 +637,8 @@ Internet ──▶ CDN/WAF ──▶ Frontend ──▶ API ──▶ DB
                                 │
                                 └──▶ Worker ──▶ External Feeds / LLM
 ```
+
+> 전체 트러스트 경계는 §7.2 컨테이너 뷰에 프로토콜 레이블과 함께 표현되어 있다.
 
 ### 9.2 위협 모델 (STRIDE 요약)
 
