@@ -303,7 +303,14 @@ async def upsert_report(
     )
     row_id_tuple = existing.first()
     if row_id_tuple is not None:
-        return UpsertOutcome(id=row_id_tuple[0], action=UpsertAction.EXISTING)
+        report_id = row_id_tuple[0]
+        # Still attach this row's tags even though the report already
+        # existed. If two workbook rows share a canonical URL, tags
+        # from both must survive — otherwise the second row is silent
+        # data loss, not a true no-op. `_attach_report_tags` is itself
+        # idempotent: already-linked tags are skipped.
+        await _attach_report_tags(session, report_id, row.tags, aliases)
+        return UpsertOutcome(id=report_id, action=UpsertAction.EXISTING)
 
     insert_result = await session.execute(
         sa.insert(reports_table)

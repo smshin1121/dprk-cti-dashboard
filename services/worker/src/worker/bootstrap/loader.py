@@ -112,21 +112,48 @@ class WorkbookLoader:
             except StopIteration:
                 return
 
-            header_tuple = tuple(header_row[: len(expected_headers)])
-            if list(header_tuple) != expected_headers:
+            # Drop trailing None cells so openpyxl's "allocated but
+            # empty" columns don't count as schema drift.
+            header_list = list(header_row)
+            while header_list and header_list[-1] is None:
+                header_list.pop()
+
+            if header_list != expected_headers:
                 raise WorkbookLoaderError(
                     f"sheet {sheet!r} header mismatch; "
-                    f"expected {expected_headers!r} but got {list(header_tuple)!r}"
+                    f"expected {expected_headers!r} but got {header_list!r}"
                 )
 
+            expected_width = len(expected_fields)
             data_index = 0
             for raw in row_iter:
-                cells = tuple(raw[: len(expected_fields)])
-                if all(cell is None or (isinstance(cell, str) and not cell.strip()) for cell in cells):
+                cells = list(raw)
+                # Strict-match the column count against the header —
+                # an extra populated cell beyond expected_width means
+                # an upstream workbook has added a column that the
+                # loader does not know how to map.
+                overflow = cells[expected_width:]
+                if any(
+                    cell is not None
+                    and not (isinstance(cell, str) and not cell.strip())
+                    for cell in overflow
+                ):
+                    raise WorkbookLoaderError(
+                        f"sheet {sheet!r} has a populated cell beyond the "
+                        f"expected {expected_width} columns; upstream "
+                        f"workbook likely added a column without updating "
+                        f"SHEET_HEADER_MAP"
+                    )
+
+                trimmed = cells[:expected_width]
+                if all(
+                    cell is None or (isinstance(cell, str) and not cell.strip())
+                    for cell in trimmed
+                ):
                     continue
                 data_index += 1
                 mapped: dict[str, object] = {
-                    field: cell for field, cell in zip(expected_fields, cells)
+                    field: cell for field, cell in zip(expected_fields, trimmed)
                 }
                 yield WorkbookRow(sheet=sheet, index=data_index, data=mapped)
         finally:

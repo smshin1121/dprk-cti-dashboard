@@ -278,6 +278,40 @@ async def test_upsert_report_url_canonical_collapses_tracking_params(
     assert await _count(db_session, reports_table) == 1
 
 
+async def test_upsert_report_duplicate_url_merges_tags(
+    db_session: AsyncSession, aliases
+) -> None:
+    """When two workbook rows share a canonical URL, the second row's
+    tags must still be attached to the single surviving report row.
+    Otherwise dedupe turns into silent data loss — the issue Codex
+    flagged during the PR #5 review."""
+    first = ReportRow(
+        published=dt.date(2024, 3, 15),
+        author="Mandiant",
+        title="Lazarus macOS backdoor",
+        url="https://example.com/threat/lazarus-macos",
+        tags="#lazarus",
+    )
+    second = ReportRow(
+        published=dt.date(2024, 3, 15),
+        author="Mandiant",
+        title="Lazarus macOS backdoor",
+        url="https://example.com/threat/lazarus-macos",
+        tags="#crypto #cve-2024-1234",
+    )
+    first_outcome = await upsert_report(db_session, first, aliases)
+    second_outcome = await upsert_report(db_session, second, aliases)
+
+    assert first_outcome.id == second_outcome.id
+    assert first_outcome.action is UpsertAction.INSERTED
+    assert second_outcome.action is UpsertAction.EXISTING
+    # Only one reports row survives…
+    assert await _count(db_session, reports_table) == 1
+    # …but both rows' tags are attached to it.
+    assert await _count(db_session, tags_table) == 3  # lazarus, crypto, cve-2024-1234
+    assert await _count(db_session, report_tags_table) == 3
+
+
 async def test_upsert_report_with_no_tags(db_session: AsyncSession, aliases) -> None:
     row = ReportRow(
         published=dt.date(2024, 5, 10),
