@@ -555,6 +555,66 @@ async def test_run_bootstrap_second_run_is_noop_on_happy_fixture(
 # ---------------------------------------------------------------------------
 
 
+async def test_run_bootstrap_preserves_caller_outer_transaction(
+    db_session: AsyncSession, tmp_path: Path, aliases=None
+) -> None:
+    """Codex round 3 P1: if the caller is already inside a
+    transaction when run_bootstrap is called, the ETL must NOT
+    commit or roll back the caller's outer transaction. It is
+    allowed to manipulate only its own SAVEPOINT.
+
+    Setup: write one row through the caller's transaction BEFORE
+    calling run_bootstrap. That row must survive the ETL (both
+    dry-run and real) because the caller hasn't committed yet.
+    """
+    # Insert a sentinel row directly through the caller's session
+    # inside the caller's transaction. This starts the session's
+    # autobegin transaction.
+    await db_session.execute(
+        sa.insert(groups_table).values(name="SentinelGroup")
+    )
+    # Prove the insert landed inside the caller's uncommitted txn.
+    assert await _count(db_session, groups_table) == 1
+
+    wb_path = _write_synthetic_workbook(
+        tmp_path / "happy.xlsx",
+        actors=[{"name": "Lazarus Group", "associated_group": "Lazarus"}],
+    )
+
+    # Dry-run: run_bootstrap must roll back only its own SAVEPOINT;
+    # the sentinel row must still be visible through the caller's
+    # session.
+    await run_bootstrap(
+        db_session,
+        workbook=wb_path,
+        aliases_path=ALIASES,
+        errors_path=None,
+        dry_run=True,
+        limit=None,
+        stdout=io.StringIO(),
+    )
+    assert await _count(db_session, groups_table) == 1  # sentinel survives
+
+    # Non-dry-run: run_bootstrap releases its SAVEPOINT (its own
+    # rows become part of the caller's transaction) but must NOT
+    # commit the caller's outer transaction. Both the sentinel and
+    # the ETL's Lazarus group are visible; neither is yet committed
+    # from the caller's perspective.
+    await run_bootstrap(
+        db_session,
+        workbook=wb_path,
+        aliases_path=ALIASES,
+        errors_path=None,
+        dry_run=False,
+        limit=None,
+        stdout=io.StringIO(),
+    )
+    assert await _count(db_session, groups_table) == 2  # sentinel + Lazarus
+    # The caller's outer transaction is still active — run_bootstrap
+    # did not commit it out from under the caller.
+    assert db_session.in_transaction()
+
+
 async def test_run_bootstrap_errors_path_none_disables_writer(
     db_session: AsyncSession, tmp_path: Path
 ) -> None:

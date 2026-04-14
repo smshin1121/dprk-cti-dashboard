@@ -82,17 +82,38 @@ __all__ = [
 ]
 
 
-# Resolve defaults relative to the bootstrap package's own location
-# so the CLI works regardless of cwd. This module lives at
-# ``services/worker/src/worker/bootstrap/cli.py``, so walking up five
-# parents lands on the repo root where both the aliases dictionary and
-# the ``artifacts/`` directory live. Installed wheels should always
-# pass --aliases-path explicitly because parents[5] is undefined there.
 _PACKAGE_DIR = Path(__file__).resolve().parents[0]
-_REPO_ROOT = _PACKAGE_DIR.parents[4]
-_DEFAULT_ALIASES_PATH = _REPO_ROOT / "data/dictionaries/aliases.yml"
 _DEFAULT_ERRORS_PATH = Path("artifacts/bootstrap_errors.jsonl")
 _DATABASE_URL_ENV_VAR = "BOOTSTRAP_DATABASE_URL"
+
+
+def _default_aliases_path() -> Path:
+    """Resolve the default alias-dictionary path across both
+    deployment modes.
+
+    1. **Repo checkout.** cli.py lives five parents below the repo
+       root (``services/worker/src/worker/bootstrap/cli.py``), so
+       walking up to ``<repo>/data/dictionaries/aliases.yml`` hits
+       the canonical shared copy.
+    2. **Installed wheel.** The shared copy is mirrored into the
+       worker package via the hatch ``force-include`` rule in
+       ``services/worker/pyproject.toml``, landing at
+       ``worker/bootstrap/data/aliases.yml``. We resolve it next to
+       ``cli.py`` so the CLI default works even for users who never
+       check out the repository.
+
+    The resolution order is checkout -> package data so a developer
+    editing the YAML in the repo still sees their edits without
+    needing to reinstall the wheel.
+    """
+    checkout_candidate = _PACKAGE_DIR.parents[4] / "data/dictionaries/aliases.yml"
+    if checkout_candidate.exists():
+        return checkout_candidate
+    packaged_candidate = _PACKAGE_DIR / "data/aliases.yml"
+    return packaged_candidate
+
+
+_DEFAULT_ALIASES_PATH = _default_aliases_path()
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -219,13 +240,19 @@ async def run_bootstrap(
     total = 0
     failures = 0
 
-    # Transaction scope for the run. We use ``begin_nested()`` as
-    # the outer boundary because it tolerates both states the
-    # session can arrive in: no active transaction (autobegin
-    # triggers and creates SAVEPOINT on top) and an already-active
-    # autobegin transaction from a prior session operation (just a
-    # SAVEPOINT on top). Either way we get a clean rollback target.
-    outer_savepoint = await session.begin_nested()
+    # Transaction boundary: we MUST NOT commit or roll back any
+    # outer transaction the caller already started. Everything we
+    # do goes inside a SAVEPOINT so our commit or rollback releases
+    # or discards only our own changes.
+    #
+    # If the caller did NOT own an outer transaction, ``begin_nested``
+    # autobegins one for us (we "own" it). In that case we also
+    # commit or roll back the autobegun outer so no ETL state leaks
+    # into the session after the function returns. If the caller
+    # DID own the outer, we leave it completely alone.
+    caller_owns_outer = session.in_transaction()
+    etl_savepoint = await session.begin_nested()
+
     try:
         with DeadLetterWriter(errors_path) as dead_letter:
             for wb_row in loader.iter_all():
@@ -253,21 +280,22 @@ async def run_bootstrap(
                     )
 
         if dry_run:
-            await outer_savepoint.rollback()
-            # Also roll back the enclosing autobegin transaction so
-            # no trace of the run survives in the session state. On
-            # some drivers the savepoint rollback alone leaves the
-            # released inner-savepoint rows visible until the outer
-            # transaction itself ends.
-            if session.in_transaction():
+            await etl_savepoint.rollback()
+            # Also close out any autobegin transaction WE started so
+            # released savepoint state from earlier rows does not
+            # stay visible on the session after this function
+            # returns. Only do this when the outer was ours — if
+            # the caller owned it, leave it untouched.
+            if not caller_owns_outer and session.in_transaction():
                 await session.rollback()
         else:
-            await outer_savepoint.commit()
-            await session.commit()
+            await etl_savepoint.commit()
+            if not caller_owns_outer and session.in_transaction():
+                await session.commit()
     except BaseException:
-        if outer_savepoint.is_active:
-            await outer_savepoint.rollback()
-        if session.in_transaction():
+        if etl_savepoint.is_active:
+            await etl_savepoint.rollback()
+        if not caller_owns_outer and session.in_transaction():
             await session.rollback()
         raise
 
@@ -281,6 +309,28 @@ async def run_bootstrap(
 
 
 _DRY_RUN_FALLBACK_URL = "sqlite+aiosqlite:///:memory:"
+
+
+def _is_sqlite_memory_url(database_url: str) -> bool:
+    """Return True if ``database_url`` points at an in-memory sqlite DB.
+
+    Covers every form SQLAlchemy accepts:
+      - ``sqlite:///:memory:``
+      - ``sqlite+aiosqlite:///:memory:``
+      - ``sqlite+pysqlite:///:memory:``
+      - ``sqlite+aiosqlite://`` (no path = in-memory)
+      - URLs with the ``?cache=shared`` query suffix
+    """
+    try:
+        from sqlalchemy.engine.url import make_url
+
+        url = make_url(database_url)
+    except Exception:  # pragma: no cover — defensive
+        return False
+    if not url.drivername.startswith("sqlite"):
+        return False
+    database = url.database or ""
+    return database in ("", ":memory:")
 
 
 async def _main_async(args: argparse.Namespace) -> int:
@@ -303,7 +353,14 @@ async def _main_async(args: argparse.Namespace) -> int:
     engine = create_async_engine(database_url)
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
     try:
-        if args.dry_run and database_url == _DRY_RUN_FALLBACK_URL:
+        # Provision the schema on the fly for ANY sqlite-memory URL,
+        # not just the implicit fallback. An operator who passes
+        # ``--database-url sqlite+aiosqlite:///:memory:`` explicitly
+        # should get the same behavior as the implicit fallback —
+        # anything else would make the explicit form mysteriously
+        # fail with "no such table" and the two paths diverge for
+        # no functional reason.
+        if args.dry_run and _is_sqlite_memory_url(database_url):
             # Import locally to keep the hot path import-light for
             # production invocations that already have a real schema.
             from worker.bootstrap.tables import metadata

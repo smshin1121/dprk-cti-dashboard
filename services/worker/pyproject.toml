@@ -33,6 +33,15 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/worker"]
 
+[tool.hatch.build.targets.wheel.force-include]
+# Ship the shared alias dictionary inside the worker wheel so
+# `python -m worker.bootstrap --workbook ...` works from an
+# installed package without requiring --aliases-path. The
+# repo-checkout path resolves to `data/dictionaries/aliases.yml`
+# at the repo root; this entry mirrors that file into the wheel
+# at `worker/bootstrap/data/aliases.yml`.
+"../../data/dictionaries/aliases.yml" = "worker/bootstrap/data/aliases.yml"
+
 [dependency-groups]
 dev = [
     "pytest>=8",

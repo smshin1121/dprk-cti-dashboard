@@ -16,6 +16,7 @@ import pytest
 from worker.bootstrap.cli import (
     _DEFAULT_ALIASES_PATH,
     _DEFAULT_ERRORS_PATH,
+    _is_sqlite_memory_url,
     _resolve_dead_letter_path,
     build_parser,
     main,
@@ -122,6 +123,44 @@ def test_main_without_database_url_on_real_run_returns_1(
     assert "BOOTSTRAP_DATABASE_URL" in captured.err or "--database-url" in captured.err
 
 
+@pytest.mark.parametrize(
+    "url",
+    [
+        "sqlite:///:memory:",
+        "sqlite+aiosqlite:///:memory:",
+        "sqlite+pysqlite:///:memory:",
+        "sqlite+aiosqlite://",
+    ],
+)
+def test_is_sqlite_memory_url_matches_every_form(url: str) -> None:
+    assert _is_sqlite_memory_url(url) is True
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "sqlite+aiosqlite:///./worker.db",
+        "sqlite:///path/to/worker.db",
+        "postgresql+psycopg://user:pass@localhost/dprk_cti",
+        "postgresql://localhost/dprk_cti",
+        "not-a-url",
+    ],
+)
+def test_is_sqlite_memory_url_rejects_non_memory(url: str) -> None:
+    assert _is_sqlite_memory_url(url) is False
+
+
+def test_default_aliases_path_resolves_to_existing_file() -> None:
+    """The default must point at a file that actually exists on
+    disk — either the repo-checkout copy or the package-data copy
+    shipped inside the worker wheel. Without this guard the default
+    silently bakes in a broken path."""
+    assert _DEFAULT_ALIASES_PATH.exists(), (
+        f"default aliases path {_DEFAULT_ALIASES_PATH} does not exist — "
+        f"the fallback resolution in cli.py is broken"
+    )
+
+
 def test_main_dry_run_without_database_url_uses_in_memory_fallback(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -149,4 +188,33 @@ def test_main_dry_run_without_database_url_uses_in_memory_fallback(
     # exit code reflects that (2), NOT 1. 1 would indicate the CLI
     # refused to run, which is exactly the regression this test
     # prevents.
+    assert exit_code in (0, 2)
+
+
+def test_main_dry_run_with_explicit_sqlite_memory_url_provisions_schema(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Codex round 3 P2: passing ``--database-url sqlite+aiosqlite:///:memory:``
+    explicitly must work the same as omitting the flag. The schema
+    auto-provision path is gated on "sqlite memory URL", not on
+    "implicit fallback was triggered"."""
+    monkeypatch.delenv("BOOTSTRAP_DATABASE_URL", raising=False)
+
+    repo_root = Path(__file__).resolve().parents[4]
+    fixture = repo_root / "services/worker/tests/fixtures/bootstrap_sample.xlsx"
+
+    exit_code = main(
+        [
+            "--workbook",
+            str(fixture),
+            "--dry-run",
+            "--errors-path",
+            "",
+            "--database-url",
+            "sqlite+aiosqlite:///:memory:",
+        ]
+    )
+    # Exits 2 on the stress fixture (exceeds 5%), not 1 (CLI
+    # refused) and not a "no such table" runtime error.
     assert exit_code in (0, 2)
