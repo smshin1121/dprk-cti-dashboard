@@ -1,8 +1,11 @@
+import os
+
 from fastapi import Depends, FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import get_settings
 from .deps import verify_token
+from .telemetry import setup_telemetry
 from .routers import (
     alerts,
     analytics,
@@ -42,6 +45,15 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
 )
+
+
+# ---------------------------------------------------------------------------
+# OpenTelemetry — instruments FastAPI, SQLAlchemy, HTTPX. No-op if
+# OTEL_EXPORTER_OTLP_ENDPOINT is unset (e.g. unit tests).
+# ---------------------------------------------------------------------------
+from . import db as _db  # noqa: E402 — deferred to avoid eager engine build at import
+
+setup_telemetry(app, engine=_db.engine if os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT") else None)
 
 
 # ---------------------------------------------------------------------------

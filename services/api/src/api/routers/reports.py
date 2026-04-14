@@ -5,7 +5,7 @@ router = APIRouter()
 
 
 @router.get("/{report_id}/similar")
-def similar_reports(report_id: int, k: int = 10) -> JSONResponse:
+async def similar_reports(report_id: int, k: int = 10) -> JSONResponse:
     """§5.2 pgvector similarity search for related reports.
 
     Stub: returns 501 for consistency with all other protected endpoints.
@@ -31,7 +31,7 @@ def similar_reports(report_id: int, k: int = 10) -> JSONResponse:
 
 
 @router.post("/review/{report_id}")
-def review_report(report_id: int) -> JSONResponse:
+async def review_report(report_id: int) -> JSONResponse:
     """§5.3 Human-in-the-loop approve/reject workflow for AI-generated reports."""
     return JSONResponse(
         status_code=501,

@@ -1,11 +1,13 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
+
+from ..deps import require_role
 
 router = APIRouter()
 
 
 @router.get("")
-def list_alerts() -> JSONResponse:
+async def list_alerts() -> JSONResponse:
     """§5.5 Alerts feed (paginated).
 
     Stub: returns 501 for consistency with all other protected endpoints.
@@ -22,7 +24,7 @@ def list_alerts() -> JSONResponse:
 
 
 @router.post("/{alert_id}/ack")
-def ack_alert(alert_id: int) -> JSONResponse:
+async def ack_alert(alert_id: int) -> JSONResponse:
     """§5.5 Acknowledge an alert and mark it handled."""
     return JSONResponse(
         status_code=501,
@@ -34,9 +36,9 @@ def ack_alert(alert_id: int) -> JSONResponse:
     )
 
 
-@router.post("/rules")
-def create_alert_rule() -> JSONResponse:
-    """§5.5 Create a new alert rule (CRUD — create stub only)."""
+@router.post("/rules", dependencies=[Depends(require_role("admin"))])
+async def create_alert_rule() -> JSONResponse:
+    """§5.5 / §9.3 Create a new alert rule. Admin role required."""
     return JSONResponse(
         status_code=501,
         content={"status": "not_implemented", "endpoint": "alerts.rules.create"},

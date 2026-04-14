@@ -5,7 +5,7 @@ router = APIRouter()
 
 
 @router.get("/attack-heatmap")
-def attack_heatmap() -> JSONResponse:
+async def attack_heatmap() -> JSONResponse:
     """§5.4 ATT&CK heatmap aggregation (tactic x technique matrix)."""
     return JSONResponse(
         status_code=501,
@@ -14,7 +14,7 @@ def attack_heatmap() -> JSONResponse:
 
 
 @router.get("/attribution-graph")
-def attribution_graph() -> JSONResponse:
+async def attribution_graph() -> JSONResponse:
     """§5.4 Threat actor attribution graph (nodes + edges)."""
     return JSONResponse(
         status_code=501,
@@ -26,7 +26,7 @@ def attribution_graph() -> JSONResponse:
 
 
 @router.get("/geopolitical")
-def geopolitical_context() -> JSONResponse:
+async def geopolitical_context() -> JSONResponse:
     """§5.4 Geopolitical event correlation with DPRK cyber activity."""
     return JSONResponse(
         status_code=501,
@@ -35,7 +35,7 @@ def geopolitical_context() -> JSONResponse:
 
 
 @router.get("/forecast")
-def forecast() -> JSONResponse:
+async def forecast() -> JSONResponse:
     """§5.4 Short-term threat forecast (LLM + time-series heuristics)."""
     return JSONResponse(
         status_code=501,

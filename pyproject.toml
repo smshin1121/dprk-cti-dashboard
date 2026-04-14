@@ -1,0 +1,10 @@
+# Root pyproject.toml — pytest configuration for running tests from the repo root.
+# Dependency management is in services/api/pyproject.toml.
+[tool.pytest.ini_options]
+testpaths = ["services/api/tests"]
+asyncio_mode = "auto"
+addopts = ["-ra", "--strict-markers", "--strict-config"]
+filterwarnings = [
+    "ignore::DeprecationWarning:authlib.*",
+    "ignore::DeprecationWarning:fakeredis.*",
+]

@@ -4,6 +4,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
 from .routers import provider
+from .telemetry import setup_telemetry
 
 # ---------------------------------------------------------------------------
 # Internal shared-secret guard.
@@ -27,6 +28,9 @@ app = FastAPI(
     redoc_url=_redoc_url,
     openapi_url=_openapi_url,
 )
+
+# OTel — no-op if OTEL_EXPORTER_OTLP_ENDPOINT is unset.
+setup_telemetry(app)
 
 
 @app.middleware("http")

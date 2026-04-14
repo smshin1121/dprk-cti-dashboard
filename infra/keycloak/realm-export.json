@@ -1,0 +1,146 @@
+{
+  "id": "dprk-cti",
+  "realm": "dprk-cti",
+  "displayName": "DPRK CTI",
+  "enabled": true,
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": false,
+  "editUsernameAllowed": false,
+  "bruteForceProtected": true,
+  "accessTokenLifespan": 300,
+  "accessTokenLifespanForImplicitFlow": 900,
+  "ssoSessionIdleTimeout": 3600,
+  "ssoSessionMaxLifespan": 36000,
+  "offlineSessionIdleTimeout": 2592000,
+  "accessCodeLifespan": 60,
+  "accessCodeLifespanUserAction": 300,
+  "accessCodeLifespanLogin": 1800,
+  "roles": {
+    "realm": [
+      {
+        "name": "analyst",
+        "description": "DPRK CTI analyst — read/write incidents, IOCs, reports",
+        "composite": false,
+        "clientRole": false,
+        "containerId": "dprk-cti"
+      },
+      {
+        "name": "admin",
+        "description": "DPRK CTI administrator — full platform access",
+        "composite": false,
+        "clientRole": false,
+        "containerId": "dprk-cti"
+      },
+      {
+        "name": "policy",
+        "description": "DPRK CTI policy reviewer — read-only access to dashboards and reports",
+        "composite": false,
+        "clientRole": false,
+        "containerId": "dprk-cti"
+      }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "dprk-cti-api",
+      "name": "DPRK CTI API",
+      "description": "Confidential OIDC client for the DPRK CTI API service",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "dev-secret-rotate-in-prod",
+      "clientAuthenticatorType": "client-secret",
+      "redirectUris": [
+        "http://localhost:8000/api/v1/auth/callback"
+      ],
+      "webOrigins": [
+        "http://localhost:5173",
+        "http://localhost:8000"
+      ],
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "authorizationServicesEnabled": false,
+      "fullScopeAllowed": true,
+      "frontchannelLogout": true,
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:8000/*##http://localhost:5173/*"
+      },
+      "defaultClientScopes": [
+        "web-origins",
+        "acr",
+        "profile",
+        "roles",
+        "email"
+      ],
+      "optionalClientScopes": [
+        "address",
+        "phone",
+        "offline_access",
+        "microprofile-jwt"
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "analyst@dev.local",
+      "email": "analyst@dev.local",
+      "firstName": "Alice",
+      "lastName": "Analyst",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "test1234",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "analyst"
+      ]
+    },
+    {
+      "username": "admin@dev.local",
+      "email": "admin@dev.local",
+      "firstName": "Adam",
+      "lastName": "Admin",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "test1234",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "admin",
+        "analyst"
+      ]
+    },
+    {
+      "username": "policy@dev.local",
+      "email": "policy@dev.local",
+      "firstName": "Paula",
+      "lastName": "Policy",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "test1234",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "policy"
+      ]
+    }
+  ]
+}

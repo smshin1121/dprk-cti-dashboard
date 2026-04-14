@@ -1,5 +1,9 @@
 from prefect import flow, get_run_logger
 
+from .telemetry import setup_telemetry
+
+setup_telemetry()
+
 
 @flow(name="bootstrap-etl")
 def bootstrap_etl() -> None:
