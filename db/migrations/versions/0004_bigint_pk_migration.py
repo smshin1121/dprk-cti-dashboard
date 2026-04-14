@@ -4,9 +4,9 @@ Revision ID: 0004_bigint_pk_migration
 Revises: 0003_audit_entity_nullable
 Create Date: 2026-04-14
 
-Preflight migration for PR #4 (Bootstrap ETL). Widens every Integer
+Preflight migration for PR #5 (Bootstrap ETL). Widens every Integer
 primary key declared in 0001_initial_schema, and every referencing
-foreign key column, to BigInteger. See docs/plans/pr4-bootstrap-etl.md
+foreign key column, to BigInteger. See docs/plans/pr5-bootstrap-etl.md
 task T1 for rationale and rollback expectations.
 
 Tables whose PKs are widened:
