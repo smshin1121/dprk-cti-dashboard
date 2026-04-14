@@ -1,6 +1,6 @@
 """URL canonicalization, title hashing, and tag classification.
 
-Two responsibilities split across this module:
+Three responsibilities split across this module:
 
 1. **Deterministic identity** for reports
    :func:`canonicalize_url` produces the key used by
@@ -9,22 +9,35 @@ Two responsibilities split across this module:
    ``reports.sha256_title`` so a report whose URL changes after
    publication can still be deduplicated by title.
 
-2. **Tag classification** (T5 — lands in the next commit)
+2. **Tag classification**
    The ``tags`` cell in the v1.0 workbook is a free-form whitespace-
    separated list of hashtags. :func:`classify_tags` turns them into
-   typed ``(type, canonical_name)`` tuples.
+   typed :class:`ClassifiedTag` records suitable for the ``tags`` +
+   ``report_tags`` upsert.
 """
 
 from __future__ import annotations
 
 import hashlib
 import re
-from typing import Iterable, Sequence
+from dataclasses import dataclass
+from typing import Iterable
 from urllib.parse import ParseResult, parse_qsl, quote, unquote, urlencode, urlsplit, urlunsplit
+
+from worker.bootstrap.aliases import AliasDictionary
 
 
 __all__ = [
+    "ClassifiedTag",
+    "DEFAULT_SECTOR_CODES",
+    "TAG_TYPE_ACTOR",
+    "TAG_TYPE_CVE",
+    "TAG_TYPE_MALWARE",
+    "TAG_TYPE_OPERATION",
+    "TAG_TYPE_SECTOR",
+    "TAG_TYPE_UNKNOWN",
     "canonicalize_url",
+    "classify_tags",
     "sha256_title",
 ]
 
@@ -185,3 +198,148 @@ def sha256_title(title: str) -> str:
     collapsed = _WHITESPACE_RUN.sub(" ", trimmed)
     normalized = collapsed.casefold()
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
+# ---------------------------------------------------------------------------
+# classify_tags
+# ---------------------------------------------------------------------------
+#
+# Precedence order (most specific first):
+#   1. CVE   — strict regex ``cve-YYYY-N{4,7}`` is unambiguous.
+#   2. actor — any groups-type canonical in the alias dictionary.
+#   3. malware — any malware-type canonical in the alias dictionary.
+#   4. operation — any campaigns-type canonical in the alias dictionary.
+#   5. sector — any entry in the sector-code set.
+#   6. unknown_type — fallback, preserves the raw tag for later LLM
+#      cleanup rather than silently dropping.
+#
+# The classifier never raises; unparseable input becomes a zero-length
+# list so a report with no tags is indistinguishable from a report with
+# a ``None`` tags cell.
+
+TAG_TYPE_ACTOR = "actor"
+TAG_TYPE_MALWARE = "malware"
+TAG_TYPE_CVE = "cve"
+TAG_TYPE_OPERATION = "operation"
+TAG_TYPE_SECTOR = "sector"
+TAG_TYPE_UNKNOWN = "unknown_type"
+
+
+# Sector vocabulary. Kept small and stable; expand only when a new
+# sector shows up in real data AND the dashboard's sector filter learns
+# to render it.
+DEFAULT_SECTOR_CODES: frozenset[str] = frozenset(
+    {
+        "crypto",
+        "finance",
+        "healthcare",
+        "defense",
+        "energy",
+        "government",
+        "media",
+        "technology",
+        "telecom",
+        "transportation",
+        "retail",
+        "manufacturing",
+        "education",
+        "critical_infrastructure",
+    }
+)
+
+
+_CVE_PATTERN = re.compile(r"^cve-(\d{4})-(\d{4,7})$", re.IGNORECASE)
+_TAG_TOKEN_PATTERN = re.compile(r"#[^\s#]+")
+
+
+@dataclass(frozen=True)
+class ClassifiedTag:
+    """One tag parsed out of a workbook ``tags`` cell.
+
+    Attributes:
+      raw: the original token with the leading ``#`` stripped, but
+           otherwise untouched (case, punctuation). Suitable for
+           storage in ``tags.name`` when type is ``unknown_type``.
+      type_: one of the ``TAG_TYPE_*`` constants.
+      canonical: the canonical form resolved from the alias dictionary
+           or the sector set. ``None`` when type is ``unknown_type``.
+           For CVE tags, always uppercased ``CVE-YYYY-N``.
+    """
+
+    raw: str
+    type_: str
+    canonical: str | None
+
+
+def _classify_single(
+    token: str,
+    aliases: AliasDictionary,
+    sector_codes: frozenset[str],
+) -> ClassifiedTag:
+    """Resolve one already-stripped token (no leading ``#``)."""
+
+    # 1. CVE — unambiguous format match.
+    cve_match = _CVE_PATTERN.match(token)
+    if cve_match:
+        year, number = cve_match.groups()
+        return ClassifiedTag(
+            raw=token,
+            type_=TAG_TYPE_CVE,
+            canonical=f"CVE-{year}-{number}",
+        )
+
+    # 2–4. Alias-dictionary lookups. Order matters when a single tag
+    # legitimately resolves under multiple types (rare in practice but
+    # possible). Groups before malware before campaigns is an editorial
+    # choice — actor attribution is the load-bearing dimension.
+    for tag_type, alias_type in (
+        (TAG_TYPE_ACTOR, "groups"),
+        (TAG_TYPE_MALWARE, "malware"),
+        (TAG_TYPE_OPERATION, "campaigns"),
+    ):
+        canonical = aliases.normalize(alias_type, token)
+        if canonical is not None:
+            return ClassifiedTag(raw=token, type_=tag_type, canonical=canonical)
+
+    # 5. Sector vocabulary.
+    lowered = token.lower()
+    if lowered in sector_codes:
+        return ClassifiedTag(
+            raw=token,
+            type_=TAG_TYPE_SECTOR,
+            canonical=lowered,
+        )
+
+    # 6. Fallback — preserve the raw token so upstream audit can see
+    # what the pipeline rejected.
+    return ClassifiedTag(raw=token, type_=TAG_TYPE_UNKNOWN, canonical=None)
+
+
+def classify_tags(
+    tags_cell: str | None,
+    aliases: AliasDictionary,
+    *,
+    sector_codes: frozenset[str] = DEFAULT_SECTOR_CODES,
+) -> list[ClassifiedTag]:
+    """Parse ``tags_cell`` and classify each ``#``-prefixed token.
+
+    Accepts ``None`` or an empty string (returns ``[]``). A cell that
+    contains no ``#`` tokens at all returns ``[]`` — this is the
+    "no-parseable-tags" failure case in the fixture and is surfaced at
+    the pipeline level, not here.
+
+    Tokens are split on any whitespace OR any subsequent ``#``. This
+    means ``"#a#b"`` and ``"#a #b"`` both produce two tags, which
+    matches how the v1.0 workbook author entered them in practice.
+    """
+    if not tags_cell:
+        return []
+
+    matches: Iterable[str] = _TAG_TOKEN_PATTERN.findall(tags_cell)
+    results: list[ClassifiedTag] = []
+    for match in matches:
+        stripped = match[1:]  # drop leading '#'
+        if not stripped:
+            continue
+        results.append(_classify_single(stripped, aliases, sector_codes))
+    return results
