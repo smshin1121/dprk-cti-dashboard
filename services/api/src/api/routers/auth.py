@@ -45,8 +45,10 @@ from ..auth.oidc_client import (
 from ..auth.schemas import CurrentUser, SessionData
 from ..auth.session import (
     SessionStore,
+    clear_session_cookie,
     get_session_store,
     pop_oidc_state,
+    set_session_cookie,
     store_oidc_state,
 )
 from ..config import get_settings
@@ -107,30 +109,6 @@ def _safe_logout_redirect(value: str | None, allowed_origins: list[str]) -> str:
 def _callback_url() -> str:
     settings = get_settings()
     return f"{settings.oidc_redirect_base_url.rstrip('/')}/api/v1/auth/callback"
-
-
-def _set_session_cookie(response: Response, value: str) -> None:
-    settings = get_settings()
-    response.set_cookie(
-        key=settings.session_cookie_name,
-        value=value,
-        max_age=settings.session_ttl_seconds,
-        httponly=True,
-        secure=settings.session_cookie_secure,
-        samesite=settings.session_cookie_samesite,  # type: ignore[arg-type]
-        path="/",
-    )
-
-
-def _clear_session_cookie(response: Response) -> None:
-    settings = get_settings()
-    response.delete_cookie(
-        key=settings.session_cookie_name,
-        path="/",
-        secure=settings.session_cookie_secure,
-        httponly=True,
-        samesite=settings.session_cookie_samesite,  # type: ignore[arg-type]
-    )
 
 
 @router.get("/login")
@@ -195,13 +173,27 @@ async def callback(
         )
         raise HTTPException(status_code=401, detail="token exchange failed") from exc
 
-    id_token = token.get("id_token") or token.get("access_token")
-    if not id_token:
-        await _audit_failure(db, request, "missing_id_token")
-        raise HTTPException(status_code=401, detail="no id_token in token response")
+    # OIDC separates "who" from "what you can do": the id_token carries
+    # the stable subject identifier (``sub``) and identity fields, while
+    # Keycloak puts the role claim set (``realm_access.roles``) into the
+    # access_token. Verify both, merging identity from id_token with
+    # roles from access_token. If the provider omits one of the two,
+    # fall back to whatever we got.
+    id_token_raw = token.get("id_token")
+    access_token_raw = token.get("access_token")
+    if not id_token_raw and not access_token_raw:
+        await _audit_failure(db, request, "missing_tokens")
+        raise HTTPException(
+            status_code=401, detail="no tokens in OIDC response"
+        )
 
     try:
-        claims = await verify_jwt_token(id_token)
+        id_claims: dict = {}
+        access_claims: dict = {}
+        if id_token_raw:
+            id_claims = dict(await verify_jwt_token(id_token_raw))
+        if access_token_raw:
+            access_claims = dict(await verify_jwt_token(access_token_raw))
     except TokenExpiredError as exc:
         await _audit_failure(db, request, "token_expired")
         raise HTTPException(status_code=401, detail="token expired") from exc
@@ -212,8 +204,14 @@ async def callback(
         )
         raise HTTPException(status_code=401, detail="invalid token") from exc
 
-    sub, email, name = extract_identity(claims)
-    roles = extract_roles(claims)
+    # Identity: prefer the id_token (OIDC guarantees sub); fall back to
+    # access_token if the provider only returned one of the two.
+    identity_claims = id_claims or access_claims
+    sub, email, name = extract_identity(identity_claims)
+
+    # Roles: Keycloak ships them in the access_token's ``realm_access``.
+    # Fall back to id_token (which some custom mappers may populate too).
+    roles = extract_roles(access_claims) or extract_roles(id_claims)
     now = datetime.now(timezone.utc)
 
     session = SessionData(
@@ -240,7 +238,7 @@ async def callback(
     )
 
     response = RedirectResponse(url=target_redirect, status_code=302)
-    _set_session_cookie(response, cookie_value)
+    set_session_cookie(response, cookie_value)
     return response
 
 
@@ -279,7 +277,7 @@ async def logout(
     )
 
     response = Response(status_code=204)
-    _clear_session_cookie(response)
+    clear_session_cookie(response)
     return response
 
 

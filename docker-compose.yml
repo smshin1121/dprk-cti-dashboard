@@ -136,6 +136,16 @@ services:
       KC_HEALTH_ENABLED: "true"
       KC_HTTP_ENABLED: "true"
       KC_HOSTNAME_STRICT: "false"
+      # Frontend/backchannel URL split. With KC_HOSTNAME set to the host-
+      # facing URL, Keycloak stamps that into the discovery document's
+      # ``issuer`` and frontend URLs (authorization_endpoint,
+      # end_session_endpoint). With KC_HOSTNAME_BACKCHANNEL_DYNAMIC=true,
+      # backchannel URLs (token_endpoint, jwks_uri, userinfo_endpoint)
+      # are derived dynamically from the request Host header, so the API
+      # container can reach them via the internal ``keycloak:8080`` name
+      # while the browser sees ``localhost:8081`` URLs it can resolve.
+      KC_HOSTNAME: http://localhost:${KEYCLOAK_PORT:-8081}
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
     volumes:
       - ./infra/keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
     ports:

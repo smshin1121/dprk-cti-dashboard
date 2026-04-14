@@ -1,8 +1,9 @@
 """FastAPI dependencies.
 
 ``verify_token`` is the single auth gate used by every protected router.
-It loads the server-side session keyed by the signed cookie, refreshes
-its TTL (sliding expiration), and returns a :class:`CurrentUser`.
+It loads the server-side session keyed by the signed cookie, slides
+both sides of the session forward (Redis TTL + re-signed cookie), and
+returns a :class:`CurrentUser`.
 
 ``require_role`` is a dependency factory for endpoint-level RBAC checks.
 """
@@ -12,18 +13,26 @@ from __future__ import annotations
 from collections.abc import Callable, Coroutine
 from typing import Any
 
-from fastapi import Depends, HTTPException, Request
+from fastapi import Depends, HTTPException, Request, Response
 
 from .auth.schemas import CurrentUser
-from .auth.session import SessionStore, get_session_store
+from .auth.session import SessionStore, get_session_store, set_session_cookie
 from .config import get_settings
 
 
 async def verify_token(
     request: Request,
+    response: Response,
     session_store: SessionStore = Depends(get_session_store),
 ) -> CurrentUser:
-    """Authenticate the request via the signed session cookie."""
+    """Authenticate the request via the signed session cookie.
+
+    Sliding expiration is enforced on *both* sides on every authenticated
+    call: the Redis TTL is extended and the cookie is re-signed with a
+    fresh timestamp, then attached to the outgoing response. Without the
+    re-sign, the cookie would expire at ``first_sign + ttl`` even while
+    the Redis session stays alive.
+    """
     settings = get_settings()
     cookie = request.cookies.get(settings.session_cookie_name)
     if not cookie:
@@ -33,8 +42,13 @@ async def verify_token(
     if data is None:
         raise HTTPException(status_code=401, detail="session expired or invalid")
 
-    # Sliding expiration: every authenticated hit pushes the TTL forward.
-    await session_store.touch(cookie)
+    new_cookie = await session_store.touch(cookie)
+    if new_cookie is None:
+        # touch() failed after load() succeeded — the session was evicted
+        # between the two reads. Treat as unauthenticated rather than
+        # silently continuing with a stale identity.
+        raise HTTPException(status_code=401, detail="session expired or invalid")
+    set_session_cookie(response, new_cookie)
 
     return CurrentUser(
         sub=data.sub,

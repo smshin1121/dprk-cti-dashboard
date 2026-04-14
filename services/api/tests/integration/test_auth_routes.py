@@ -163,10 +163,14 @@ async def test_callback_happy_path_creates_session_and_sets_cookie(
     await fake_redis.set(f"oidc_state:{state}", state_payload, ex=60)
 
     id_token = _mint_id_token(auth_rsa_key, roles=["analyst"])
+    # Access token uses the same mint helper — it's a JWT signed with the
+    # same RSA key. The callback verifier runs both tokens through
+    # verify_jwt_token, merging identity from id_token and roles from
+    # access_token per Keycloak's claim layout.
+    access_token = _mint_id_token(auth_rsa_key, roles=["analyst"])
 
-    # 2. Mock Keycloak token exchange
     fake_token_response = {
-        "access_token": "fake-access-token",
+        "access_token": access_token,
         "id_token": id_token,
         "token_type": "Bearer",
         "expires_in": 3600,
@@ -282,6 +286,41 @@ async def _state_and_redirect(client, fake_redis):
 # Open-redirect protection — /login query param sanitization (C-1)
 # ---------------------------------------------------------------------------
 
+async def test_authenticated_request_slides_cookie(
+    client, make_session_cookie, test_signer
+):
+    """Every authenticated request must reissue the session cookie.
+
+    This pins the sliding-expiration contract end-to-end: verify_token
+    calls session_store.touch(), which re-signs the sid with a fresh
+    timestamp, and the dependency attaches it to the outgoing response.
+    Without this, the cookie would cryptographically expire at
+    first_sign + ttl even while Redis is alive.
+    """
+    cookie_value = await make_session_cookie(roles=["analyst"])
+    client.cookies.set("dprk_cti_session", cookie_value)
+
+    resp = await client.get("/api/v1/auth/me")
+    assert resp.status_code == 200
+
+    set_cookie_headers = resp.headers.get_list("set-cookie")
+    assert any(
+        "dprk_cti_session=" in h for h in set_cookie_headers
+    ), f"/me must reissue the session cookie; got: {set_cookie_headers}"
+
+    # The reissued cookie must still unwrap to the same sid as the
+    # original — sliding must not rotate the session id.
+    reissued_value: str | None = None
+    for h in set_cookie_headers:
+        if h.startswith("dprk_cti_session="):
+            reissued_value = h.split("=", 1)[1].split(";", 1)[0]
+            break
+    assert reissued_value is not None
+    original_sid = test_signer.loads(cookie_value, max_age=3600)
+    reissued_sid = test_signer.loads(reissued_value, max_age=3600)
+    assert reissued_sid == original_sid
+
+
 async def test_login_with_relative_path_redirect_preserved(client, fake_redis):
     """?redirect=/dashboard is preserved into the Redis state payload."""
     with patch.object(oidc_mod, "discover_metadata", new=AsyncMock(return_value=_fake_discovery())):
@@ -342,8 +381,9 @@ async def test_audit_log_called_on_callback_success(
     await fake_redis.set(f"oidc_state:{state}", state_payload, ex=60)
 
     id_token = _mint_id_token(auth_rsa_key, roles=["analyst"])
+    access_token = _mint_id_token(auth_rsa_key, roles=["analyst"])
     fake_token_response = {
-        "access_token": "fake-access",
+        "access_token": access_token,
         "id_token": id_token,
         "token_type": "Bearer",
         "expires_in": 3600,

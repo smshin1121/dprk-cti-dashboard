@@ -150,3 +150,50 @@ async def test_touch_extends_ttl(session_store, fake_redis, test_signer):
     ttl_after = await fake_redis.ttl(key)
     # After touch(), TTL should be back near session_store._ttl (3600)
     assert ttl_after > 10, f"TTL should have been extended; got {ttl_after}"
+
+
+async def test_touch_returns_resigned_cookie_with_same_sid(
+    session_store, test_signer
+):
+    """touch() returns a freshly-signed cookie that unwraps to the SAME sid.
+
+    This is the sliding-expiration contract: the caller uses the returned
+    value to update the browser cookie so its cryptographic freshness
+    window moves forward in lock-step with the Redis TTL. Without this,
+    the cookie would expire at first_sign + ttl even while Redis is
+    alive, producing a zombie session.
+    """
+    data = _make_session_data()
+    original_cookie = await session_store.create(data)
+    original_sid = test_signer.loads(original_cookie, max_age=3600)
+
+    new_cookie = await session_store.touch(original_cookie)
+
+    assert new_cookie is not None, "touch() must return a cookie on success"
+    assert isinstance(new_cookie, str)
+    new_sid = test_signer.loads(new_cookie, max_age=3600)
+    assert new_sid == original_sid, "the underlying sid must not change"
+
+
+async def test_touch_returns_none_when_session_missing(
+    session_store, fake_redis, test_signer
+):
+    """touch() returns None when the Redis session key is gone.
+
+    Simulates a session evicted between the ``load()`` and ``touch()``
+    calls inside ``verify_token``. The dependency must treat this as a
+    401 rather than silently continuing with a stale identity.
+    """
+    data = _make_session_data()
+    cookie = await session_store.create(data)
+    sid = test_signer.loads(cookie, max_age=3600)
+
+    # Eject the Redis session out from under the cookie
+    await fake_redis.delete(f"session:{sid}")
+
+    assert await session_store.touch(cookie) is None
+
+
+async def test_touch_returns_none_for_invalid_cookie(session_store):
+    """touch() returns None when the incoming cookie fails signature/age check."""
+    assert await session_store.touch("garbage-not-signed") is None

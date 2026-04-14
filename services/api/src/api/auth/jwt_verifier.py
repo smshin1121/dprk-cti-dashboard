@@ -124,9 +124,21 @@ async def verify_token(token: str) -> dict[str, Any]:
 
     key = JsonWebKey.import_key(key_dict)
 
+    # Audience / authorized-party validation.
+    #
+    # OIDC id_tokens carry the client_id in ``aud``. Keycloak access_tokens
+    # by default have ``aud: ["account"]`` and put the requesting client id
+    # in ``azp`` (authorized party — RFC 7519 + OIDC Core 1.0 §2). Accept
+    # either form so the verifier works for both token types without
+    # Keycloak-side audience-mapper configuration.
+    #
+    # ``aud`` is declared non-essential so the decode step does not reject
+    # Keycloak access tokens that ship without an ``aud`` at all (default
+    # Keycloak config emits ``azp`` and omits ``aud`` for confidential
+    # clients unless an explicit audience mapper is added). The real
+    # audience/authorized-party check runs after ``decode``.
     claims_options = {
         "iss": {"essential": True, "values": sorted(allowed_issuers)},
-        "aud": {"essential": True, "values": [settings.oidc_client_id]},
         "exp": {"essential": True},
     }
 
@@ -137,6 +149,16 @@ async def verify_token(token: str) -> dict[str, Any]:
         raise TokenExpiredError(str(exc)) from exc
     except (BadSignatureError, DecodeError, InvalidClaimError, JoseError) as exc:
         raise TokenInvalidError(str(exc)) from exc
+
+    # Audience / authorized-party manual check.
+    client_id = settings.oidc_client_id
+    aud = claims.get("aud")
+    azp = claims.get("azp")
+    aud_list = [aud] if isinstance(aud, str) else (aud or [])
+    if client_id not in aud_list and azp != client_id:
+        raise TokenInvalidError(
+            f"token not intended for this client: aud={aud_list!r} azp={azp!r}"
+        )
 
     return dict(claims)
 
