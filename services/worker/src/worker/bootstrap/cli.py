@@ -82,10 +82,15 @@ __all__ = [
 ]
 
 
-# Defaults are repo-root relative. The CLI resolves them against cwd,
-# which matches how the ``python -m worker.bootstrap`` invocation is
-# expected to be run.
-_DEFAULT_ALIASES_PATH = Path("data/dictionaries/aliases.yml")
+# Resolve defaults relative to the bootstrap package's own location
+# so the CLI works regardless of cwd. This module lives at
+# ``services/worker/src/worker/bootstrap/cli.py``, so walking up five
+# parents lands on the repo root where both the aliases dictionary and
+# the ``artifacts/`` directory live. Installed wheels should always
+# pass --aliases-path explicitly because parents[5] is undefined there.
+_PACKAGE_DIR = Path(__file__).resolve().parents[0]
+_REPO_ROOT = _PACKAGE_DIR.parents[4]
+_DEFAULT_ALIASES_PATH = _REPO_ROOT / "data/dictionaries/aliases.yml"
 _DEFAULT_ERRORS_PATH = Path("artifacts/bootstrap_errors.jsonl")
 _DATABASE_URL_ENV_VAR = "BOOTSTRAP_DATABASE_URL"
 

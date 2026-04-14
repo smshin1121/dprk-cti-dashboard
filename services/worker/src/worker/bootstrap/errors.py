@@ -3,13 +3,13 @@
 Two independent concerns, co-located because they are both triggered
 by the same event (a row failed to ingest):
 
-1. **DeadLetterWriter** — lazily opens a JSONL file at the configured
+1. **DeadLetterWriter** -lazily opens a JSONL file at the configured
    path and appends one line per failed row. The file is deliberately
    **not created** when there are zero failures, so an operator
    seeing the file on disk knows unconditionally that something went
    wrong.
 
-2. **decide_exit_code** — pure function that turns a ``(total,
+2. **decide_exit_code** -pure function that turns a ``(total,
    failures)`` counter pair into the exit-code tuple mandated by D5
    in ``docs/plans/pr5-bootstrap-etl.md``:
 
@@ -106,7 +106,7 @@ class DeadLetterWriter:
 
     def __init__(self, path: Path | None) -> None:
         self._path = path
-        self._handle = None  # lazy — see write()
+        self._handle = None  # lazy -see write()
         self._written = 0
 
     @property
@@ -181,10 +181,10 @@ def decide_exit_code(
     """Apply the D5 three-branch exit-code policy.
 
     Branches:
-      1. ``failures == 0`` — exit 0, "clean" summary.
-      2. ``0 < failures / total <= warning_rate`` — exit 0, "warning"
+      1. ``failures == 0`` -exit 0, "clean" summary.
+      2. ``0 < failures / total <= warning_rate`` -exit 0, "warning"
          summary that the operator should still notice.
-      3. ``failures / total > warning_rate`` — exit 2, "exceeded"
+      3. ``failures / total > warning_rate`` -exit 2, "exceeded"
          summary that trips CI.
 
     Edge cases:
@@ -217,7 +217,7 @@ def decide_exit_code(
             total=0,
             failures=failures,
             failure_rate=1.0,
-            summary=f"0 rows processed, {failures} failures — no rows counted",
+            summary=f"0 rows processed, {failures} failures - no rows counted",
         )
 
     rate = failures / total
@@ -229,7 +229,7 @@ def decide_exit_code(
             failure_rate=rate,
             summary=(
                 f"{total} rows processed, {failures} failures "
-                f"({rate:.2%}) — within {warning_rate:.0%} tolerance"
+                f"({rate:.2%}) - within {warning_rate:.0%} tolerance"
             ),
         )
 
@@ -240,6 +240,6 @@ def decide_exit_code(
         failure_rate=rate,
         summary=(
             f"{total} rows processed, {failures} failures "
-            f"({rate:.2%}) — exceeds {warning_rate:.0%} threshold"
+            f"({rate:.2%}) - exceeds {warning_rate:.0%} threshold"
         ),
     )

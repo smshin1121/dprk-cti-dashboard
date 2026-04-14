@@ -10,12 +10,17 @@ dependencies = [
   "opentelemetry-api>=1.27",
   "opentelemetry-sdk>=1.27",
   "opentelemetry-exporter-otlp-proto-grpc>=1.27",
-  # Bootstrap ETL (PR #5)
+  # Bootstrap ETL (PR #5 / PR #6)
   "openpyxl>=3.1.5",
   "pyyaml>=6.0.2",
   "pydantic>=2.9",
   "sqlalchemy[asyncio]>=2.0.36",
   "psycopg[binary]>=3.2.3",
+  # aiosqlite is required at runtime so `python -m worker.bootstrap`
+  # `--dry-run` without a configured database can fall back to an
+  # in-memory sqlite engine. The cost is ~30KB of pure-Python wheel;
+  # production runs against Postgres ignore this driver entirely.
+  "aiosqlite>=0.20",
 ]
 
 [project.scripts]
@@ -33,7 +38,6 @@ dev = [
     "pytest>=8",
     "pytest-asyncio>=0.24",
     "pytest-cov>=5",
-    "aiosqlite>=0.20",
 ]
 
 [tool.pytest.ini_options]
