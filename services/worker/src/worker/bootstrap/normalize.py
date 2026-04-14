@@ -22,7 +22,7 @@ import hashlib
 import re
 from dataclasses import dataclass
 from typing import Iterable
-from urllib.parse import ParseResult, parse_qsl, quote, unquote, urlencode, urlsplit, urlunsplit
+from urllib.parse import ParseResult, parse_qsl, urlencode, urlsplit, urlunsplit
 
 from worker.bootstrap.aliases import AliasDictionary
 
@@ -109,6 +109,14 @@ def _normalize_path(path: str) -> str:
     """Collapse adjacent slashes, drop a single trailing slash (except root).
 
     Path casing is preserved — many origins serve case-sensitive paths.
+    Percent-encoding is preserved verbatim: an ``unquote`` → ``quote``
+    round-trip here would decode ``%2F`` into ``/`` and then omit the
+    re-encoding because ``/`` is in the safe set, which would silently
+    collapse distinct URLs like ``/a%2Fb`` and ``/a/b`` onto the same
+    canonical key. Vendors do occasionally publish articles with
+    percent-encoded reserved characters in their slugs, so we leave
+    the path verbatim except for the double-slash and trailing-slash
+    fixups.
     """
     if not path:
         return "/"
@@ -117,10 +125,7 @@ def _normalize_path(path: str) -> str:
         path = path.replace("//", "/")
     if len(path) > 1 and path.endswith("/"):
         path = path.rstrip("/")
-    # Re-encode any already-decoded characters so the canonical form is
-    # a valid URL path. ``unquote`` → ``quote`` round-trip ensures that
-    # ``%2F`` and ``/`` do not both appear in the output.
-    return quote(unquote(path), safe="/-._~!$&'()*+,;=:@")
+    return path
 
 
 def canonicalize_url(url: str) -> str:

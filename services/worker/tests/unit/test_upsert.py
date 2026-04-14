@@ -488,6 +488,79 @@ async def test_upsert_report_duplicate_url_merges_tags(
     assert await _count(db_session, report_tags_table) == 3
 
 
+async def test_upsert_report_duplicate_url_backfills_unknown_source(
+    db_session: AsyncSession, aliases
+) -> None:
+    """Codex round 6: if the first workbook row at a URL had no
+    author (source_id -> synthetic `unknown`) and a later row at the
+    same URL has the real vendor name, the report's source_id must
+    be updated. Leaving the report attributed to `unknown` when we
+    have better data is silent metadata loss."""
+    anonymous = ReportRow(
+        published=dt.date(2024, 3, 15),
+        title="Lazarus macOS backdoor",
+        url="https://example.com/threat/lazarus-macos",
+        tags="#lazarus",
+    )
+    attributed = ReportRow(
+        published=dt.date(2024, 3, 15),
+        author="Mandiant",
+        title="Lazarus macOS backdoor",
+        url="https://example.com/threat/lazarus-macos",
+        tags="#lazarus",
+    )
+    first = await upsert_report(db_session, anonymous, aliases)
+    second = await upsert_report(db_session, attributed, aliases)
+
+    assert first.id == second.id
+    assert second.action is UpsertAction.EXISTING
+    assert await _count(db_session, reports_table) == 1
+
+    # Report now points at the real vendor source, not `unknown`.
+    resolved_source = (await db_session.execute(
+        sa.select(sources_table.c.name)
+        .select_from(reports_table.join(
+            sources_table, reports_table.c.source_id == sources_table.c.id
+        ))
+        .where(reports_table.c.id == first.id)
+    )).first()
+    assert resolved_source[0] == "Mandiant"
+
+
+async def test_upsert_report_duplicate_url_keeps_real_source(
+    db_session: AsyncSession, aliases
+) -> None:
+    """The inverse guard: if the first row already has a real vendor
+    source, a later duplicate-URL row with a different author must
+    NOT overwrite it. Source backfill is only for the synthetic
+    `unknown` case."""
+    first = ReportRow(
+        published=dt.date(2024, 3, 15),
+        author="Mandiant",
+        title="Lazarus macOS backdoor",
+        url="https://example.com/threat/lazarus-macos",
+        tags="#lazarus",
+    )
+    second = ReportRow(
+        published=dt.date(2024, 3, 15),
+        author="Other Vendor",
+        title="Lazarus macOS backdoor",
+        url="https://example.com/threat/lazarus-macos",
+        tags="#lazarus",
+    )
+    await upsert_report(db_session, first, aliases)
+    await upsert_report(db_session, second, aliases)
+
+    resolved_source = (await db_session.execute(
+        sa.select(sources_table.c.name)
+        .select_from(reports_table.join(
+            sources_table, reports_table.c.source_id == sources_table.c.id
+        ))
+    )).first()
+    assert resolved_source[0] == "Mandiant"
+    assert await _count(db_session, sources_table) == 1
+
+
 async def test_upsert_report_with_no_tags(db_session: AsyncSession, aliases) -> None:
     row = ReportRow(
         published=dt.date(2024, 5, 10),

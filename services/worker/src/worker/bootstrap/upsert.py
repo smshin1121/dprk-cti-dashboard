@@ -311,13 +311,37 @@ async def upsert_report(
     # vendor does not insert an orphan sources row that the report
     # never references.
     existing = await session.execute(
-        sa.select(reports_table.c.id).where(
-            reports_table.c.url_canonical == url_canonical
-        )
+        sa.select(
+            reports_table.c.id,
+            reports_table.c.source_id,
+        ).where(reports_table.c.url_canonical == url_canonical)
     )
     row_id_tuple = existing.first()
     if row_id_tuple is not None:
-        report_id = row_id_tuple[0]
+        report_id, existing_source_id = row_id_tuple
+
+        # Backfill source attribution if the existing row was
+        # attributed to the synthetic `unknown` source (because an
+        # earlier duplicate had no author) and this row carries a
+        # real vendor name. Leaving the report attributed to
+        # `unknown` when we have better data would be silent
+        # metadata loss, and the rest of the duplicate-merge path
+        # already preserves the richer version of the row.
+        if row.author and row.author.strip() and row.author.strip() != "unknown":
+            existing_source_name = await session.execute(
+                sa.select(sources_table.c.name).where(
+                    sources_table.c.id == existing_source_id
+                )
+            )
+            name_row = existing_source_name.first()
+            if name_row is not None and name_row[0] == "unknown":
+                new_source = await upsert_source(session, row.author.strip())
+                await session.execute(
+                    sa.update(reports_table)
+                    .where(reports_table.c.id == report_id)
+                    .values(source_id=new_source.id)
+                )
+
         await _attach_report_tags(session, report_id, row.tags, aliases)
         return UpsertOutcome(id=report_id, action=UpsertAction.EXISTING)
 

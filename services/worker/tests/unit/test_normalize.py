@@ -139,6 +139,29 @@ def test_canonicalize_idn_is_idempotent() -> None:
     assert once == twice
 
 
+def test_canonicalize_preserves_percent_encoded_slash_in_path() -> None:
+    """Codex round 6: vendors occasionally publish articles with
+    percent-encoded reserved characters in the slug. `/a%2Fb` is a
+    distinct URL from `/a/b` and must not collapse to the same
+    canonical."""
+    a_encoded = canonicalize_url("https://example.com/a%2Fb")
+    a_plain = canonicalize_url("https://example.com/a/b")
+    assert a_encoded != a_plain
+    # %2F must survive as-is; the canonicalizer no longer
+    # round-trips the path through unquote/quote.
+    assert a_encoded == "https://example.com/a%2Fb"
+    assert a_plain == "https://example.com/a/b"
+
+
+def test_canonicalize_preserves_other_percent_encodings() -> None:
+    """Non-ASCII or reserved-char percent encodings must also survive
+    the canonicalizer unchanged."""
+    assert (
+        canonicalize_url("https://example.com/path%20with%20spaces")
+        == "https://example.com/path%20with%20spaces"
+    )
+
+
 def test_canonicalize_ascii_host_unchanged_by_idna_pass() -> None:
     """ASCII hosts must survive the IDNA normalization step
     unchanged — the encode/decode round-trip must be the identity
