@@ -558,3 +558,122 @@ class TestCallerOwnedOuterTransaction:
             )
         ).first()
         assert sentinel_after is not None
+
+
+# ---------------------------------------------------------------------------
+# Codex round 1 regression: audit write failure must stay isolated
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+class TestAuditWriteFailureIsolation:
+    """A run-level audit INSERT that fails (e.g. pg rejects due to
+    schema drift or permissions) must not corrupt the outer
+    transaction. Each ``write_run_audit`` call is wrapped in its own
+    savepoint so its failure leaves the outer tx alive and the ETL
+    body proceeds. Without the savepoint wrapper, pg would put the
+    session in an aborted state and the subsequent ``begin_nested()``
+    for the etl_savepoint would raise."""
+
+    async def test_run_started_audit_failure_does_not_abort_etl_body(
+        self,
+        db_session: AsyncSession,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        import worker.bootstrap.cli as cli_mod
+
+        original = cli_mod.write_run_audit
+        call_log: list[str] = []
+
+        async def _selective_failing_audit(
+            session: AsyncSession, *, action: str, meta, detail=None
+        ) -> None:
+            call_log.append(action)
+            if action == RUN_STARTED:
+                raise RuntimeError("simulated audit INSERT rejection")
+            return await original(session, action=action, meta=meta, detail=detail)
+
+        monkeypatch.setattr(cli_mod, "write_run_audit", _selective_failing_audit)
+
+        meta = new_audit_meta(FIXTURE)
+        await cli_mod.run_bootstrap(
+            db_session,
+            workbook=FIXTURE,
+            aliases_path=ALIASES,
+            errors_path=tmp_path / "errors.jsonl",
+            dry_run=False,
+            limit=None,
+            stdout=io.StringIO(),
+            audit_meta=meta,
+        )
+
+        # RUN_STARTED was attempted and raised; RUN_COMPLETED must
+        # still have been attempted, which proves the ETL body reached
+        # the post-savepoint-commit audit emission and therefore the
+        # outer transaction survived the RUN_STARTED failure.
+        assert RUN_STARTED in call_log
+        assert RUN_COMPLETED in call_log
+
+        # Zero RUN_STARTED rows persisted (savepoint rolled back);
+        # exactly one RUN_COMPLETED row landed (savepoint committed).
+        counts = await _count_by_action(db_session)
+        assert counts.get(RUN_STARTED, 0) == 0
+        assert counts.get(RUN_COMPLETED) == 1
+
+        # Entity rows must have persisted — the ETL body was not
+        # aborted by the RUN_STARTED savepoint rollback. Pick one of
+        # the five audited entity tables as a sentinel.
+        group_count = (
+            await db_session.execute(sa.select(sa.func.count()).select_from(groups_table))
+        ).scalar_one()
+        assert group_count > 0
+
+    async def test_run_completed_audit_failure_does_not_break_commit(
+        self,
+        db_session: AsyncSession,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """If the RUN_COMPLETED audit INSERT fails, the final
+        ``session.commit()`` path in ``run_bootstrap`` must still
+        succeed. The savepoint wrapper guarantees the outer tx is
+        clean at commit time."""
+        import worker.bootstrap.cli as cli_mod
+
+        original = cli_mod.write_run_audit
+
+        async def _fail_on_completed(
+            session: AsyncSession, *, action: str, meta, detail=None
+        ) -> None:
+            if action == RUN_COMPLETED:
+                raise RuntimeError("simulated RUN_COMPLETED rejection")
+            return await original(session, action=action, meta=meta, detail=detail)
+
+        monkeypatch.setattr(cli_mod, "write_run_audit", _fail_on_completed)
+
+        meta = new_audit_meta(FIXTURE)
+        await cli_mod.run_bootstrap(
+            db_session,
+            workbook=FIXTURE,
+            aliases_path=ALIASES,
+            errors_path=tmp_path / "errors.jsonl",
+            dry_run=False,
+            limit=None,
+            stdout=io.StringIO(),
+            audit_meta=meta,
+        )
+
+        # Outer commit happened (session left no active tx) and the
+        # RUN_STARTED row from the happy path persisted. RUN_COMPLETED
+        # row is absent because its savepoint rolled back.
+        counts = await _count_by_action(db_session)
+        assert counts.get(RUN_STARTED) == 1
+        assert counts.get(RUN_COMPLETED, 0) == 0
+
+        # Entity rows must have persisted — the outer commit was not
+        # aborted by the failed RUN_COMPLETED write.
+        group_count = (
+            await db_session.execute(sa.select(sa.func.count()).select_from(groups_table))
+        ).scalar_one()
+        assert group_count > 0

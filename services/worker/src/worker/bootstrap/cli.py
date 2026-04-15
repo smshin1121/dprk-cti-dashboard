@@ -308,15 +308,21 @@ async def run_bootstrap(
         await session.begin()
 
     if audit_meta is not None:
+        # Isolate the audit write in a savepoint so a pg INSERT
+        # rejection (schema drift, permissions, etc.) does NOT leave
+        # the outer transaction in an aborted state that would abort
+        # the ETL body on its first begin_nested() call (Codex P2).
         try:
-            await write_run_audit(
-                session, action=RUN_STARTED, meta=audit_meta
-            )
+            async with session.begin_nested():
+                await write_run_audit(
+                    session, action=RUN_STARTED, meta=audit_meta
+                )
         except Exception:
             # An audit-write failure at this point must not abort the
-            # entire ETL. Continue without the etl_run_started record;
-            # later run-level writes may or may not succeed but the
-            # body will proceed either way.
+            # entire ETL. The savepoint above has rolled back so the
+            # outer transaction is clean. Continue without the
+            # etl_run_started record; later run-level writes may or
+            # may not succeed but the body will proceed either way.
             pass
 
     etl_savepoint = await session.begin_nested()
@@ -379,17 +385,22 @@ async def run_bootstrap(
         else:
             await etl_savepoint.commit()
             if audit_meta is not None:
+                # Same savepoint isolation as RUN_STARTED: on pg a
+                # failed audit INSERT would leave the outer tx in an
+                # aborted state and the final session.commit() below
+                # would raise (Codex P2).
                 try:
-                    await write_run_audit(
-                        session,
-                        action=RUN_COMPLETED,
-                        meta=audit_meta,
-                        detail={
-                            "rows_attempted": total,
-                            "rows_failed": failures,
-                            "dry_run": False,
-                        },
-                    )
+                    async with session.begin_nested():
+                        await write_run_audit(
+                            session,
+                            action=RUN_COMPLETED,
+                            meta=audit_meta,
+                            detail={
+                                "rows_attempted": total,
+                                "rows_failed": failures,
+                                "dry_run": False,
+                            },
+                        )
                 except Exception:
                     pass
             if not caller_owns_outer and session.in_transaction():
@@ -401,21 +412,25 @@ async def run_bootstrap(
         if audit_meta is not None:
             # Emit etl_run_failed after the savepoint has been reversed
             # so this insert lands in the outer transaction and survives
-            # the body rollback. Defensive try/except prevents a
-            # failed audit write from masking the original ETL
-            # exception — the caller needs to see the real error.
+            # the body rollback. Savepoint isolation (Codex P2): a
+            # failed audit INSERT here must not re-aborts the outer
+            # transaction before we try to commit etl_run_started +
+            # etl_run_failed below. Defensive outer try/except still
+            # prevents a failed audit write from masking the original
+            # ETL exception — the caller needs to see the real error.
             try:
-                await write_run_audit(
-                    session,
-                    action=RUN_FAILED,
-                    meta=audit_meta,
-                    detail={
-                        "error_type": type(exc).__name__,
-                        "error_message": str(exc)[:1024],
-                        "rows_attempted": total,
-                        "rows_failed": failures,
-                    },
-                )
+                async with session.begin_nested():
+                    await write_run_audit(
+                        session,
+                        action=RUN_FAILED,
+                        meta=audit_meta,
+                        detail={
+                            "error_type": type(exc).__name__,
+                            "error_message": str(exc)[:1024],
+                            "rows_attempted": total,
+                            "rows_failed": failures,
+                        },
+                    )
             except Exception:
                 pass
             if not caller_owns_outer:
