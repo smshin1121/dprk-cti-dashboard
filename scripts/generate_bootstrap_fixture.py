@@ -42,6 +42,16 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 SOURCE_YAML = REPO_ROOT / "services/worker/tests/fixtures/bootstrap_sample.yaml"
 OUTPUT_XLSX = REPO_ROOT / "services/worker/tests/fixtures/bootstrap_sample.xlsx"
 
+# Metadata keys the YAML uses for reviewer annotations. Rows tagged
+# ``_tag: failure_case`` exercise the bootstrap CLI's error paths and
+# deliberately push the fixture above the D5 5% failure threshold.
+# ``strip_failure_cases`` removes them so CI jobs that need a clean
+# seed (e.g. the data-quality-tests end-to-end run) can build a happy
+# subset from the same single source YAML without maintaining a second
+# fixture file.
+_TAG_KEY = "_tag"
+_FAILURE_CASE_TAG = "failure_case"
+
 
 # v1.0 workbook column order per sheet. The loader in services/worker uses
 # these exact headers, so the generator must not reorder them.
@@ -88,6 +98,34 @@ def _load_yaml(path: Path) -> Mapping[str, list[Mapping[str, Any]]]:
     if not isinstance(data, dict):
         raise ValueError(f"{path}: top-level YAML must be a mapping")
     return data
+
+
+def strip_failure_cases(
+    source: Mapping[str, list[Mapping[str, Any]]],
+) -> dict[str, list[Mapping[str, Any]]]:
+    """Return a new source mapping with ``_tag: failure_case`` rows removed.
+
+    Rows whose ``_tag`` is not ``failure_case`` (including rows with no
+    ``_tag`` at all) are preserved verbatim. Non-list sheet values are
+    passed through untouched so the caller still sees the same shape
+    and :func:`build_workbook` can raise the same validation errors.
+
+    The input mapping is never mutated: each sheet's row list is
+    replaced with a freshly filtered list.
+    """
+    filtered: dict[str, list[Mapping[str, Any]]] = {}
+    for sheet_key, rows in source.items():
+        if not isinstance(rows, list):
+            filtered[sheet_key] = rows  # type: ignore[assignment]
+            continue
+        filtered[sheet_key] = [
+            row
+            for row in rows
+            if not (
+                isinstance(row, dict) and row.get(_TAG_KEY) == _FAILURE_CASE_TAG
+            )
+        ]
+    return filtered
 
 
 def _cell_value(value: Any) -> Any:
@@ -153,6 +191,19 @@ def _build_parser() -> argparse.ArgumentParser:
             "committed copy."
         ),
     )
+    parser.add_argument(
+        "--strip-failure-cases",
+        action="store_true",
+        help=(
+            "Drop every row whose `_tag` metadata is `failure_case` "
+            "before writing the workbook. Used by CI jobs that need a "
+            "happy-subset seed built from the same source YAML as the "
+            "committed stress fixture (e.g. data-quality-tests). The "
+            "default behaviour — no flag — regenerates the full stress "
+            "fixture and must stay byte-equivalent to the committed "
+            "copy for the worker-tests drift check."
+        ),
+    )
     return parser
 
 
@@ -164,6 +215,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"error: source YAML not found at {SOURCE_YAML}", file=sys.stderr)
         return 2
     source = _load_yaml(SOURCE_YAML)
+    if args.strip_failure_cases:
+        source = strip_failure_cases(source)
     wb = build_workbook(source)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     wb.save(output_path)

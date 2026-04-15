@@ -221,11 +221,17 @@ jobs:
         env:
           ALEMBIC_DATABASE_URL: ${{ env.DATABASE_URL }}
         run: uv run --project services/api alembic -c db/alembic.ini upgrade head
+      - name: Generate happy-subset bootstrap fixture
+        working-directory: services/worker
+        run: |
+          uv run python "${GITHUB_WORKSPACE}/scripts/generate_bootstrap_fixture.py" \
+            --strip-failure-cases \
+            --output "${RUNNER_TEMP}/bootstrap_happy.xlsx"
       - name: Seed fixture via bootstrap CLI
         working-directory: services/worker
         run: |
           uv run python -m worker.bootstrap \
-            --workbook tests/fixtures/bootstrap_sample.xlsx \
+            --workbook "${RUNNER_TEMP}/bootstrap_happy.xlsx" \
             --database-url "$DATABASE_URL" \
             --aliases-path "${GITHUB_WORKSPACE}/data/dictionaries/aliases.yml"
       - name: Run data quality gate with JSONL mirror
