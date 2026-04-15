@@ -187,3 +187,60 @@ jobs:
         run: |
           uv run --project services/api alembic -c db/alembic.ini downgrade -1
           uv run --project services/api alembic -c db/alembic.ini upgrade head
+
+  data-quality-tests:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: dprk_cti_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/dprk_cti_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v4
+      - name: Sync worker dev dependencies
+        working-directory: services/worker
+        run: uv sync
+      - name: Sync api dependencies (for alembic)
+        run: uv sync --project services/api --no-install-project
+      - name: Run alembic upgrade head
+        env:
+          ALEMBIC_DATABASE_URL: ${{ env.DATABASE_URL }}
+        run: uv run --project services/api alembic -c db/alembic.ini upgrade head
+      - name: Seed fixture via bootstrap CLI
+        working-directory: services/worker
+        run: |
+          uv run python -m worker.bootstrap \
+            --workbook tests/fixtures/bootstrap_sample.xlsx \
+            --database-url "$DATABASE_URL" \
+            --aliases-path "${GITHUB_WORKSPACE}/data/dictionaries/aliases.yml"
+      - name: Run data quality gate with JSONL mirror
+        working-directory: services/worker
+        run: |
+          mkdir -p "${GITHUB_WORKSPACE}/artifacts"
+          uv run python -m worker.data_quality check \
+            --database-url "$DATABASE_URL" \
+            --aliases-path "${GITHUB_WORKSPACE}/data/dictionaries/aliases.yml" \
+            --fail-on error \
+            --report-path "${GITHUB_WORKSPACE}/artifacts/dq_report.jsonl"
+      - name: Upload dq_report.jsonl artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dq-report-jsonl
+          path: artifacts/dq_report.jsonl
+          if-no-files-found: warn
