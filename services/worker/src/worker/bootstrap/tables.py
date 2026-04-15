@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import sqlalchemy as sa
 from sqlalchemy import MetaData
+from sqlalchemy.dialects import postgresql
 
 
 # Mirror the naming convention used by db/migrations/_metadata.py so
@@ -269,7 +270,111 @@ incident_countries_table = sa.Table(
 )
 
 
+# ---------------------------------------------------------------------------
+# audit_log (PR #7 Group B)
+# ---------------------------------------------------------------------------
+#
+# The bootstrap ETL writes row-level and run-level provenance records
+# to this table. The production schema was established in migrations
+# 0001 (initial) / 0003 (entity_id nullable) / 0004 (BIGINT widen);
+# this worker-local mirror exists so sqlite-memory unit tests can
+# exercise the audit writers in ``worker.bootstrap.audit`` without a
+# live Postgres instance. Production ignores this MetaData instance.
+
+audit_log_table = sa.Table(
+    "audit_log",
+    metadata,
+    sa.Column("id", _BIGINT, primary_key=True, autoincrement=True),
+    sa.Column("actor", sa.String(length=128), nullable=False),
+    sa.Column("action", sa.String(length=64), nullable=False),
+    sa.Column("entity", sa.String(length=64), nullable=False),
+    # 0003_audit_entity_nullable dropped NOT NULL so run-level events
+    # (entity="etl_run", entity_id=NULL) are permitted per D4.
+    sa.Column("entity_id", sa.String(length=64), nullable=True),
+    sa.Column(
+        "timestamp",
+        sa.DateTime(timezone=True),
+        nullable=False,
+        server_default=sa.func.current_timestamp(),
+    ),
+    # 0001 used sa.JSON() for diff_jsonb; we match it here so SQLAlchemy
+    # serializes dicts uniformly on both dialects. pg stores this as
+    # JSON (not JSONB) at rest; the column name is historical.
+    sa.Column("diff_jsonb", sa.JSON(), nullable=True),
+)
+
+
+# ---------------------------------------------------------------------------
+# dq_events (PR #7 Group C — migration 0005 mirror)
+# ---------------------------------------------------------------------------
+#
+# Mirror of the production table created by
+# ``db/migrations/versions/0005_dq_events.py``. Exists so sqlite-memory
+# unit tests can exercise the ``worker.data_quality`` sinks and the
+# runner without a live Postgres instance. Production runs against the
+# Alembic-managed schema; this MetaData is ignored in production.
+#
+# Dialect variants:
+#   - ``run_id`` uses native pg UUID in production and String(36) on
+#     sqlite so the sink can keep passing UUID objects uniformly.
+#   - ``detail_jsonb`` uses pg JSONB in production and sa.JSON() on
+#     sqlite; both accept dict bind parameters via SQLAlchemy's JSON
+#     serializer.
+#   - ``observed_at`` has a server default matching the migration so
+#     a sink that omits the column still gets CURRENT_TIMESTAMP;
+#     production sinks always pass an explicit value derived from
+#     ``ExpectationResult.observed_at`` so the DB row and the JSONL
+#     mirror carry the identical timestamp.
+
+dq_events_table = sa.Table(
+    "dq_events",
+    metadata,
+    sa.Column("id", _BIGINT, primary_key=True, autoincrement=True),
+    # sa.Uuid() is SA 2.0+ dialect-agnostic and resolves to pg native
+    # UUID on Postgres and a string/CHAR UUID representation on
+    # sqlite. The production schema (migration 0005) declares
+    # ``postgresql.UUID(as_uuid=True)`` explicitly; the Core type
+    # here only needs to round-trip UUID objects on whatever backend
+    # the worker tests use, and sa.Uuid() does that for both.
+    sa.Column("run_id", sa.Uuid(), nullable=False),
+    sa.Column("expectation", sa.Text(), nullable=False),
+    sa.Column("severity", sa.Text(), nullable=False),
+    sa.Column("observed", sa.Numeric(), nullable=True),
+    sa.Column("threshold", sa.Numeric(), nullable=True),
+    sa.Column("observed_rows", sa.BigInteger(), nullable=True),
+    sa.Column(
+        "detail_jsonb",
+        postgresql.JSONB(astext_type=sa.Text()).with_variant(
+            sa.JSON(), "sqlite"
+        ),
+        nullable=False,
+    ),
+    sa.Column(
+        "observed_at",
+        sa.DateTime(timezone=True),
+        nullable=False,
+        server_default=sa.func.current_timestamp(),
+    ),
+    sa.CheckConstraint(
+        "severity IN ('warn', 'error', 'pass')",
+        name="severity_allowed",
+    ),
+    sa.Index("ix_dq_events_run_id", "run_id"),
+    sa.Index("ix_dq_events_expectation", "expectation"),
+    # Migration 0005 declares this index DESC for timestamp-ordered
+    # trend queries. sqlite accepts the DESC keyword in CREATE INDEX
+    # but the planner treats ASC/DESC on a single column index as a
+    # hint at best, so the SQLite test mirror may drop the DESC
+    # direction. The index itself must exist either way — the Group C
+    # review explicitly called out that the mirror be 1:1 with 0005
+    # for index coverage, not for directionality.
+    sa.Index("ix_dq_events_observed_at", sa.text("observed_at DESC")),
+)
+
+
 __all__ = [
+    "audit_log_table",
+    "dq_events_table",
     "codenames_table",
     "groups_table",
     "incident_countries_table",

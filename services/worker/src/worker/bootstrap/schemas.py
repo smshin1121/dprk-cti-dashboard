@@ -28,6 +28,7 @@ __all__ = [
     "ActorRow",
     "ReportRow",
     "IncidentRow",
+    "ISO3166_ALPHA2_CODES",
     "RowValidationError",
 ]
 
@@ -48,7 +49,17 @@ from pydantic import ValidationError as RowValidationError  # noqa: E402
 # and easy to review.
 _ISO3166_ALPHA2_PATTERN = re.compile(r"^[A-Z]{2}$")
 
-_ISO3166_ALPHA2_CODES: frozenset[str] = frozenset(
+#: Public frozenset of the 249 ISO 3166-1 alpha-2 country codes that
+#: the bootstrap pipeline accepts. Originally declared here as the
+#: private ``_ISO3166_ALPHA2_CODES`` and used only by this module's
+#: validator; PR #7 Group D promotes it to a public name so the
+#: ``worker.data_quality`` gate can reuse the exact same set as the
+#: single source of truth for country-code value-domain checks
+#: (D11 / V2 / V3). The private ``_ISO3166_ALPHA2_CODES`` alias is
+#: retained below as a backward-compat handle — nothing inside this
+#: module needed to change to use the new name, and leaving the old
+#: identifier intact avoids a renaming churn in Codex review.
+ISO3166_ALPHA2_CODES: frozenset[str] = frozenset(
     {
         "AD", "AE", "AF", "AG", "AI", "AL", "AM", "AO", "AQ", "AR",
         "AS", "AT", "AU", "AW", "AX", "AZ", "BA", "BB", "BD", "BE",
@@ -78,11 +89,17 @@ _ISO3166_ALPHA2_CODES: frozenset[str] = frozenset(
     }
 )
 
+#: Backward-compat alias for the pre-Group-D private name. Points at
+#: the exact same frozenset instance so identity checks
+#: (``is ISO3166_ALPHA2_CODES``) succeed and any pickled reference
+#: from older code still resolves.
+_ISO3166_ALPHA2_CODES: frozenset[str] = ISO3166_ALPHA2_CODES
+
 
 def _is_valid_iso3166_alpha2(value: str) -> bool:
     if not _ISO3166_ALPHA2_PATTERN.match(value):
         return False
-    return value in _ISO3166_ALPHA2_CODES
+    return value in ISO3166_ALPHA2_CODES
 
 
 # ---------------------------------------------------------------------------

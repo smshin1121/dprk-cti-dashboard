@@ -170,7 +170,9 @@ audit_log         (id, actor, action, entity, entity_id, timestamp, diff_jsonb)
 
 - **Phase 1 Week 1–2**: `openpyxl` + `pandas`로 3시트 로드, pydantic 스키마 검증, 동의어 사전 적용, `url_canonical`·`sha256_title` 산출, `tags` 정규화.
 - **멱등성(idempotency)**: `url_canonical` UNIQUE + upsert. 재실행 안전.
-- **데이터 품질 테스트**: Great Expectations suite — null 비율, 값 도메인, 참조 무결성, 연도 범위, 중복률. CI에서 실행.
+- **데이터 품질 테스트**: pytest + SQL 기반 게이트 — null 비율, 값 도메인, 참조 무결성, 연도 범위, 중복률. CI에서 실행.
+
+> **Errata 2026-04-15 (D1 substitution)**: v2.0 초안이 가리킨 Great Expectations는 Phase 1.2 구현(PR #7)에서 pytest + SQL 기반 게이트로 대체되었다. 대체 사유는 Great Expectations의 트랜시티브 의존성 규모(~200 MB), YAML suite fragmentation, Great Expectations의 async Postgres 통합 비용이다. 검사 셋(11개 expectation, 2-레벨 severity) 및 CI 차단 정책은 설계서 의도 그대로 유지된다. 전체 결정 기록(D1–D13)과 구현 계약은 `docs/plans/pr7-data-quality.md` 참조.
 - **리니지(lineage)**: `audit_log`에 row-level 삽입 이력 기록.
 
 ### 3.3 실시간 수집 Workers
@@ -721,7 +723,7 @@ Internet ──▶ CDN/WAF ──▶ Frontend ──▶ API ──▶ DB
 | Unit (backend) | pytest + hypothesis | ≥ 85% |
 | Unit (frontend) | Vitest + React Testing Library | ≥ 80% |
 | 계약 | Pact | 전체 API |
-| Data quality | Great Expectations | 전체 테이블 |
+| Data quality | pytest + SQL gate (§3.2 errata) | 전체 테이블 |
 | E2E | Playwright | 10개 핵심 플로우 |
 | 시각 회귀 | Playwright + pixelmatch | KPI·지도·차트 |
 | Load | k6 | 동시 100, p95 ≤ 500 ms |
@@ -754,7 +756,7 @@ v1.0 §6 클릭-스루 탐색을 유지하고 다음 추가:
 
 - **W1**: 저장소 부트스트랩, CI/CD, Docker Compose, OIDC 스캐폴딩, 관측성 기본.
 - **W2**: DB 스키마 · pgvector · Alembic 마이그레이션, Bootstrap ETL(시트 → DB), 동의어 사전.
-- **W3**: Great Expectations 데이터 품질, 감사 로그, audit 기본.
+- **W3**: 데이터 품질 게이트(pytest + SQL, §3.2 errata), 감사 로그, audit 기본.
 - **W4**: RSS/TAXII 수집 Worker (Prefect 플로우), Staging → Review 큐.
 - **W5**: 핵심 API(summary, reports, incidents, actors), OpenAPI 계약, Pact 베이스라인.
 

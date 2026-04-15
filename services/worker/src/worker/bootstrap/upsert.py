@@ -25,13 +25,20 @@ CLI (PR #6) will choose.
 from __future__ import annotations
 
 import datetime as dt
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
+from typing import Any
 
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from worker.bootstrap.aliases import AliasDictionary
+from worker.bootstrap.audit import (
+    ROW_INSERT,
+    ROW_UPDATE,
+    AuditBuffer,
+    RowAuditEvent,
+)
 from worker.bootstrap.normalize import (
     TAG_TYPE_ACTOR,
     TAG_TYPE_UNKNOWN,
@@ -77,10 +84,73 @@ class UpsertAction(str, Enum):
 
 @dataclass(frozen=True)
 class UpsertOutcome:
-    """Result of an upsert call."""
+    """Result of an upsert call.
+
+    ``row_snapshot`` is populated only on ``INSERTED`` outcomes and
+    carries the values dict that was written to the DB (plus the
+    assigned PK). Row-level audit uses it as the ``"row"`` payload
+    for ``etl_insert`` events.
+
+    ``changed_fields`` is populated only on ``EXISTING`` outcomes
+    whose caller actually mutated the existing row (codename
+    backfill, report URL promotion, anonymous→vendor promotion,
+    etc.). Per the D3a contract in docs/plans/pr7-data-quality.md
+    the value is a ``{column: {"before": X, "after": Y}}`` mapping
+    so audit lineage can reconstruct what the ETL overwrote — the
+    earlier column→new-value shape (Codex round 2 P2) lost the
+    "what was replaced" half of the diff, which Codex round 3 P2
+    flagged. A truly idempotent re-run leaves ``changed_fields`` at
+    its default ``None`` and the audit event degrades to an empty-
+    changed update.
+    """
 
     id: int
     action: UpsertAction
+    row_snapshot: dict[str, Any] | None = None
+    changed_fields: dict[str, dict[str, Any]] | None = None
+
+
+def _emit_row_audit(
+    buffer: AuditBuffer,
+    entity: str,
+    outcome: UpsertOutcome,
+) -> None:
+    """Append a :class:`RowAuditEvent` for an upsert outcome.
+
+    ``INSERTED`` → ``etl_insert`` with ``diff_payload.row = row_snapshot``.
+    ``EXISTING`` → ``etl_update`` with ``diff_payload.changed`` set to
+    :attr:`UpsertOutcome.changed_fields`, which matches D3a's
+    ``{column: {"before": X, "after": Y}}`` contract so audit lineage
+    can reconstruct both the overwritten value AND the replacement
+    (Codex round 3 P2). An empty dict is emitted for idempotent
+    re-runs where the caller performed no in-place mutation.
+
+    Called from every audited upsert helper when the caller provides
+    an :class:`AuditBuffer`. Silent no-op is not an option: a caller
+    passing a buffer means they want provenance, and dropping the
+    event would create a gap the ``audit_log`` reviewer cannot detect
+    after the fact.
+    """
+    if outcome.action is UpsertAction.INSERTED:
+        buffer.append(RowAuditEvent(
+            entity=entity,
+            entity_id=outcome.id,
+            action=ROW_INSERT,
+            diff_payload={
+                "op": "insert",
+                "row": outcome.row_snapshot or {"id": outcome.id},
+            },
+        ))
+    else:  # EXISTING
+        buffer.append(RowAuditEvent(
+            entity=entity,
+            entity_id=outcome.id,
+            action=ROW_UPDATE,
+            diff_payload={
+                "op": "update",
+                "changed": dict(outcome.changed_fields or {}),
+            },
+        ))
 
 
 # ---------------------------------------------------------------------------
@@ -88,8 +158,18 @@ class UpsertOutcome:
 # ---------------------------------------------------------------------------
 
 
-async def upsert_group(session: AsyncSession, name: str) -> UpsertOutcome:
-    """Resolve a group by canonical name, inserting if missing."""
+async def upsert_group(
+    session: AsyncSession,
+    name: str,
+    *,
+    audit_buffer: AuditBuffer | None = None,
+) -> UpsertOutcome:
+    """Resolve a group by canonical name, inserting if missing.
+
+    When ``audit_buffer`` is provided, emits an ``etl_insert`` event
+    with the full row snapshot on first insert and an empty-changed
+    ``etl_update`` event on idempotent re-run.
+    """
     if not name:
         raise ValueError("group name is required")
 
@@ -98,13 +178,22 @@ async def upsert_group(session: AsyncSession, name: str) -> UpsertOutcome:
     )
     row = existing.first()
     if row is not None:
-        return UpsertOutcome(id=row[0], action=UpsertAction.EXISTING)
+        outcome = UpsertOutcome(id=row[0], action=UpsertAction.EXISTING)
+    else:
+        values = {"name": name}
+        result = await session.execute(
+            sa.insert(groups_table).values(**values).returning(groups_table.c.id)
+        )
+        new_id = result.scalar_one()
+        outcome = UpsertOutcome(
+            id=new_id,
+            action=UpsertAction.INSERTED,
+            row_snapshot={"id": new_id, **values},
+        )
 
-    result = await session.execute(
-        sa.insert(groups_table).values(name=name).returning(groups_table.c.id)
-    )
-    new_id = result.scalar_one()
-    return UpsertOutcome(id=new_id, action=UpsertAction.INSERTED)
+    if audit_buffer is not None:
+        _emit_row_audit(audit_buffer, "groups", outcome)
+    return outcome
 
 
 async def upsert_source(
@@ -112,8 +201,14 @@ async def upsert_source(
     name: str,
     *,
     type_: str = "vendor",
+    audit_buffer: AuditBuffer | None = None,
 ) -> UpsertOutcome:
-    """Resolve a source by name, inserting if missing."""
+    """Resolve a source by name, inserting if missing.
+
+    When ``audit_buffer`` is provided, emits a row-level audit event
+    (``etl_insert`` + snapshot on first write, empty-changed
+    ``etl_update`` on idempotent re-run).
+    """
     if not name:
         raise ValueError("source name is required")
 
@@ -122,15 +217,24 @@ async def upsert_source(
     )
     row = existing.first()
     if row is not None:
-        return UpsertOutcome(id=row[0], action=UpsertAction.EXISTING)
+        outcome = UpsertOutcome(id=row[0], action=UpsertAction.EXISTING)
+    else:
+        values = {"name": name, "type": type_}
+        result = await session.execute(
+            sa.insert(sources_table)
+            .values(**values)
+            .returning(sources_table.c.id)
+        )
+        new_id = result.scalar_one()
+        outcome = UpsertOutcome(
+            id=new_id,
+            action=UpsertAction.INSERTED,
+            row_snapshot={"id": new_id, **values},
+        )
 
-    result = await session.execute(
-        sa.insert(sources_table)
-        .values(name=name, type=type_)
-        .returning(sources_table.c.id)
-    )
-    new_id = result.scalar_one()
-    return UpsertOutcome(id=new_id, action=UpsertAction.INSERTED)
+    if audit_buffer is not None:
+        _emit_row_audit(audit_buffer, "sources", outcome)
+    return outcome
 
 
 async def upsert_tag(
@@ -173,6 +277,7 @@ async def upsert_codename(
     named_by_source_id: int | None = None,
     first_seen: dt.date | None = None,
     last_seen: dt.date | None = None,
+    audit_buffer: AuditBuffer | None = None,
 ) -> UpsertOutcome:
     """Resolve a codename by its unique name, inserting if missing.
 
@@ -180,6 +285,11 @@ async def upsert_codename(
     unset, a subsequent call with a known ``group_id`` updates it in
     place. This lets a later pass through the workbook resolve
     previously-unclassified codenames without duplicating rows.
+
+    When ``audit_buffer`` is provided, emits a row-level audit event
+    per D3. In-place patches on EXISTING rows are recorded as
+    empty-changed ``etl_update`` events in PR #7 scope; genuine
+    before/after field diffs wait for PR #8+ ON CONFLICT semantics.
     """
     if not name:
         raise ValueError("codename is required")
@@ -203,39 +313,69 @@ async def upsert_codename(
             current_last,
         ) = row
         patches: dict[str, object] = {}
+        changed: dict[str, dict[str, Any]] = {}
         if current_group_id is None and group_id is not None:
             patches["group_id"] = group_id
+            changed["group_id"] = {
+                "before": current_group_id,
+                "after": group_id,
+            }
         if current_source_id is None and named_by_source_id is not None:
             # Report tags create codenames without a source; the
             # Actors sheet is the authoritative origin for the
             # "named by" attribution. Backfill it the first time the
             # Actors row for this codename arrives.
             patches["named_by_source_id"] = named_by_source_id
+            changed["named_by_source_id"] = {
+                "before": current_source_id,
+                "after": named_by_source_id,
+            }
         if current_first is None and first_seen is not None:
             patches["first_seen"] = first_seen
+            changed["first_seen"] = {
+                "before": current_first,
+                "after": first_seen,
+            }
         if current_last is None and last_seen is not None:
             patches["last_seen"] = last_seen
+            changed["last_seen"] = {
+                "before": current_last,
+                "after": last_seen,
+            }
         if patches:
             await session.execute(
                 sa.update(codenames_table)
                 .where(codenames_table.c.id == codename_id)
                 .values(**patches)
             )
-        return UpsertOutcome(id=codename_id, action=UpsertAction.EXISTING)
-
-    result = await session.execute(
-        sa.insert(codenames_table)
-        .values(
-            name=name,
-            group_id=group_id,
-            named_by_source_id=named_by_source_id,
-            first_seen=first_seen,
-            last_seen=last_seen,
+        outcome = UpsertOutcome(
+            id=codename_id,
+            action=UpsertAction.EXISTING,
+            changed_fields=changed if changed else None,
         )
-        .returning(codenames_table.c.id)
-    )
-    new_id = result.scalar_one()
-    return UpsertOutcome(id=new_id, action=UpsertAction.INSERTED)
+    else:
+        values = {
+            "name": name,
+            "group_id": group_id,
+            "named_by_source_id": named_by_source_id,
+            "first_seen": first_seen,
+            "last_seen": last_seen,
+        }
+        result = await session.execute(
+            sa.insert(codenames_table)
+            .values(**values)
+            .returning(codenames_table.c.id)
+        )
+        new_id = result.scalar_one()
+        outcome = UpsertOutcome(
+            id=new_id,
+            action=UpsertAction.INSERTED,
+            row_snapshot={"id": new_id, **values},
+        )
+
+    if audit_buffer is not None:
+        _emit_row_audit(audit_buffer, "codenames", outcome)
+    return outcome
 
 
 # ---------------------------------------------------------------------------
@@ -247,6 +387,8 @@ async def upsert_actor(
     session: AsyncSession,
     row: ActorRow,
     aliases: AliasDictionary,
+    *,
+    audit_buffer: AuditBuffer | None = None,
 ) -> UpsertOutcome:
     """Handle one Actors-sheet row end-to-end.
 
@@ -254,6 +396,11 @@ async def upsert_actor(
     dictionary. Unknown aliases are treated as an error so the row
     lands in the dead-letter file — the fixture's "alias-not-in-
     dictionary" failure case asserts this behavior.
+
+    ``audit_buffer`` is threaded down to every nested upsert call so
+    each entity (groups / sources / codenames) gets its own row-level
+    audit event. The caller owns the buffer's mark/rollback_to cut
+    points; this function only appends.
     """
     canonical_group: str | None = None
     if row.associated_group:
@@ -266,12 +413,16 @@ async def upsert_actor(
 
     group_id: int | None = None
     if canonical_group is not None:
-        group = await upsert_group(session, canonical_group)
+        group = await upsert_group(
+            session, canonical_group, audit_buffer=audit_buffer
+        )
         group_id = group.id
 
     source_id: int | None = None
     if row.named_by:
-        source = await upsert_source(session, row.named_by)
+        source = await upsert_source(
+            session, row.named_by, audit_buffer=audit_buffer
+        )
         source_id = source.id
 
     codename = await upsert_codename(
@@ -281,6 +432,7 @@ async def upsert_actor(
         named_by_source_id=source_id,
         first_seen=row.first_seen,
         last_seen=row.last_seen,
+        audit_buffer=audit_buffer,
     )
     return codename
 
@@ -294,6 +446,8 @@ async def upsert_report(
     session: AsyncSession,
     row: ReportRow,
     aliases: AliasDictionary,
+    *,
+    audit_buffer: AuditBuffer | None = None,
 ) -> UpsertOutcome:
     """Handle one Reports-sheet row end-to-end.
 
@@ -301,6 +455,11 @@ async def upsert_report(
     inserts or finds the report row, then attaches all classified
     tags via the ``tags`` / ``report_tags`` tables and any actor tags
     via ``report_codenames``.
+
+    When ``audit_buffer`` is provided, row-level events are appended
+    for every audited nested upsert (source, report, any actor-tag
+    derived group/codename) at each of the four return paths (url
+    match, title-hash match, anonymous promotion, fresh insert).
     """
     url_canonical = canonicalize_url(row.url)
     title_hash = sha256_title(row.title)
@@ -320,6 +479,8 @@ async def upsert_report(
     if row_id_tuple is not None:
         report_id, existing_source_id = row_id_tuple
 
+        backfill_changes: dict[str, dict[str, Any]] = {}
+
         # Backfill source attribution if the existing row was
         # attributed to the synthetic `unknown` source (because an
         # earlier duplicate had no author) and this row carries a
@@ -335,15 +496,30 @@ async def upsert_report(
             )
             name_row = existing_source_name.first()
             if name_row is not None and name_row[0] == "unknown":
-                new_source = await upsert_source(session, row.author.strip())
+                new_source = await upsert_source(
+                    session, row.author.strip(), audit_buffer=audit_buffer
+                )
                 await session.execute(
                     sa.update(reports_table)
                     .where(reports_table.c.id == report_id)
                     .values(source_id=new_source.id)
                 )
+                backfill_changes["source_id"] = {
+                    "before": existing_source_id,
+                    "after": new_source.id,
+                }
 
-        await _attach_report_tags(session, report_id, row.tags, aliases)
-        return UpsertOutcome(id=report_id, action=UpsertAction.EXISTING)
+        report_outcome = UpsertOutcome(
+            id=report_id,
+            action=UpsertAction.EXISTING,
+            changed_fields=backfill_changes or None,
+        )
+        if audit_buffer is not None:
+            _emit_row_audit(audit_buffer, "reports", report_outcome)
+        await _attach_report_tags(
+            session, report_id, row.tags, aliases, audit_buffer=audit_buffer
+        )
+        return report_outcome
 
     # Second pass: resolve the source for this row, then look up by
     # the title-hash fallback scoped to that source. `sha256_title`
@@ -364,11 +540,13 @@ async def upsert_report(
     source = await upsert_source(
         session,
         row.author or "unknown",
+        audit_buffer=audit_buffer,
     )
 
     title_existing = await session.execute(
         sa.select(
             reports_table.c.id,
+            reports_table.c.url,
             reports_table.c.url_canonical,
         ).where(
             (reports_table.c.sha256_title == title_hash)
@@ -377,20 +555,38 @@ async def upsert_report(
     )
     title_row = title_existing.first()
     if title_row is not None:
-        report_id, existing_url_canonical = title_row
+        report_id, existing_url, existing_url_canonical = title_row
         # The whole point of the title-hash fallback is "same article,
         # new URL": the existing row is the earlier URL, the incoming
         # row carries the current one. Update the stored URL and
         # `url_canonical` to reflect the latest known location so
         # later lookups by the new URL still find the record.
+        url_changes: dict[str, dict[str, Any]] = {}
         if existing_url_canonical != url_canonical:
             await session.execute(
                 sa.update(reports_table)
                 .where(reports_table.c.id == report_id)
                 .values(url=row.url, url_canonical=url_canonical)
             )
-        await _attach_report_tags(session, report_id, row.tags, aliases)
-        return UpsertOutcome(id=report_id, action=UpsertAction.EXISTING)
+            url_changes["url"] = {
+                "before": existing_url,
+                "after": row.url,
+            }
+            url_changes["url_canonical"] = {
+                "before": existing_url_canonical,
+                "after": url_canonical,
+            }
+        report_outcome = UpsertOutcome(
+            id=report_id,
+            action=UpsertAction.EXISTING,
+            changed_fields=url_changes or None,
+        )
+        if audit_buffer is not None:
+            _emit_row_audit(audit_buffer, "reports", report_outcome)
+        await _attach_report_tags(
+            session, report_id, row.tags, aliases, audit_buffer=audit_buffer
+        )
+        return report_outcome
 
     # Anonymous-promotion path: if the incoming row has a real vendor
     # name and an earlier row for the same title landed under the
@@ -413,6 +609,7 @@ async def upsert_report(
             promote_row = await session.execute(
                 sa.select(
                     reports_table.c.id,
+                    reports_table.c.url,
                     reports_table.c.url_canonical,
                 ).where(
                     (reports_table.c.sha256_title == title_hash)
@@ -421,36 +618,74 @@ async def upsert_report(
             )
             promote_tuple = promote_row.first()
             if promote_tuple is not None:
-                report_id, existing_url_canonical = promote_tuple
-                update_values: dict[str, object] = {"source_id": source.id}
+                report_id, existing_url, existing_url_canonical = promote_tuple
+                update_values: dict[str, Any] = {"source_id": source.id}
+                promote_changes: dict[str, dict[str, Any]] = {
+                    "source_id": {
+                        "before": unknown_source_id,
+                        "after": source.id,
+                    },
+                }
                 if existing_url_canonical != url_canonical:
                     update_values["url"] = row.url
                     update_values["url_canonical"] = url_canonical
+                    promote_changes["url"] = {
+                        "before": existing_url,
+                        "after": row.url,
+                    }
+                    promote_changes["url_canonical"] = {
+                        "before": existing_url_canonical,
+                        "after": url_canonical,
+                    }
                 await session.execute(
                     sa.update(reports_table)
                     .where(reports_table.c.id == report_id)
                     .values(**update_values)
                 )
-                await _attach_report_tags(session, report_id, row.tags, aliases)
-                return UpsertOutcome(id=report_id, action=UpsertAction.EXISTING)
+                report_outcome = UpsertOutcome(
+                    id=report_id,
+                    action=UpsertAction.EXISTING,
+                    changed_fields=promote_changes,
+                )
+                if audit_buffer is not None:
+                    _emit_row_audit(audit_buffer, "reports", report_outcome)
+                await _attach_report_tags(
+                    session,
+                    report_id,
+                    row.tags,
+                    aliases,
+                    audit_buffer=audit_buffer,
+                )
+                return report_outcome
 
+    insert_values = {
+        "published": row.published,
+        "source_id": source.id,
+        "title": row.title,
+        "url": row.url,
+        "url_canonical": url_canonical,
+        "sha256_title": title_hash,
+    }
     insert_result = await session.execute(
         sa.insert(reports_table)
-        .values(
-            published=row.published,
-            source_id=source.id,
-            title=row.title,
-            url=row.url,
-            url_canonical=url_canonical,
-            sha256_title=title_hash,
-        )
+        .values(**insert_values)
         .returning(reports_table.c.id)
     )
     report_id = insert_result.scalar_one()
 
-    await _attach_report_tags(session, report_id, row.tags, aliases)
+    report_outcome = UpsertOutcome(
+        id=report_id,
+        action=UpsertAction.INSERTED,
+        row_snapshot={"id": report_id, **insert_values},
+    )
+    if audit_buffer is not None:
+        _emit_row_audit(audit_buffer, "reports", report_outcome)
 
-    return UpsertOutcome(id=report_id, action=UpsertAction.INSERTED)
+    await _attach_report_tags(
+        session, report_id, row.tags, aliases, audit_buffer=audit_buffer
+    )
+
+    return report_outcome
 
 
 async def _attach_report_tags(
@@ -458,8 +693,19 @@ async def _attach_report_tags(
     report_id: int,
     tags_cell: str | None,
     aliases: AliasDictionary,
+    *,
+    audit_buffer: AuditBuffer | None = None,
 ) -> None:
-    """Classify + upsert all tags in a report's tag cell and link them."""
+    """Classify + upsert all tags in a report's tag cell and link them.
+
+    Thread-through of ``audit_buffer`` covers the two audited entities
+    this helper touches indirectly: ``groups`` and ``codenames``,
+    created when an actor-type tag surfaces as a ``report_codenames``
+    link. The ``tags`` table itself is NOT in :data:`ENTITY_TABLES_AUDITED`
+    (D3 scope) so ``upsert_tag`` runs without the buffer kwarg.
+    ``report_tags`` and ``report_codenames`` are mapping tables and
+    also excluded from row-level audit by design.
+    """
     if not tags_cell:
         return
 
@@ -489,11 +735,14 @@ async def _attach_report_tags(
         # Actor tags also surface in report_codenames so the analytics
         # views can pivot by group without re-parsing tags.
         if tag.type_ == TAG_TYPE_ACTOR and tag.canonical:
-            group = await upsert_group(session, tag.canonical)
+            group = await upsert_group(
+                session, tag.canonical, audit_buffer=audit_buffer
+            )
             codename = await upsert_codename(
                 session,
                 name=tag.canonical,
                 group_id=group.id,
+                audit_buffer=audit_buffer,
             )
             link_existing = await session.execute(
                 sa.select(report_codenames_table.c.report_id).where(
@@ -546,6 +795,8 @@ async def _ensure_incident_mapping(
 async def upsert_incident(
     session: AsyncSession,
     row: IncidentRow,
+    *,
+    audit_buffer: AuditBuffer | None = None,
 ) -> UpsertOutcome:
     """Handle one Incidents-sheet row end-to-end.
 
@@ -558,6 +809,11 @@ async def upsert_incident(
     mapping rows are still merged onto the existing incident. That
     is what the multi-valued mapping tables exist for, and dropping
     them on duplicate-key would be silent data loss.
+
+    Row-level audit emits exactly one event per call (for the
+    incident entity). The mapping tables ``incident_motivations`` /
+    ``incident_sectors`` / ``incident_countries`` are deliberately
+    excluded from the audit set per D3.
     """
     title = row.victims
     existing = await session.execute(
@@ -569,18 +825,26 @@ async def upsert_incident(
     row_tuple = existing.first()
     if row_tuple is not None:
         incident_id = row_tuple[0]
-        action = UpsertAction.EXISTING
+        outcome = UpsertOutcome(id=incident_id, action=UpsertAction.EXISTING)
     else:
+        insert_values = {
+            "reported": row.reported,
+            "title": title,
+        }
         insert_result = await session.execute(
             sa.insert(incidents_table)
-            .values(
-                reported=row.reported,
-                title=title,
-            )
+            .values(**insert_values)
             .returning(incidents_table.c.id)
         )
         incident_id = insert_result.scalar_one()
-        action = UpsertAction.INSERTED
+        outcome = UpsertOutcome(
+            id=incident_id,
+            action=UpsertAction.INSERTED,
+            row_snapshot={"id": incident_id, **insert_values},
+        )
+
+    if audit_buffer is not None:
+        _emit_row_audit(audit_buffer, "incidents", outcome)
 
     if row.motivations:
         await _ensure_incident_mapping(
@@ -607,4 +871,4 @@ async def upsert_incident(
             row.countries,
         )
 
-    return UpsertOutcome(id=incident_id, action=action)
+    return outcome
