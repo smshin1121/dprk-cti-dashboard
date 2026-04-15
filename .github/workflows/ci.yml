@@ -168,6 +168,19 @@ jobs:
           assert cur.fetchone() is not None, 'staging table missing'
           print('staging table ok')
           "
+      - name: Verify dq_events table exists
+        run: |
+          uv run --project services/api python -c "
+          import psycopg
+          c = psycopg.connect('postgresql://postgres:postgres@localhost:5432/dprk_cti_test')
+          cur = c.cursor()
+          cur.execute(\"SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_name='dq_events'\")
+          assert cur.fetchone() is not None, 'dq_events table missing'
+          cur.execute(\"SELECT conname FROM pg_constraint WHERE conrelid='dq_events'::regclass AND contype='c'\")
+          check_names = {row[0] for row in cur.fetchall()}
+          assert 'ck_dq_events_severity_allowed' in check_names, f'severity CHECK constraint missing: {check_names}'
+          print('dq_events table ok')
+          "
       - name: Verify downgrade/upgrade reversibility
         env:
           ALEMBIC_DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/dprk_cti_test
