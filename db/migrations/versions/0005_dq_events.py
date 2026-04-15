@@ -21,7 +21,7 @@ Schema:
     severity        TEXT NOT NULL       -- 'warn' | 'error' | 'pass' (CHECK)
     observed        NUMERIC NULL        -- observed metric (e.g. 0.17)
     threshold       NUMERIC NULL        -- threshold tested against (e.g. 0.15)
-    observed_rows   BIGINT  NULL        -- row count the expectation scanned
+    observed_rows   BIGINT  NULL        -- violating/affected row count
     detail_jsonb    JSONB   NOT NULL    -- per-expectation extras
     observed_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
 
