@@ -32,6 +32,7 @@ from worker.bootstrap.normalize import (
     TAG_TYPE_MALWARE,
     TAG_TYPE_OPERATION,
     TAG_TYPE_SECTOR,
+    TAG_TYPE_UNKNOWN,
 )
 from worker.bootstrap.schemas import ISO3166_ALPHA2_CODES
 from worker.bootstrap.tables import (
@@ -53,8 +54,23 @@ __all__ = [
 ]
 
 
-#: The five tag type values produced by the PR #5 classifier. Wrapped
-#: in a frozenset here so the expectation can do O(1) membership
+#: The six tag type values the PR #5 classifier can produce. This
+#: set is the D11/V4 ``tags.type.enum_conformance`` allowed domain:
+#: any row whose ``type`` column holds one of these is considered
+#: well-formed, and any row holding a novel string is flagged.
+#:
+#: ``TAG_TYPE_UNKNOWN`` is INCLUDED here because the classifier
+#: intentionally exports it as a documented fallback (Codex round 2
+#: P2): when a vendor feed contains a generic meta-tag like
+#: ``#malware`` that does not resolve through the aliases dictionary
+#: or the sector vocabulary, ``_classify_single`` emits a
+#: ``TAG_TYPE_UNKNOWN`` ClassifiedTag rather than raising. That value
+#: is a supported enum member and must not make the DQ gate fail at
+#: error severity. Monitoring how often the classifier falls back is
+#: a separate concern — the future ``tags.type.unknown_rate`` warn-
+#: level expectation (followup_todos) is the right signal for that.
+#:
+#: Wrapped in a frozenset so the expectation can do O(1) membership
 #: checks without depending on the string imports being in any
 #: particular order.
 VALID_TAG_TYPES: frozenset[str] = frozenset({
@@ -63,6 +79,7 @@ VALID_TAG_TYPES: frozenset[str] = frozenset({
     TAG_TYPE_CVE,
     TAG_TYPE_OPERATION,
     TAG_TYPE_SECTOR,
+    TAG_TYPE_UNKNOWN,
 })
 
 

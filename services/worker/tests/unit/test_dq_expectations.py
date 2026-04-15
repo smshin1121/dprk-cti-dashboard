@@ -100,9 +100,15 @@ class TestConstantsAndReExports:
         for code in ("KP", "KR", "US", "CN", "RU", "JP"):
             assert code in ISO3166_ALPHA2_CODES
 
-    def test_valid_tag_types_is_five_classifier_constants(self) -> None:
+    def test_valid_tag_types_is_six_classifier_constants(self) -> None:
+        """D11/V4 enum domain is the full set of TAG_TYPE_* constants
+        exported by worker.bootstrap.normalize, INCLUDING
+        ``unknown_type`` — the classifier's documented fallback for
+        generic vendor meta-tags. Excluding unknown_type would make
+        the gate fail at error severity on any real load that
+        contains a novel tag (Codex round 2 P2)."""
         assert VALID_TAG_TYPES == frozenset({
-            "actor", "malware", "cve", "operation", "sector",
+            "actor", "malware", "cve", "operation", "sector", "unknown_type",
         })
 
     def test_year_range_bounds_match_d12(self) -> None:
@@ -398,6 +404,22 @@ class TestValueDomainTagsType:
         result = await value_domain_tags_type.check(db_session)
         assert result.severity == "error"
         assert result.observed_rows == 1
+
+    async def test_pass_when_classifier_unknown_type_present(
+        self, db_session: AsyncSession
+    ) -> None:
+        """Codex round 2 P2 regression: the classifier intentionally
+        emits ``unknown_type`` as a documented fallback for generic
+        vendor meta-tags. That value must be accepted by
+        ``tags.type.enum_conformance`` — otherwise any real load
+        with a novel tag fails the DQ gate at error severity."""
+        await db_session.execute(sa.insert(tags_table), [
+            {"name": "t1", "type": "actor"},
+            {"name": "t2", "type": "unknown_type"},
+        ])
+        result = await value_domain_tags_type.check(db_session)
+        assert result.severity == "pass"
+        assert result.observed_rows == 0
 
 
 # ---------------------------------------------------------------------------
