@@ -269,7 +269,42 @@ incident_countries_table = sa.Table(
 )
 
 
+# ---------------------------------------------------------------------------
+# audit_log (PR #7 Group B)
+# ---------------------------------------------------------------------------
+#
+# The bootstrap ETL writes row-level and run-level provenance records
+# to this table. The production schema was established in migrations
+# 0001 (initial) / 0003 (entity_id nullable) / 0004 (BIGINT widen);
+# this worker-local mirror exists so sqlite-memory unit tests can
+# exercise the audit writers in ``worker.bootstrap.audit`` without a
+# live Postgres instance. Production ignores this MetaData instance.
+
+audit_log_table = sa.Table(
+    "audit_log",
+    metadata,
+    sa.Column("id", _BIGINT, primary_key=True, autoincrement=True),
+    sa.Column("actor", sa.String(length=128), nullable=False),
+    sa.Column("action", sa.String(length=64), nullable=False),
+    sa.Column("entity", sa.String(length=64), nullable=False),
+    # 0003_audit_entity_nullable dropped NOT NULL so run-level events
+    # (entity="etl_run", entity_id=NULL) are permitted per D4.
+    sa.Column("entity_id", sa.String(length=64), nullable=True),
+    sa.Column(
+        "timestamp",
+        sa.DateTime(timezone=True),
+        nullable=False,
+        server_default=sa.func.current_timestamp(),
+    ),
+    # 0001 used sa.JSON() for diff_jsonb; we match it here so SQLAlchemy
+    # serializes dicts uniformly on both dialects. pg stores this as
+    # JSON (not JSONB) at rest; the column name is historical.
+    sa.Column("diff_jsonb", sa.JSON(), nullable=True),
+)
+
+
 __all__ = [
+    "audit_log_table",
     "codenames_table",
     "groups_table",
     "incident_countries_table",

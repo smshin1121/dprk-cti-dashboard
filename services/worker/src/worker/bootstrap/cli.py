@@ -58,6 +58,15 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from worker.bootstrap.aliases import AliasDictionary, load_aliases
+from worker.bootstrap.audit import (
+    RUN_COMPLETED,
+    RUN_FAILED,
+    RUN_STARTED,
+    AuditBuffer,
+    AuditMeta,
+    new_audit_meta,
+    write_run_audit,
+)
 from worker.bootstrap.errors import (
     DeadLetterEntry,
     DeadLetterWriter,
@@ -195,21 +204,27 @@ async def _process_one_row(
     row_sheet: str,
     row_data: dict[str, object],
     aliases: AliasDictionary,
+    *,
+    audit_buffer: AuditBuffer | None = None,
 ) -> None:
     """Dispatch one loader row to the matching upsert path.
 
     Raises whatever the schema / upsert layer raises so the caller
     can decide whether to count it as a dead-letter failure.
+
+    When ``audit_buffer`` is provided, the composite upsert functions
+    append row-level audit events for each nested audited entity they
+    touch (D3 scope: groups, sources, codenames, reports, incidents).
     """
     if row_sheet == "Actors":
         validated = ActorRow(**row_data)
-        await upsert_actor(session, validated, aliases)
+        await upsert_actor(session, validated, aliases, audit_buffer=audit_buffer)
     elif row_sheet == "Reports":
         validated = ReportRow(**row_data)
-        await upsert_report(session, validated, aliases)
+        await upsert_report(session, validated, aliases, audit_buffer=audit_buffer)
     elif row_sheet == "Incidents":
         validated = IncidentRow(**row_data)
-        await upsert_incident(session, validated)
+        await upsert_incident(session, validated, audit_buffer=audit_buffer)
     else:
         raise WorkbookLoaderError(f"unknown sheet {row_sheet!r}")
 
@@ -223,6 +238,7 @@ async def run_bootstrap(
     dry_run: bool,
     limit: int | None,
     stdout: TextIO,
+    audit_meta: AuditMeta | None = None,
 ) -> ExitDecision:
     """Run the full Bootstrap ETL pipeline against ``session``.
 
@@ -230,9 +246,48 @@ async def run_bootstrap(
     session (backed by sqlite-memory via conftest) and inspect the
     returned :class:`ExitDecision` directly. The ``main()`` wrapper
     opens a real engine for production invocations.
+
+    ``audit_meta`` controls whether row-level and run-level audit
+    records are emitted. **None** (the default, and the PR #6
+    backward-compat path) leaves the transaction flow exactly as
+    landed in PR #6: no audit writes, non-caller-owned outer rolls
+    back on any failure. **Set** (the production path, always supplied
+    by the CLI for non-dry-run invocations) activates the D3 / D4
+    layout:
+
+    1. Before the ETL savepoint is opened, ``etl_run_started`` is
+       written into the outer transaction directly.
+    2. Inside the savepoint, an :class:`AuditBuffer` collects row-
+       level events through the upsert loop. Each workbook row
+       captures a :meth:`AuditBuffer.mark` cut-point, and a per-row
+       savepoint failure calls :meth:`AuditBuffer.rollback_to` so
+       ONLY that row's buffered events are discarded — prior
+       successful rows are preserved.
+    3. After the body completes successfully, the buffer is flushed
+       (still inside the ETL savepoint) and the savepoint is
+       committed.
+    4. On success, ``etl_run_completed`` is written into the outer
+       transaction; on failure, ``etl_run_failed`` is written instead
+       (both land AFTER the savepoint is resolved so they are never
+       swept away by body rollback).
+    5. When the outer transaction is owned by us (the caller did not
+       pre-begin it), we commit it at the end of the audit flow even
+       on exception — that is how ``etl_run_started`` + ``etl_run_failed``
+       survive a body that rolled back. On the no-audit path we keep
+       the PR #6 behavior of rolling the outer back on exception.
+
+    ``dry_run`` and ``audit_meta`` are mutually exclusive: dry-run
+    means "validate without persisting anything", and audit records
+    are a persistence side-effect, so the combination is rejected to
+    make the expectation explicit at the call site.
     """
     if limit is not None and limit <= 0:
         raise ValueError("--limit must be a positive integer")
+    if dry_run and audit_meta is not None:
+        raise ValueError(
+            "dry_run and audit_meta are mutually exclusive: dry-run persists "
+            "nothing and audit trails are a persistence side-effect"
+        )
 
     loader = WorkbookLoader(workbook)
     aliases = load_aliases(aliases_path)
@@ -241,17 +296,33 @@ async def run_bootstrap(
     failures = 0
 
     # Transaction boundary: we MUST NOT commit or roll back any
-    # outer transaction the caller already started. Everything we
-    # do goes inside a SAVEPOINT so our commit or rollback releases
-    # or discards only our own changes.
-    #
-    # If the caller did NOT own an outer transaction, ``begin_nested``
-    # autobegins one for us (we "own" it). In that case we also
-    # commit or roll back the autobegun outer so no ETL state leaks
-    # into the session after the function returns. If the caller
-    # DID own the outer, we leave it completely alone.
+    # outer transaction the caller already started. Everything ETL-
+    # scoped goes inside a SAVEPOINT so our commit or rollback
+    # releases or discards only the body's changes. Run-level audit
+    # events live in the outer transaction (above the savepoint) so
+    # they survive savepoint rollback on failure.
     caller_owns_outer = session.in_transaction()
+    if audit_meta is not None and not caller_owns_outer:
+        # Explicitly autobegin the outer before writing etl_run_started
+        # so the RUN_STARTED insert has a transaction to land in.
+        await session.begin()
+
+    if audit_meta is not None:
+        try:
+            await write_run_audit(
+                session, action=RUN_STARTED, meta=audit_meta
+            )
+        except Exception:
+            # An audit-write failure at this point must not abort the
+            # entire ETL. Continue without the etl_run_started record;
+            # later run-level writes may or may not succeed but the
+            # body will proceed either way.
+            pass
+
     etl_savepoint = await session.begin_nested()
+    audit_buffer: AuditBuffer | None = (
+        AuditBuffer(session, audit_meta) if audit_meta is not None else None
+    )
 
     try:
         with DeadLetterWriter(errors_path) as dead_letter:
@@ -260,15 +331,27 @@ async def run_bootstrap(
                     break
                 total += 1
 
-                # Per-row SAVEPOINT so one bad row does not poison
-                # the enclosing transaction.
+                # Per-row cut-point: capture the audit buffer's state
+                # BEFORE we enter the per-row savepoint, so that a bad
+                # row can be truncated out of the buffer without
+                # losing the events from prior successful rows.
+                buffer_mark = (
+                    audit_buffer.mark() if audit_buffer is not None else None
+                )
+
                 try:
                     async with session.begin_nested():
                         await _process_one_row(
-                            session, wb_row.sheet, wb_row.data, aliases
+                            session,
+                            wb_row.sheet,
+                            wb_row.data,
+                            aliases,
+                            audit_buffer=audit_buffer,
                         )
                 except (RowValidationError, ValueError) as exc:
                     failures += 1
+                    if audit_buffer is not None and buffer_mark is not None:
+                        audit_buffer.rollback_to(buffer_mark)
                     dead_letter.write(
                         DeadLetterEntry(
                             sheet=wb_row.sheet,
@@ -279,20 +362,85 @@ async def run_bootstrap(
                         )
                     )
 
+            # Flush the row-level buffer BEFORE resolving the savepoint
+            # so the audit_log INSERTs participate in the same
+            # rollback unit as the entity rows they describe.
+            if audit_buffer is not None:
+                await audit_buffer.flush()
+
         if dry_run:
             await etl_savepoint.rollback()
-            # Also close out any autobegin transaction WE started so
-            # released savepoint state from earlier rows does not
-            # stay visible on the session after this function
-            # returns. Only do this when the outer was ours — if
-            # the caller owned it, leave it untouched.
+            # dry_run + audit_meta is rejected above; this branch
+            # runs in the no-audit case only. Close out any autobegin
+            # transaction WE started so released savepoint state from
+            # earlier rows does not stay visible after we return.
             if not caller_owns_outer and session.in_transaction():
                 await session.rollback()
         else:
             await etl_savepoint.commit()
+            if audit_meta is not None:
+                try:
+                    await write_run_audit(
+                        session,
+                        action=RUN_COMPLETED,
+                        meta=audit_meta,
+                        detail={
+                            "rows_attempted": total,
+                            "rows_failed": failures,
+                            "dry_run": False,
+                        },
+                    )
+                except Exception:
+                    pass
             if not caller_owns_outer and session.in_transaction():
                 await session.commit()
+    except Exception as exc:
+        if etl_savepoint.is_active:
+            await etl_savepoint.rollback()
+
+        if audit_meta is not None:
+            # Emit etl_run_failed after the savepoint has been reversed
+            # so this insert lands in the outer transaction and survives
+            # the body rollback. Defensive try/except prevents a
+            # failed audit write from masking the original ETL
+            # exception — the caller needs to see the real error.
+            try:
+                await write_run_audit(
+                    session,
+                    action=RUN_FAILED,
+                    meta=audit_meta,
+                    detail={
+                        "error_type": type(exc).__name__,
+                        "error_message": str(exc)[:1024],
+                        "rows_attempted": total,
+                        "rows_failed": failures,
+                    },
+                )
+            except Exception:
+                pass
+            if not caller_owns_outer:
+                # Commit the outer so etl_run_started + etl_run_failed
+                # persist even though the body was rolled back. This
+                # is the ONLY place the audit path diverges from the
+                # PR #6 backward-compat flow.
+                try:
+                    if session.in_transaction():
+                        await session.commit()
+                except Exception:
+                    if session.in_transaction():
+                        await session.rollback()
+        else:
+            # No-audit backward-compat path: roll back the outer if
+            # we autobegan it, matching PR #6 behavior exactly.
+            if not caller_owns_outer and session.in_transaction():
+                await session.rollback()
+        raise
     except BaseException:
+        # KeyboardInterrupt / SystemExit: roll back savepoint and
+        # outer without attempting audit writes. Audit on a
+        # BaseException path is too risky (the session may be in an
+        # unrecoverable state and adding writes could mask the
+        # original signal).
         if etl_savepoint.is_active:
             await etl_savepoint.rollback()
         if not caller_owns_outer and session.in_transaction():
@@ -368,6 +516,16 @@ async def _main_async(args: argparse.Namespace) -> int:
             async with engine.begin() as conn:
                 await conn.run_sync(metadata.create_all)
 
+        # Generate the audit meta exactly once here, at CLI entry,
+        # BEFORE the first session operation. This is the load-bearing
+        # "run_id exists once per invocation" invariant the user flagged
+        # in review — downstream writers must not generate their own.
+        # dry-run skips audit entirely because audit records are a
+        # persistence side-effect (see run_bootstrap docstring).
+        audit_meta: AuditMeta | None = None
+        if not args.dry_run:
+            audit_meta = new_audit_meta(args.workbook)
+
         async with session_factory() as session:
             decision = await run_bootstrap(
                 session,
@@ -377,6 +535,7 @@ async def _main_async(args: argparse.Namespace) -> int:
                 dry_run=args.dry_run,
                 limit=args.limit,
                 stdout=sys.stdout,
+                audit_meta=audit_meta,
             )
             return decision.code
     finally:

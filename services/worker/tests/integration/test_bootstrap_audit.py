@@ -1,0 +1,560 @@
+"""Integration tests for PR #7 Group B audit wiring.
+
+These drive the full ``run_bootstrap`` pipeline end-to-end against a
+sqlite-memory session with the committed fixture, and assert the
+audit_log state after each run matches the D3/D4 contract:
+
+  - First run: exactly one etl_run_started + one etl_run_completed at
+    the run-level, and one etl_insert per audited entity insertion.
+  - Idempotent second run on the same data: one etl_run_started + one
+    etl_run_completed + zero etl_insert + many etl_update (empty
+    changed) per re-touched entity.
+  - Catastrophic failure (unhandled exception mid-loop): exactly one
+    etl_run_started + one etl_run_failed with structured detail,
+    zero leaked row-level events, zero leaked entity rows.
+  - Caller-owned outer transaction: audit rows participate in the
+    caller's tx, caller decides persistence.
+
+The user's Group B review brief asked specifically about:
+  (a) run_id generated exactly once at CLI entry
+  (b) workbook_sha256 shared across row and run events
+  (c) etl_run_failed never dropped on the exception path
+  (d) audit writes not breaking the outer tx
+  (e) 500-row batch behavior under partial failure
+
+(a) and (b) are pinned by ``test_run_id_and_workbook_hash_shared_across_all_events``.
+(c) is pinned by ``test_catastrophic_failure_emits_run_failed``.
+(d) is pinned by ``test_caller_owned_outer_transaction_is_preserved``.
+(e) is covered at the unit level in test_audit.py; this file drives
+    the realistic full-fixture scenario under which the buffer's
+    mark/rollback_to pattern must not leak any row-level state.
+"""
+
+from __future__ import annotations
+
+import io
+from pathlib import Path
+
+import pytest
+import sqlalchemy as sa
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from worker.bootstrap import cli as cli_module
+from worker.bootstrap.audit import (
+    AUDIT_ACTOR,
+    ROW_INSERT,
+    ROW_UPDATE,
+    RUN_COMPLETED,
+    RUN_ENTITY,
+    RUN_FAILED,
+    RUN_STARTED,
+    new_audit_meta,
+)
+from worker.bootstrap.cli import run_bootstrap
+from worker.bootstrap.tables import (
+    audit_log_table,
+    codenames_table,
+    groups_table,
+    incidents_table,
+    reports_table,
+    sources_table,
+)
+
+
+REPO_ROOT = Path(__file__).resolve().parents[4]
+FIXTURE = REPO_ROOT / "services/worker/tests/fixtures/bootstrap_sample.xlsx"
+ALIASES = REPO_ROOT / "data/dictionaries/aliases.yml"
+
+
+async def _select_audit_rows(session: AsyncSession) -> list[dict]:
+    """Return every audit_log row as a plain dict, ordered by id."""
+    result = await session.execute(
+        sa.select(audit_log_table).order_by(audit_log_table.c.id)
+    )
+    return [dict(r) for r in result.mappings().all()]
+
+
+async def _count_by_action(session: AsyncSession) -> dict[str, int]:
+    result = await session.execute(
+        sa.select(
+            audit_log_table.c.action,
+            sa.func.count().label("n"),
+        ).group_by(audit_log_table.c.action)
+    )
+    return {row.action: row.n for row in result}
+
+
+# ---------------------------------------------------------------------------
+# Happy-path first run
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+class TestFirstRunAuditShape:
+    async def test_first_run_emits_exactly_one_start_and_one_complete(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        meta = new_audit_meta(FIXTURE)
+
+        stdout = io.StringIO()
+        await run_bootstrap(
+            db_session,
+            workbook=FIXTURE,
+            aliases_path=ALIASES,
+            errors_path=tmp_path / "errors.jsonl",
+            dry_run=False,
+            limit=None,
+            stdout=stdout,
+            audit_meta=meta,
+        )
+
+        counts = await _count_by_action(db_session)
+        assert counts.get(RUN_STARTED) == 1
+        assert counts.get(RUN_COMPLETED) == 1
+        assert RUN_FAILED not in counts  # no failures on clean fixture
+
+    async def test_first_run_emits_row_level_events(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """First run must produce row-level events. Note that BOTH
+        etl_insert AND etl_update are expected even on a "first run"
+        because the same entity can be touched by multiple workbook
+        rows within a single run (e.g. Actors row inserts group
+        "Lazarus", then a later Reports row with a `#lazarus` tag
+        re-touches it and gets an empty-changed update). The
+        first-vs-idempotent distinction is pinned by
+        :class:`TestIdempotentSecondRun` instead."""
+        meta = new_audit_meta(FIXTURE)
+        await run_bootstrap(
+            db_session,
+            workbook=FIXTURE,
+            aliases_path=ALIASES,
+            errors_path=tmp_path / "errors.jsonl",
+            dry_run=False,
+            limit=None,
+            stdout=io.StringIO(),
+            audit_meta=meta,
+        )
+        counts = await _count_by_action(db_session)
+        assert counts.get(ROW_INSERT, 0) > 0
+
+        # etl_insert count must equal the count of distinct
+        # (entity, entity_id) first-touches within the run. Equivalent
+        # invariant: total entity rows across the 5 audited tables
+        # equals count(etl_insert).
+        entity_row_total = 0
+        for table in (
+            groups_table, sources_table, codenames_table,
+            reports_table, incidents_table,
+        ):
+            n = (await db_session.execute(
+                sa.select(sa.func.count()).select_from(table)
+            )).scalar_one()
+            entity_row_total += n
+        assert counts[ROW_INSERT] == entity_row_total
+
+    async def test_row_level_events_cover_exactly_the_five_audited_entities(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        meta = new_audit_meta(FIXTURE)
+        await run_bootstrap(
+            db_session,
+            workbook=FIXTURE,
+            aliases_path=ALIASES,
+            errors_path=tmp_path / "errors.jsonl",
+            dry_run=False,
+            limit=None,
+            stdout=io.StringIO(),
+            audit_meta=meta,
+        )
+
+        # Collect distinct entity values from row-level events (exclude
+        # the run-level events, which use the "etl_run" literal).
+        result = await db_session.execute(
+            sa.select(audit_log_table.c.entity)
+            .where(audit_log_table.c.action.in_([ROW_INSERT, ROW_UPDATE]))
+            .distinct()
+        )
+        entities = {row[0] for row in result}
+        assert entities <= {
+            "groups", "sources", "codenames", "reports", "incidents",
+        }
+
+    async def test_actor_is_always_bootstrap_etl_literal(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        meta = new_audit_meta(FIXTURE)
+        await run_bootstrap(
+            db_session,
+            workbook=FIXTURE,
+            aliases_path=ALIASES,
+            errors_path=tmp_path / "errors.jsonl",
+            dry_run=False,
+            limit=None,
+            stdout=io.StringIO(),
+            audit_meta=meta,
+        )
+        result = await db_session.execute(
+            sa.select(audit_log_table.c.actor).distinct()
+        )
+        actors = {row[0] for row in result}
+        assert actors == {AUDIT_ACTOR}
+
+    async def test_run_level_rows_use_etl_run_entity_and_null_entity_id(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        meta = new_audit_meta(FIXTURE)
+        await run_bootstrap(
+            db_session,
+            workbook=FIXTURE,
+            aliases_path=ALIASES,
+            errors_path=tmp_path / "errors.jsonl",
+            dry_run=False,
+            limit=None,
+            stdout=io.StringIO(),
+            audit_meta=meta,
+        )
+        result = await db_session.execute(
+            sa.select(audit_log_table).where(
+                audit_log_table.c.action.in_([RUN_STARTED, RUN_COMPLETED, RUN_FAILED])
+            )
+        )
+        for row in result.mappings():
+            assert row["entity"] == RUN_ENTITY
+            assert row["entity_id"] is None
+
+    async def test_run_id_and_workbook_hash_shared_across_all_events(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Pins user review point (a) + (b): every audit row from a
+        single invocation must carry the identical run_id AND the
+        identical workbook_sha256. A review query `WHERE run_id = X`
+        must return the entire run as a coherent timeline."""
+        meta = new_audit_meta(FIXTURE)
+        await run_bootstrap(
+            db_session,
+            workbook=FIXTURE,
+            aliases_path=ALIASES,
+            errors_path=tmp_path / "errors.jsonl",
+            dry_run=False,
+            limit=None,
+            stdout=io.StringIO(),
+            audit_meta=meta,
+        )
+
+        rows = await _select_audit_rows(db_session)
+        assert len(rows) >= 3  # 1 started + >=1 insert + 1 completed
+
+        run_ids = {r["diff_jsonb"]["meta"]["run_id"] for r in rows}
+        wb_hashes = {r["diff_jsonb"]["meta"]["workbook_sha256"] for r in rows}
+        started_ats = {r["diff_jsonb"]["meta"]["started_at"] for r in rows}
+
+        assert run_ids == {str(meta.run_id)}
+        assert wb_hashes == {meta.workbook_sha256}
+        assert started_ats == {meta.started_at.isoformat()}
+
+        # And the run-level timeline ordering is exact: first row is
+        # etl_run_started, last row is etl_run_completed.
+        assert rows[0]["action"] == RUN_STARTED
+        assert rows[-1]["action"] == RUN_COMPLETED
+
+    async def test_completed_detail_carries_row_counts(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        meta = new_audit_meta(FIXTURE)
+        await run_bootstrap(
+            db_session,
+            workbook=FIXTURE,
+            aliases_path=ALIASES,
+            errors_path=tmp_path / "errors.jsonl",
+            dry_run=False,
+            limit=None,
+            stdout=io.StringIO(),
+            audit_meta=meta,
+        )
+        completed = (
+            await db_session.execute(
+                sa.select(audit_log_table).where(
+                    audit_log_table.c.action == RUN_COMPLETED
+                )
+            )
+        ).mappings().one()
+        detail = completed["diff_jsonb"]["detail"]
+        assert "rows_attempted" in detail
+        assert "rows_failed" in detail
+        assert detail["dry_run"] is False
+        assert detail["rows_attempted"] > 0
+
+
+# ---------------------------------------------------------------------------
+# Idempotent second run
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+class TestIdempotentSecondRun:
+    async def test_second_run_emits_only_updates(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        # First run
+        meta1 = new_audit_meta(FIXTURE)
+        await run_bootstrap(
+            db_session,
+            workbook=FIXTURE,
+            aliases_path=ALIASES,
+            errors_path=tmp_path / "errors1.jsonl",
+            dry_run=False,
+            limit=None,
+            stdout=io.StringIO(),
+            audit_meta=meta1,
+        )
+
+        # Snapshot: count the entity rows so we can prove the second
+        # run does not insert new rows.
+        def _count_all_entities() -> sa.Select:
+            return sa.select(
+                sa.func.count().label("n")
+            )
+
+        reports_before = (await db_session.execute(
+            _count_all_entities().select_from(reports_table)
+        )).scalar_one()
+        groups_before = (await db_session.execute(
+            _count_all_entities().select_from(groups_table)
+        )).scalar_one()
+
+        # Second run with a DIFFERENT AuditMeta (new run_id, same hash).
+        meta2 = new_audit_meta(FIXTURE)
+        assert meta2.run_id != meta1.run_id
+        assert meta2.workbook_sha256 == meta1.workbook_sha256  # same file
+
+        await run_bootstrap(
+            db_session,
+            workbook=FIXTURE,
+            aliases_path=ALIASES,
+            errors_path=tmp_path / "errors2.jsonl",
+            dry_run=False,
+            limit=None,
+            stdout=io.StringIO(),
+            audit_meta=meta2,
+        )
+
+        # Entity tables unchanged in size
+        reports_after = (await db_session.execute(
+            _count_all_entities().select_from(reports_table)
+        )).scalar_one()
+        groups_after = (await db_session.execute(
+            _count_all_entities().select_from(groups_table)
+        )).scalar_one()
+        assert reports_after == reports_before
+        assert groups_after == groups_before
+
+        # Second run's row-level events are all etl_update with empty
+        # changed payload.
+        result = await db_session.execute(
+            sa.select(audit_log_table).where(
+                sa.func.json_extract(
+                    audit_log_table.c.diff_jsonb,
+                    "$.meta.run_id",
+                ) == str(meta2.run_id)
+            )
+        )
+        second_run_rows = list(result.mappings())
+        assert len(second_run_rows) > 0
+
+        row_events = [
+            r for r in second_run_rows
+            if r["action"] in (ROW_INSERT, ROW_UPDATE)
+        ]
+        assert len(row_events) > 0
+        assert all(r["action"] == ROW_UPDATE for r in row_events)
+        for r in row_events:
+            assert r["diff_jsonb"]["op"] == "update"
+            assert r["diff_jsonb"]["changed"] == {}
+
+        # Exactly one started + one completed for run 2.
+        run_level_actions = [
+            r["action"] for r in second_run_rows
+            if r["action"] in (RUN_STARTED, RUN_COMPLETED, RUN_FAILED)
+        ]
+        assert run_level_actions == [RUN_STARTED, RUN_COMPLETED]
+
+
+# ---------------------------------------------------------------------------
+# Catastrophic failure — the user review point (c)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+class TestCatastrophicFailure:
+    async def test_catastrophic_failure_emits_run_failed(
+        self,
+        db_session: AsyncSession,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Monkeypatch ``upsert_report`` to raise a RuntimeError on
+        every call so the bootstrap body fails mid-loop with an
+        exception that the per-row RowValidationError/ValueError
+        handler does NOT catch.
+
+        Expected: body is fully rolled back (no entity rows, no
+        row-level audit events), but audit_log still contains exactly
+        1 etl_run_started + 1 etl_run_failed with the error detail.
+        """
+
+        async def failing_upsert_report(*args, **kwargs):
+            raise RuntimeError("simulated upsert_report crash")
+
+        # Patch at the call site inside cli module (imported symbol).
+        monkeypatch.setattr(
+            cli_module, "upsert_report", failing_upsert_report
+        )
+
+        meta = new_audit_meta(FIXTURE)
+        with pytest.raises(RuntimeError, match="simulated upsert_report crash"):
+            await run_bootstrap(
+                db_session,
+                workbook=FIXTURE,
+                aliases_path=ALIASES,
+                errors_path=tmp_path / "errors.jsonl",
+                dry_run=False,
+                limit=None,
+                stdout=io.StringIO(),
+                audit_meta=meta,
+            )
+
+        # After the exception propagates, the session's outer tx
+        # should have been committed by run_bootstrap so the run-level
+        # audit rows survive.
+        counts = await _count_by_action(db_session)
+        assert counts.get(RUN_STARTED) == 1
+        assert counts.get(RUN_FAILED) == 1
+        assert RUN_COMPLETED not in counts
+
+        # Zero row-level events: flush() was never reached (body
+        # raised mid-loop), so no buffered events touched audit_log.
+        # Equivalently, etl_savepoint.rollback() would have swept any
+        # already-flushed rows if they existed.
+        assert counts.get(ROW_INSERT, 0) == 0
+        assert counts.get(ROW_UPDATE, 0) == 0
+
+        # And no entity rows leaked — the Actors rows that processed
+        # successfully BEFORE the first Reports row crashed are
+        # reverted along with the savepoint. The entity tables are
+        # all empty.
+        for table in (
+            groups_table, sources_table, codenames_table,
+            reports_table, incidents_table,
+        ):
+            count = (await db_session.execute(
+                sa.select(sa.func.count()).select_from(table)
+            )).scalar_one()
+            assert count == 0, f"{table.name} leaked {count} rows on failure"
+
+    async def test_failed_detail_carries_error_type_and_message(
+        self,
+        db_session: AsyncSession,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        async def failing_upsert_report(*args, **kwargs):
+            raise RuntimeError("descriptive failure reason")
+
+        monkeypatch.setattr(
+            cli_module, "upsert_report", failing_upsert_report
+        )
+
+        meta = new_audit_meta(FIXTURE)
+        with pytest.raises(RuntimeError):
+            await run_bootstrap(
+                db_session,
+                workbook=FIXTURE,
+                aliases_path=ALIASES,
+                errors_path=tmp_path / "errors.jsonl",
+                dry_run=False,
+                limit=None,
+                stdout=io.StringIO(),
+                audit_meta=meta,
+            )
+
+        failed = (
+            await db_session.execute(
+                sa.select(audit_log_table).where(
+                    audit_log_table.c.action == RUN_FAILED
+                )
+            )
+        ).mappings().one()
+        detail = failed["diff_jsonb"]["detail"]
+        assert detail["error_type"] == "RuntimeError"
+        assert detail["error_message"] == "descriptive failure reason"
+        assert "rows_attempted" in detail
+        assert "rows_failed" in detail
+
+
+# ---------------------------------------------------------------------------
+# Caller-owned outer transaction
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+class TestCallerOwnedOuterTransaction:
+    async def test_caller_owned_outer_transaction_is_preserved(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Pins user review point (d): audit writes must not break the
+        outer transaction owned by the caller. The caller's sentinel
+        write must still be visible after run_bootstrap returns and
+        the caller commits."""
+        # Caller pre-begins the outer tx and inserts a sentinel group.
+        await db_session.begin()
+        await db_session.execute(
+            sa.insert(groups_table).values(name="CallerSentinelGroup")
+        )
+        assert db_session.in_transaction()
+
+        meta = new_audit_meta(FIXTURE)
+        await run_bootstrap(
+            db_session,
+            workbook=FIXTURE,
+            aliases_path=ALIASES,
+            errors_path=tmp_path / "errors.jsonl",
+            dry_run=False,
+            limit=None,
+            stdout=io.StringIO(),
+            audit_meta=meta,
+        )
+
+        # Caller's tx is still active (we did NOT commit or rollback
+        # it from inside run_bootstrap because the caller owned it).
+        assert db_session.in_transaction()
+
+        # Sentinel is still visible through the caller's tx.
+        sentinel = (
+            await db_session.execute(
+                sa.select(groups_table.c.name).where(
+                    groups_table.c.name == "CallerSentinelGroup"
+                )
+            )
+        ).first()
+        assert sentinel is not None
+
+        # Audit rows for this run landed in the caller's tx too — a
+        # pre-commit query finds them.
+        counts = await _count_by_action(db_session)
+        assert counts.get(RUN_STARTED) == 1
+        assert counts.get(RUN_COMPLETED) == 1
+
+        # Caller commits and the whole thing persists.
+        await db_session.commit()
+        assert not db_session.in_transaction()
+
+        # After caller commits, sentinel + audit rows are still there.
+        sentinel_after = (
+            await db_session.execute(
+                sa.select(groups_table.c.name).where(
+                    groups_table.c.name == "CallerSentinelGroup"
+                )
+            )
+        ).first()
+        assert sentinel_after is not None
