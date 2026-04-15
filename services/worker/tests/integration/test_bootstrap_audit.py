@@ -62,8 +62,58 @@ from worker.bootstrap.tables import (
 
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
-FIXTURE = REPO_ROOT / "services/worker/tests/fixtures/bootstrap_sample.xlsx"
+_STRESS_FIXTURE_XLSX = REPO_ROOT / "services/worker/tests/fixtures/bootstrap_sample.xlsx"
+_STRESS_FIXTURE_YAML = REPO_ROOT / "services/worker/tests/fixtures/bootstrap_sample.yaml"
 ALIASES = REPO_ROOT / "data/dictionaries/aliases.yml"
+
+
+def _build_happy_fixture_path() -> Path:
+    """Generate a happy-subset xlsx at module import time.
+
+    Prior to Codex round 3 P2, run-level audit writes ignored the D5
+    failure threshold and always emitted etl_run_completed on the
+    body-success path. These audit-shape tests were implicitly
+    relying on that, feeding the committed stress fixture (7 of 32
+    rows tagged _tag: failure_case, 21.9% > the 5% gate) into
+    run_bootstrap and expecting RUN_COMPLETED to land. After the fix,
+    threshold-exceeded runs correctly emit RUN_FAILED instead, which
+    is the right lineage semantics but breaks the shape tests.
+
+    Rather than duplicate the fixture to disk, generate a happy
+    subset once at module import via scripts/generate_bootstrap_
+    fixture.py's build_workbook + strip_failure_cases helpers. The
+    stress fixture stays reachable via _STRESS_FIXTURE_XLSX for the
+    threshold-regression test below.
+    """
+    import importlib.util
+    import tempfile
+
+    import yaml  # type: ignore[import-not-found]
+
+    spec = importlib.util.spec_from_file_location(
+        "_audit_happy_fixture_generator",
+        REPO_ROOT / "scripts" / "generate_bootstrap_fixture.py",
+    )
+    assert spec is not None and spec.loader is not None
+    gen = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(gen)
+
+    with _STRESS_FIXTURE_YAML.open("r", encoding="utf-8") as handle:
+        src = yaml.safe_load(handle)
+    src = gen.strip_failure_cases(src)
+    wb = gen.build_workbook(src)
+
+    out_dir = Path(tempfile.mkdtemp(prefix="dprk_cti_audit_fixture_"))
+    out = out_dir / "bootstrap_happy.xlsx"
+    wb.save(out)
+    return out
+
+
+#: Happy-subset workbook used by every audit-shape test in this file.
+#: Generated at import time so FIXTURE behaves like a static file path
+#: for the existing tests. The committed stress fixture is still
+#: reachable via _STRESS_FIXTURE_XLSX for the threshold-branch test.
+FIXTURE = _build_happy_fixture_path()
 
 
 async def _select_audit_rows(session: AsyncSession) -> list[dict]:
@@ -677,3 +727,75 @@ class TestAuditWriteFailureIsolation:
             await db_session.execute(sa.select(sa.func.count()).select_from(groups_table))
         ).scalar_one()
         assert group_count > 0
+
+
+# ---------------------------------------------------------------------------
+# Codex round 3 regression: threshold-exceeded body must emit RUN_FAILED
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+class TestThresholdExceededAuditShape:
+    """A bootstrap run whose body reached loop completion but
+    exceeded the D5 5% failure threshold must record the run as
+    ``etl_run_failed``, not ``etl_run_completed`` (Codex round 3
+    P2). Lineage consumers query ``audit_log`` by action and must
+    see the same verdict the CLI's exit code prints, otherwise
+    dashboards will misclassify failed loads as successful."""
+
+    async def test_stress_fixture_run_emits_run_failed(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        meta = new_audit_meta(_STRESS_FIXTURE_XLSX)
+        await run_bootstrap(
+            db_session,
+            workbook=_STRESS_FIXTURE_XLSX,
+            aliases_path=ALIASES,
+            errors_path=tmp_path / "errors.jsonl",
+            dry_run=False,
+            limit=None,
+            stdout=io.StringIO(),
+            audit_meta=meta,
+        )
+
+        counts = await _count_by_action(db_session)
+        assert counts.get(RUN_STARTED) == 1
+        assert counts.get(RUN_FAILED) == 1
+        assert RUN_COMPLETED not in counts
+
+    async def test_stress_fixture_run_failed_detail_carries_threshold_flag(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """The etl_run_failed detail must make it obvious that the
+        failure was threshold-exceeded (not an exception), so a
+        lineage query can distinguish ``decide_exit_code`` failures
+        from catastrophic mid-loop crashes without re-reading the
+        source workbook."""
+        meta = new_audit_meta(_STRESS_FIXTURE_XLSX)
+        await run_bootstrap(
+            db_session,
+            workbook=_STRESS_FIXTURE_XLSX,
+            aliases_path=ALIASES,
+            errors_path=tmp_path / "errors.jsonl",
+            dry_run=False,
+            limit=None,
+            stdout=io.StringIO(),
+            audit_meta=meta,
+        )
+
+        failed = (
+            await db_session.execute(
+                sa.select(audit_log_table).where(
+                    audit_log_table.c.action == RUN_FAILED
+                )
+            )
+        ).mappings().one()
+        detail = failed["diff_jsonb"]["detail"]
+
+        assert detail.get("threshold_exceeded") is True
+        assert detail["rows_attempted"] > 0
+        assert detail["rows_failed"] > 0
+        # The failure-rate is well above 5% on the committed stress
+        # fixture (7 / 32 = 21.9%) so the decision must be non-OK.
+        assert detail.get("exit_code", 0) != 0
+        assert "summary" in detail

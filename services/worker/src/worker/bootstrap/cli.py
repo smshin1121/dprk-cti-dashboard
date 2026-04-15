@@ -385,21 +385,43 @@ async def run_bootstrap(
         else:
             await etl_savepoint.commit()
             if audit_meta is not None:
+                # Compute the CLI decision BEFORE emitting the run-
+                # level audit so a run that tripped the D5 failure
+                # threshold lands in audit_log as etl_run_failed and
+                # not etl_run_completed (Codex round 3 P2). A body
+                # that reached this branch ran to loop completion,
+                # but the decision function may still reject it on
+                # failure-rate grounds. Lineage consumers and dash-
+                # boards MUST see the same verdict the CLI prints.
+                preview_decision = decide_exit_code(total, failures)
+                if preview_decision.code == ExitCode.OK:
+                    completion_action = RUN_COMPLETED
+                    completion_detail: dict[str, object] = {
+                        "rows_attempted": total,
+                        "rows_failed": failures,
+                        "dry_run": False,
+                    }
+                else:
+                    completion_action = RUN_FAILED
+                    completion_detail = {
+                        "rows_attempted": total,
+                        "rows_failed": failures,
+                        "dry_run": False,
+                        "threshold_exceeded": True,
+                        "exit_code": int(preview_decision.code),
+                        "summary": preview_decision.summary,
+                    }
                 # Same savepoint isolation as RUN_STARTED: on pg a
                 # failed audit INSERT would leave the outer tx in an
                 # aborted state and the final session.commit() below
-                # would raise (Codex P2).
+                # would raise (Codex round 1 P2).
                 try:
                     async with session.begin_nested():
                         await write_run_audit(
                             session,
-                            action=RUN_COMPLETED,
+                            action=completion_action,
                             meta=audit_meta,
-                            detail={
-                                "rows_attempted": total,
-                                "rows_failed": failures,
-                                "dry_run": False,
-                            },
+                            detail=completion_detail,
                         )
                 except Exception:
                     pass
