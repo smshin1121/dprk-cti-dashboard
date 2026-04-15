@@ -92,7 +92,7 @@ reports:
     author: Mandiant
     title: "Lazarus returns with new macOS backdoor targeting crypto exchanges"
     url: https://example.com/threat/lazarus-macos-2024
-    tags: "#lazarus #malware #appleseed #cve-2024-1234 #crypto"
+    tags: "#lazarus #appleseed #cve-2024-1234 #crypto"
     _tag: happy
   - published: 2024-06-21
     author: Kaspersky
@@ -104,7 +104,7 @@ reports:
     author: Cisco Talos
     title: "Konni RAT evolves with anti-analysis"
     url: https://example.com/posts/konni-rat-update
-    tags: "#konni #malware #bluelight"
+    tags: "#konni #bluelight"
     _tag: happy
   - published: 2025-01-14
     author: CrowdStrike

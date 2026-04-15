@@ -201,11 +201,19 @@ def test_classify_bare_malware_meta_tag_is_unknown(aliases) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Multi-tag parsing — the fixture's real cells
+# Multi-tag parsing — representative sequences
+#
+# These exercise the classifier against realistic multi-token strings.
+# The literals are self-contained and do NOT have to match the current
+# bootstrap fixture YAML. The Lazarus sequence intentionally mixes a
+# generic `#malware` meta-tag into the middle of the sequence so the
+# UNKNOWN-inside-a-valid-run path stays covered even though the happy
+# fixture rows no longer carry that token (so the data-quality-tests
+# CI job can seed a DQ-clean subset from the same YAML).
 # ---------------------------------------------------------------------------
 
 
-def test_classify_fixture_lazarus_report_row(aliases) -> None:
+def test_classify_lazarus_report_multitag_sequence(aliases) -> None:
     cell = "#lazarus #malware #appleseed #cve-2024-1234 #crypto"
     result = classify_tags(cell, aliases)
     assert len(result) == 5
@@ -221,7 +229,7 @@ def test_classify_fixture_lazarus_report_row(aliases) -> None:
     assert canonicals == ["Lazarus", None, "AppleSeed", "CVE-2024-1234", "crypto"]
 
 
-def test_classify_fixture_kimsuky_report_row(aliases) -> None:
+def test_classify_kimsuky_report_multitag_sequence(aliases) -> None:
     cell = "#kimsuky #operation-stealthy-tiger #finance"
     result = classify_tags(cell, aliases)
     assert len(result) == 3
