@@ -89,14 +89,23 @@ class UpsertOutcome:
     ``row_snapshot`` is populated only on ``INSERTED`` outcomes and
     carries the values dict that was written to the DB (plus the
     assigned PK). Row-level audit uses it as the ``"row"`` payload for
-    ``etl_insert`` events. On ``EXISTING`` outcomes ``row_snapshot``
-    stays ``None`` because Group B emits empty-changed ``etl_update``
-    rows (genuine field-level diffs wait for PR #8+ ON CONFLICT).
+    ``etl_insert`` events.
+
+    ``changed_fields`` is populated only on ``EXISTING`` outcomes
+    whose caller actually mutated the existing row (codename
+    backfill, report URL promotion, anonymous→vendor promotion,
+    etc.). The value is the column→new-value mapping that was passed
+    to the ``sa.update`` call, so row-level audit can emit
+    ``etl_update`` events whose ``changed`` payload reflects what
+    the ETL actually wrote (Codex round 2 P2). A truly idempotent
+    re-run leaves ``changed_fields`` at its default ``None`` and the
+    audit event degrades to an empty-changed update.
     """
 
     id: int
     action: UpsertAction
     row_snapshot: dict[str, Any] | None = None
+    changed_fields: dict[str, Any] | None = None
 
 
 def _emit_row_audit(
@@ -107,7 +116,13 @@ def _emit_row_audit(
     """Append a :class:`RowAuditEvent` for an upsert outcome.
 
     ``INSERTED`` → ``etl_insert`` with ``diff_payload.row = row_snapshot``.
-    ``EXISTING``  → ``etl_update`` with ``diff_payload.changed = {}``.
+    ``EXISTING`` → ``etl_update`` with ``diff_payload.changed`` set to
+    :attr:`UpsertOutcome.changed_fields` (the column→new-value mapping
+    the caller just wrote) or an empty dict when the caller performed
+    no in-place mutation. Codex round 2 P2: existing-row paths that
+    actually update fields (codename backfill, report URL promotion,
+    anonymous→vendor promotion) must surface those changes so
+    downstream lineage readers can reconstruct what the ETL wrote.
 
     Called from every audited upsert helper when the caller provides
     an :class:`AuditBuffer`. Silent no-op is not an option: a caller
@@ -130,7 +145,10 @@ def _emit_row_audit(
             entity=entity,
             entity_id=outcome.id,
             action=ROW_UPDATE,
-            diff_payload={"op": "update", "changed": {}},
+            diff_payload={
+                "op": "update",
+                "changed": dict(outcome.changed_fields or {}),
+            },
         ))
 
 
@@ -312,7 +330,11 @@ async def upsert_codename(
                 .where(codenames_table.c.id == codename_id)
                 .values(**patches)
             )
-        outcome = UpsertOutcome(id=codename_id, action=UpsertAction.EXISTING)
+        outcome = UpsertOutcome(
+            id=codename_id,
+            action=UpsertAction.EXISTING,
+            changed_fields=dict(patches) if patches else None,
+        )
     else:
         values = {
             "name": name,
@@ -439,6 +461,8 @@ async def upsert_report(
     if row_id_tuple is not None:
         report_id, existing_source_id = row_id_tuple
 
+        backfill_changes: dict[str, Any] = {}
+
         # Backfill source attribution if the existing row was
         # attributed to the synthetic `unknown` source (because an
         # earlier duplicate had no author) and this row carries a
@@ -462,8 +486,13 @@ async def upsert_report(
                     .where(reports_table.c.id == report_id)
                     .values(source_id=new_source.id)
                 )
+                backfill_changes["source_id"] = new_source.id
 
-        report_outcome = UpsertOutcome(id=report_id, action=UpsertAction.EXISTING)
+        report_outcome = UpsertOutcome(
+            id=report_id,
+            action=UpsertAction.EXISTING,
+            changed_fields=backfill_changes or None,
+        )
         if audit_buffer is not None:
             _emit_row_audit(audit_buffer, "reports", report_outcome)
         await _attach_report_tags(
@@ -510,13 +539,22 @@ async def upsert_report(
         # row carries the current one. Update the stored URL and
         # `url_canonical` to reflect the latest known location so
         # later lookups by the new URL still find the record.
+        url_changes: dict[str, Any] = {}
         if existing_url_canonical != url_canonical:
             await session.execute(
                 sa.update(reports_table)
                 .where(reports_table.c.id == report_id)
                 .values(url=row.url, url_canonical=url_canonical)
             )
-        report_outcome = UpsertOutcome(id=report_id, action=UpsertAction.EXISTING)
+            url_changes = {
+                "url": row.url,
+                "url_canonical": url_canonical,
+            }
+        report_outcome = UpsertOutcome(
+            id=report_id,
+            action=UpsertAction.EXISTING,
+            changed_fields=url_changes or None,
+        )
         if audit_buffer is not None:
             _emit_row_audit(audit_buffer, "reports", report_outcome)
         await _attach_report_tags(
@@ -554,7 +592,7 @@ async def upsert_report(
             promote_tuple = promote_row.first()
             if promote_tuple is not None:
                 report_id, existing_url_canonical = promote_tuple
-                update_values: dict[str, object] = {"source_id": source.id}
+                update_values: dict[str, Any] = {"source_id": source.id}
                 if existing_url_canonical != url_canonical:
                     update_values["url"] = row.url
                     update_values["url_canonical"] = url_canonical
@@ -564,7 +602,9 @@ async def upsert_report(
                     .values(**update_values)
                 )
                 report_outcome = UpsertOutcome(
-                    id=report_id, action=UpsertAction.EXISTING
+                    id=report_id,
+                    action=UpsertAction.EXISTING,
+                    changed_fields=dict(update_values),
                 )
                 if audit_buffer is not None:
                     _emit_row_audit(audit_buffer, "reports", report_outcome)

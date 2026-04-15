@@ -853,3 +853,152 @@ async def test_full_happy_fixture_idempotent_second_run(
     assert counts_after_second == counts_after_first, (
         f"second run was not idempotent: {counts_after_first} vs {counts_after_second}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Codex round 2 regression: EXISTING outcomes that mutate must surface
+# the real changed_fields for downstream audit lineage
+# ---------------------------------------------------------------------------
+
+
+async def test_upsert_codename_backfill_surfaces_changed_fields(
+    db_session: AsyncSession,
+) -> None:
+    """When ``upsert_codename`` updates an existing row (group_id /
+    named_by_source_id / first_seen / last_seen backfill), the
+    returned outcome must carry ``changed_fields`` with the exact
+    values that were written to the DB (Codex round 2 P2). Without
+    this, downstream audit lineage records the update as a no-op
+    ``changed: {}`` and reviewers cannot reconstruct what the ETL
+    actually mutated."""
+    group = await upsert_group(db_session, "Lazarus")
+    source = await upsert_source(db_session, "Kaspersky")
+
+    # Pass 1: no group / no source — both null.
+    first = await upsert_codename(
+        db_session,
+        name="HIDDEN COBRA",
+        group_id=None,
+        first_seen=None,
+        last_seen=None,
+    )
+    assert first.action is UpsertAction.INSERTED
+    assert first.changed_fields is None
+
+    # Pass 2: real backfill on every patch candidate.
+    second = await upsert_codename(
+        db_session,
+        name="HIDDEN COBRA",
+        group_id=group.id,
+        named_by_source_id=source.id,
+        first_seen=dt.date(2009, 2, 1),
+        last_seen=dt.date(2025, 12, 15),
+    )
+    assert second.action is UpsertAction.EXISTING
+    assert second.changed_fields == {
+        "group_id": group.id,
+        "named_by_source_id": source.id,
+        "first_seen": dt.date(2009, 2, 1),
+        "last_seen": dt.date(2025, 12, 15),
+    }
+
+    # Pass 3: nothing new to backfill — truly idempotent.
+    third = await upsert_codename(
+        db_session,
+        name="HIDDEN COBRA",
+        group_id=group.id,
+        named_by_source_id=source.id,
+        first_seen=dt.date(2009, 2, 1),
+        last_seen=dt.date(2025, 12, 15),
+    )
+    assert third.action is UpsertAction.EXISTING
+    assert third.changed_fields is None
+
+
+async def test_upsert_report_anonymous_promotion_surfaces_changed_fields(
+    db_session: AsyncSession, aliases
+) -> None:
+    """The anonymous→real-vendor promotion path must report the
+    exact columns it wrote (source_id, and possibly url/url_canonical)
+    so audit lineage can distinguish a no-op re-run from a real
+    promotion."""
+    # Pass 1: landing under the synthetic `unknown` source with URL_A.
+    anon_row = ReportRow(
+        published=dt.date(2024, 3, 15),
+        author=None,
+        title="Lazarus returns with new macOS backdoor",
+        url="https://example.com/threat/lazarus-a",
+        tags=None,
+    )
+    anon_outcome = await upsert_report(db_session, anon_row, aliases)
+    assert anon_outcome.action is UpsertAction.INSERTED
+
+    # Pass 2: same title, DIFFERENT URL, real vendor — must promote
+    # the existing row to the new source AND update the URL fields.
+    promoted_row = ReportRow(
+        published=dt.date(2024, 3, 15),
+        author="Mandiant",
+        title="Lazarus returns with new macOS backdoor",
+        url="https://example.com/threat/lazarus-b",
+        tags=None,
+    )
+    promoted = await upsert_report(db_session, promoted_row, aliases)
+
+    assert promoted.id == anon_outcome.id
+    assert promoted.action is UpsertAction.EXISTING
+    assert promoted.changed_fields is not None
+    assert "source_id" in promoted.changed_fields
+    assert promoted.changed_fields["url"] == "https://example.com/threat/lazarus-b"
+    assert "url_canonical" in promoted.changed_fields
+
+
+async def test_upsert_report_title_hash_moved_url_surfaces_changed_fields(
+    db_session: AsyncSession, aliases
+) -> None:
+    """The title-hash fallback 'same article, new URL' path must
+    report ``url`` / ``url_canonical`` in ``changed_fields`` so
+    lineage can track the URL mutation."""
+    base_row = ReportRow(
+        published=dt.date(2024, 3, 15),
+        author="Mandiant",
+        title="Lazarus returns with new macOS backdoor",
+        url="https://example.com/threat/lazarus-v1",
+        tags=None,
+    )
+    first = await upsert_report(db_session, base_row, aliases)
+    assert first.action is UpsertAction.INSERTED
+
+    moved_row = ReportRow(
+        published=dt.date(2024, 3, 15),
+        author="Mandiant",
+        title="Lazarus returns with new macOS backdoor",
+        url="https://example.com/threat/lazarus-v2",
+        tags=None,
+    )
+    second = await upsert_report(db_session, moved_row, aliases)
+    assert second.id == first.id
+    assert second.action is UpsertAction.EXISTING
+    assert second.changed_fields is not None
+    assert second.changed_fields["url"] == "https://example.com/threat/lazarus-v2"
+    assert "url_canonical" in second.changed_fields
+
+
+async def test_upsert_report_idempotent_rerun_has_no_changed_fields(
+    db_session: AsyncSession, aliases
+) -> None:
+    """Guardrail: a truly idempotent second upsert (identical URL,
+    same vendor, no backfill) must still produce EXISTING outcome
+    with ``changed_fields is None`` so the audit event degrades to
+    an empty-changed update."""
+    row = ReportRow(
+        published=dt.date(2024, 3, 15),
+        author="Mandiant",
+        title="Lazarus returns with new macOS backdoor",
+        url="https://example.com/threat/lazarus-v1",
+        tags=None,
+    )
+    first = await upsert_report(db_session, row, aliases)
+    second = await upsert_report(db_session, row, aliases)
+    assert second.id == first.id
+    assert second.action is UpsertAction.EXISTING
+    assert second.changed_fields is None
