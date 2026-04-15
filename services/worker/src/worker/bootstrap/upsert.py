@@ -88,24 +88,26 @@ class UpsertOutcome:
 
     ``row_snapshot`` is populated only on ``INSERTED`` outcomes and
     carries the values dict that was written to the DB (plus the
-    assigned PK). Row-level audit uses it as the ``"row"`` payload for
-    ``etl_insert`` events.
+    assigned PK). Row-level audit uses it as the ``"row"`` payload
+    for ``etl_insert`` events.
 
     ``changed_fields`` is populated only on ``EXISTING`` outcomes
     whose caller actually mutated the existing row (codename
     backfill, report URL promotion, anonymous→vendor promotion,
-    etc.). The value is the column→new-value mapping that was passed
-    to the ``sa.update`` call, so row-level audit can emit
-    ``etl_update`` events whose ``changed`` payload reflects what
-    the ETL actually wrote (Codex round 2 P2). A truly idempotent
-    re-run leaves ``changed_fields`` at its default ``None`` and the
-    audit event degrades to an empty-changed update.
+    etc.). Per the D3a contract in docs/plans/pr7-data-quality.md
+    the value is a ``{column: {"before": X, "after": Y}}`` mapping
+    so audit lineage can reconstruct what the ETL overwrote — the
+    earlier column→new-value shape (Codex round 2 P2) lost the
+    "what was replaced" half of the diff, which Codex round 3 P2
+    flagged. A truly idempotent re-run leaves ``changed_fields`` at
+    its default ``None`` and the audit event degrades to an empty-
+    changed update.
     """
 
     id: int
     action: UpsertAction
     row_snapshot: dict[str, Any] | None = None
-    changed_fields: dict[str, Any] | None = None
+    changed_fields: dict[str, dict[str, Any]] | None = None
 
 
 def _emit_row_audit(
@@ -117,12 +119,11 @@ def _emit_row_audit(
 
     ``INSERTED`` → ``etl_insert`` with ``diff_payload.row = row_snapshot``.
     ``EXISTING`` → ``etl_update`` with ``diff_payload.changed`` set to
-    :attr:`UpsertOutcome.changed_fields` (the column→new-value mapping
-    the caller just wrote) or an empty dict when the caller performed
-    no in-place mutation. Codex round 2 P2: existing-row paths that
-    actually update fields (codename backfill, report URL promotion,
-    anonymous→vendor promotion) must surface those changes so
-    downstream lineage readers can reconstruct what the ETL wrote.
+    :attr:`UpsertOutcome.changed_fields`, which matches D3a's
+    ``{column: {"before": X, "after": Y}}`` contract so audit lineage
+    can reconstruct both the overwritten value AND the replacement
+    (Codex round 3 P2). An empty dict is emitted for idempotent
+    re-runs where the caller performed no in-place mutation.
 
     Called from every audited upsert helper when the caller provides
     an :class:`AuditBuffer`. Silent no-op is not an option: a caller
@@ -312,18 +313,35 @@ async def upsert_codename(
             current_last,
         ) = row
         patches: dict[str, object] = {}
+        changed: dict[str, dict[str, Any]] = {}
         if current_group_id is None and group_id is not None:
             patches["group_id"] = group_id
+            changed["group_id"] = {
+                "before": current_group_id,
+                "after": group_id,
+            }
         if current_source_id is None and named_by_source_id is not None:
             # Report tags create codenames without a source; the
             # Actors sheet is the authoritative origin for the
             # "named by" attribution. Backfill it the first time the
             # Actors row for this codename arrives.
             patches["named_by_source_id"] = named_by_source_id
+            changed["named_by_source_id"] = {
+                "before": current_source_id,
+                "after": named_by_source_id,
+            }
         if current_first is None and first_seen is not None:
             patches["first_seen"] = first_seen
+            changed["first_seen"] = {
+                "before": current_first,
+                "after": first_seen,
+            }
         if current_last is None and last_seen is not None:
             patches["last_seen"] = last_seen
+            changed["last_seen"] = {
+                "before": current_last,
+                "after": last_seen,
+            }
         if patches:
             await session.execute(
                 sa.update(codenames_table)
@@ -333,7 +351,7 @@ async def upsert_codename(
         outcome = UpsertOutcome(
             id=codename_id,
             action=UpsertAction.EXISTING,
-            changed_fields=dict(patches) if patches else None,
+            changed_fields=changed if changed else None,
         )
     else:
         values = {
@@ -461,7 +479,7 @@ async def upsert_report(
     if row_id_tuple is not None:
         report_id, existing_source_id = row_id_tuple
 
-        backfill_changes: dict[str, Any] = {}
+        backfill_changes: dict[str, dict[str, Any]] = {}
 
         # Backfill source attribution if the existing row was
         # attributed to the synthetic `unknown` source (because an
@@ -486,7 +504,10 @@ async def upsert_report(
                     .where(reports_table.c.id == report_id)
                     .values(source_id=new_source.id)
                 )
-                backfill_changes["source_id"] = new_source.id
+                backfill_changes["source_id"] = {
+                    "before": existing_source_id,
+                    "after": new_source.id,
+                }
 
         report_outcome = UpsertOutcome(
             id=report_id,
@@ -525,6 +546,7 @@ async def upsert_report(
     title_existing = await session.execute(
         sa.select(
             reports_table.c.id,
+            reports_table.c.url,
             reports_table.c.url_canonical,
         ).where(
             (reports_table.c.sha256_title == title_hash)
@@ -533,22 +555,26 @@ async def upsert_report(
     )
     title_row = title_existing.first()
     if title_row is not None:
-        report_id, existing_url_canonical = title_row
+        report_id, existing_url, existing_url_canonical = title_row
         # The whole point of the title-hash fallback is "same article,
         # new URL": the existing row is the earlier URL, the incoming
         # row carries the current one. Update the stored URL and
         # `url_canonical` to reflect the latest known location so
         # later lookups by the new URL still find the record.
-        url_changes: dict[str, Any] = {}
+        url_changes: dict[str, dict[str, Any]] = {}
         if existing_url_canonical != url_canonical:
             await session.execute(
                 sa.update(reports_table)
                 .where(reports_table.c.id == report_id)
                 .values(url=row.url, url_canonical=url_canonical)
             )
-            url_changes = {
-                "url": row.url,
-                "url_canonical": url_canonical,
+            url_changes["url"] = {
+                "before": existing_url,
+                "after": row.url,
+            }
+            url_changes["url_canonical"] = {
+                "before": existing_url_canonical,
+                "after": url_canonical,
             }
         report_outcome = UpsertOutcome(
             id=report_id,
@@ -583,6 +609,7 @@ async def upsert_report(
             promote_row = await session.execute(
                 sa.select(
                     reports_table.c.id,
+                    reports_table.c.url,
                     reports_table.c.url_canonical,
                 ).where(
                     (reports_table.c.sha256_title == title_hash)
@@ -591,11 +618,25 @@ async def upsert_report(
             )
             promote_tuple = promote_row.first()
             if promote_tuple is not None:
-                report_id, existing_url_canonical = promote_tuple
+                report_id, existing_url, existing_url_canonical = promote_tuple
                 update_values: dict[str, Any] = {"source_id": source.id}
+                promote_changes: dict[str, dict[str, Any]] = {
+                    "source_id": {
+                        "before": unknown_source_id,
+                        "after": source.id,
+                    },
+                }
                 if existing_url_canonical != url_canonical:
                     update_values["url"] = row.url
                     update_values["url_canonical"] = url_canonical
+                    promote_changes["url"] = {
+                        "before": existing_url,
+                        "after": row.url,
+                    }
+                    promote_changes["url_canonical"] = {
+                        "before": existing_url_canonical,
+                        "after": url_canonical,
+                    }
                 await session.execute(
                     sa.update(reports_table)
                     .where(reports_table.c.id == report_id)
@@ -604,7 +645,7 @@ async def upsert_report(
                 report_outcome = UpsertOutcome(
                     id=report_id,
                     action=UpsertAction.EXISTING,
-                    changed_fields=dict(update_values),
+                    changed_fields=promote_changes,
                 )
                 if audit_buffer is not None:
                     _emit_row_audit(audit_buffer, "reports", report_outcome)
