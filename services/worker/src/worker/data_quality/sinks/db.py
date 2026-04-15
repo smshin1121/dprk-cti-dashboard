@@ -15,6 +15,8 @@ D5 column mapping:
     observed      ← ExpectationResult.observed (Decimal | None)
     threshold     ← ExpectationResult.threshold (Decimal | None)
     observed_rows ← ExpectationResult.observed_rows (int | None)
+                    (violating/affected rows — see results.py docstring
+                    for the per-expectation semantic)
     detail_jsonb  ← ExpectationResult.detail (dict)
     observed_at   ← ExpectationResult.observed_at (UTC datetime)
 

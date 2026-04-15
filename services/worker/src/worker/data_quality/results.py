@@ -97,8 +97,17 @@ class ExpectationResult:
     ``__post_init__`` so callers do not need to remember to wrap
     primitive literals.
 
-    ``observed_rows`` is an optional row count the expectation scanned,
-    useful for dashboards that want "out of N rows, M violated".
+    ``observed_rows`` is the **violating / affected row count** for the
+    expectation — i.e. the number of DB rows that actually failed or
+    contributed to the measured ratio, NOT the total scan size. For
+    value-domain / year-range / referential-integrity checks this is
+    the count of invalid rows; for null-rate it is the null row count;
+    for dedup-rate it is the duplicate row count (``total - distinct``).
+    The full scan-size context (total rows, denominator, etc.) lives
+    under ``detail`` (e.g. ``detail.total_rows``,
+    ``detail.total_non_null``, ``detail.db_canonical_count``) so
+    dashboards that want "M out of N" reconstruct both from a single
+    result instance.
 
     ``detail`` is a free-form JSON-serializable dict for expectation-
     specific context (which rows failed, which canonical was missing,

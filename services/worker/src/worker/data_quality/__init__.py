@@ -3,7 +3,8 @@
 Public surface:
   - :class:`ExpectationResult` — frozen dataclass returned by every
     expectation function. Carries the severity outcome, observed
-    metric, threshold, row count, and detail payload.
+    metric, threshold, the violating/affected row count, and a
+    detail payload with the full scan context.
   - :class:`Expectation` — binding of an expectation name to its
     check function. The runner iterates over these and treats the
     name as the stable identifier across DB sink, JSONL sink, and

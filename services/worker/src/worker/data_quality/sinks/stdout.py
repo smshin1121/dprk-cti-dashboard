@@ -21,9 +21,12 @@ Design notes:
     captured by CI.
   - **Width-aware.** Severity column is fixed at 7 characters; name
     column is sized to the longest expectation name plus padding.
-  - **Observed formatting.** Decimal values format to 4 decimal
-    places; int observed_rows format as ``"N rows"``. None values
-    render as an empty string.
+  - **Observed formatting.** Decimal ``observed`` values format to
+    4 decimal places (with threshold if present). When ``observed``
+    is None, the violating/affected ``observed_rows`` count is
+    rendered as ``"N rows"`` — the "rows" label is shorthand for
+    "violating rows" in the error/warn case and "0 rows" in the
+    pass case. None values render as an empty string.
 """
 
 from __future__ import annotations
@@ -50,8 +53,10 @@ def _format_observed(result: ExpectationResult) -> str:
     """Render the observed value column for one result row.
 
     Prefers the most specific representation available:
-      - numeric ``observed`` → 4 decimal places
-      - integer ``observed_rows`` → ``"<N> rows"``
+      - numeric ``observed`` (ratio check) → 4 decimal places, with
+        threshold suffix if present
+      - integer ``observed_rows`` (count check; value is the
+        violating/affected row count per D13) → ``"<N> rows"``
       - neither → empty string
     """
     if result.observed is not None:

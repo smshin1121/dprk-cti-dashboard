@@ -12,7 +12,7 @@ Mapping (mirrors D5 column order for readability):
     severity      str
     observed      str (Decimal serialized as string for exactness) | None
     threshold     str (Decimal serialized as string for exactness) | None
-    observed_rows int | None
+    observed_rows int | None   (violating/affected rows)
     detail_jsonb  dict (JSON-serializable)
     observed_at   str (ISO 8601 with explicit offset)
 
