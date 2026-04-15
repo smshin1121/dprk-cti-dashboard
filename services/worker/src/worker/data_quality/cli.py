@@ -360,7 +360,7 @@ async def run_check(
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
     try:
         async with session_factory() as session:
-            _outcome, exit_code = await run_check_on_session(
+            outcome, exit_code = await run_check_on_session(
                 session,
                 aliases=aliases,
                 run_id=effective_run_id,
@@ -369,11 +369,16 @@ async def run_check(
                 fail_on=fail_on,
                 stdout=stdout,
             )
-            # Persist dq_events inserts that landed on this session.
-            # sink errors are already captured in the outcome; we
-            # commit unconditionally so any sink that DID succeed
-            # keeps its rows.
-            await session.commit()
+            # Sink failures typically leave the pg transaction in an
+            # aborted state (Codex review P2). Committing would then
+            # raise and bubble up as EXIT_CONFIG_ERROR from
+            # _main_async, masking the documented EXIT_CHECK_FAILED
+            # exit code for sink failures. Roll back on the failure
+            # path and commit only on the clean path.
+            if outcome.had_sink_failure:
+                await session.rollback()
+            else:
+                await session.commit()
             return exit_code
     finally:
         await engine.dispose()

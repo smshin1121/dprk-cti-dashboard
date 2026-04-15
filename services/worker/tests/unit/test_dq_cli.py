@@ -450,3 +450,109 @@ class TestMainDispatcher:
         out = capsys.readouterr().out
         assert "not implemented" in out
         assert "2d" in out
+
+
+# ---------------------------------------------------------------------------
+# Codex round 1 regression: run_check must rollback on sink failure
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+class TestRunCheckSinkFailureRollback:
+    """When DbSink fails mid-run, run_check must call rollback — NOT
+    commit — on the surrounding session. Committing an aborted pg
+    transaction raises, and the raise propagates up through
+    _main_async's outer try/except, getting mis-mapped to
+    EXIT_CONFIG_ERROR instead of the documented EXIT_CHECK_FAILED
+    exit code for sink failures (Codex P2).
+
+    The test simulates pg's aborted-tx behaviour on sqlite-memory by
+    monkeypatching ``AsyncSession.commit`` so it raises whenever it
+    is called. With the fix, commit is never called on the sink-
+    failure branch and the simulated pg behaviour is observed only
+    if the fix regresses."""
+
+    async def test_run_check_rolls_back_when_db_sink_fails(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        import worker.data_quality.cli as cli_mod
+        from sqlalchemy.ext.asyncio import AsyncSession
+        from worker.data_quality.sinks.db import DbSink
+
+        async def _db_sink_boom(self, results):  # noqa: ANN001
+            raise RuntimeError("simulated aborted-tx-producing sink failure")
+
+        monkeypatch.setattr(DbSink, "write", _db_sink_boom)
+
+        call_log: list[str] = []
+        orig_commit = AsyncSession.commit
+        orig_rollback = AsyncSession.rollback
+
+        async def _simulated_pg_commit(self) -> None:
+            call_log.append("commit")
+            # Mimic pg raising on commit of an aborted transaction so
+            # the test detects the pre-fix regression even on sqlite.
+            raise RuntimeError(
+                "simulated pg: current transaction is aborted"
+            )
+
+        async def _tracking_rollback(self) -> None:
+            call_log.append("rollback")
+            return await orig_rollback(self)
+
+        monkeypatch.setattr(AsyncSession, "commit", _simulated_pg_commit)
+        monkeypatch.setattr(AsyncSession, "rollback", _tracking_rollback)
+
+        exit_code = await cli_mod.run_check(
+            database_url="sqlite+aiosqlite:///:memory:",
+            stdout=io.StringIO(),
+        )
+
+        assert exit_code == EXIT_CHECK_FAILED
+        assert "rollback" in call_log
+        assert "commit" not in call_log
+
+    async def test_run_check_still_commits_on_clean_happy_path(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """Guardrail: the rollback-on-sink-failure fix must NOT
+        regress the happy path. When no sink fails, run_check still
+        commits so any dq_events rows that landed survive."""
+        import worker.data_quality.cli as cli_mod
+        from sqlalchemy.ext.asyncio import AsyncSession
+        from worker.bootstrap.tables import metadata
+        from sqlalchemy.ext.asyncio import create_async_engine
+
+        # Pre-create the schema on a file-backed sqlite so run_check's
+        # engine (which opens its own connection) can see the tables.
+        db_path = tmp_path / "dq_happy.sqlite"
+        setup_engine = create_async_engine(
+            f"sqlite+aiosqlite:///{db_path}", future=True
+        )
+        async with setup_engine.begin() as conn:
+            await conn.run_sync(metadata.create_all)
+        await setup_engine.dispose()
+
+        call_log: list[str] = []
+        orig_commit = AsyncSession.commit
+        orig_rollback = AsyncSession.rollback
+
+        async def _tracking_commit(self) -> None:
+            call_log.append("commit")
+            return await orig_commit(self)
+
+        async def _tracking_rollback(self) -> None:
+            call_log.append("rollback")
+            return await orig_rollback(self)
+
+        monkeypatch.setattr(AsyncSession, "commit", _tracking_commit)
+        monkeypatch.setattr(AsyncSession, "rollback", _tracking_rollback)
+
+        exit_code = await cli_mod.run_check(
+            database_url=f"sqlite+aiosqlite:///{db_path}",
+            stdout=io.StringIO(),
+        )
+
+        assert exit_code == EXIT_OK
+        assert "commit" in call_log
+        assert "rollback" not in call_log
