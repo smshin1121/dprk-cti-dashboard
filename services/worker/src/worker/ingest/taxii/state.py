@@ -91,15 +91,19 @@ def _build_upsert(
     update_cols: dict[str, Any] = {
         "server_url": stmt.excluded.server_url,
         "collection_id": stmt.excluded.collection_id,
-        "last_added_after": stmt.excluded.last_added_after,
         "last_fetched_at": stmt.excluded.last_fetched_at,
-        "last_object_count": stmt.excluded.last_object_count,
         "last_error": stmt.excluded.last_error,
         "updated_at": stmt.excluded.updated_at,
     }
     if reset_failures:
+        # Success: advance the cursor to the new values
+        update_cols["last_added_after"] = stmt.excluded.last_added_after
+        update_cols["last_object_count"] = stmt.excluded.last_object_count
         update_cols["consecutive_failures"] = 0
     else:
+        # Failure: preserve the existing cursor so the next run retries
+        # from the same checkpoint instead of doing a full re-pull.
+        # P1 Codex R2: do NOT overwrite last_added_after/last_object_count.
         update_cols["consecutive_failures"] = (
             tbl.c.consecutive_failures + 1
         )

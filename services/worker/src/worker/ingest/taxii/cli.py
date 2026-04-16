@@ -163,10 +163,17 @@ async def _run_command_for_flow() -> None:
 
     from worker.ingest.taxii.runner import run_taxii_ingest as _run
 
-    engine = create_async_engine(
-        "postgresql+psycopg://postgres:postgres@localhost:5432/dprk_cti",
-        echo=False,
+    import os
+    database_url = os.environ.get(
+        "TAXII_DATABASE_URL",
+        os.environ.get("DATABASE_URL", ""),
     )
+    if not database_url:
+        raise RuntimeError(
+            "No database URL configured for Prefect flow. "
+            "Set TAXII_DATABASE_URL or DATABASE_URL env var."
+        )
+    engine = create_async_engine(database_url, echo=False)
     try:
         async with AsyncSession(engine, expire_on_commit=False) as session:
             async with session.begin():
