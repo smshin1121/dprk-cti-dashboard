@@ -294,6 +294,16 @@ def load_collections(path: Path | str) -> TaxiiCatalog:
             ) from exc
 
     _validate_bijection(collections, source)
+
+    # P2 Codex R5: validate that auth env vars exist at load time so
+    # misconfiguration is caught early, not during a scheduled fetch.
+    for col in collections:
+        if col.auth_type != "none":
+            try:
+                col.resolve_auth_headers()
+            except TaxiiCatalogError:
+                raise  # re-raise with the descriptive message
+
     return TaxiiCatalog(collections=tuple(collections))
 
 

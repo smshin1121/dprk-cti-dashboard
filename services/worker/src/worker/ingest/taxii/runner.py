@@ -27,7 +27,11 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from worker.bootstrap.aliases import AliasDictionary
-from worker.bootstrap.normalize import TAG_TYPE_UNKNOWN, classify_tags
+from worker.bootstrap.normalize import (
+    DEFAULT_SECTOR_CODES,
+    TAG_TYPE_UNKNOWN,
+    _classify_single,
+)
 from worker.data_quality.expectations.taxii_metrics import (
     check_taxii_empty_description_rate,
     check_taxii_fetch_failure_rate,
@@ -95,9 +99,15 @@ class TaxiiRunOutcome:
 
 
 def _check_label_mapped(label: str, aliases: AliasDictionary) -> bool:
-    """Return True if ``label`` maps to a known tag type via classify_tags."""
-    result = classify_tags(f"#{label}", aliases)
-    return bool(result) and result[0].type_ != TAG_TYPE_UNKNOWN
+    """Return True if ``label`` maps to a known tag type.
+
+    P3 Codex R5: uses ``_classify_single`` directly instead of
+    ``classify_tags`` with a synthetic ``#`` prefix. This handles
+    multi-word labels (e.g. "north korea") correctly — ``classify_tags``
+    would split on whitespace and only check the first token.
+    """
+    classified = _classify_single(label, aliases, DEFAULT_SECTOR_CODES)
+    return classified.type_ != TAG_TYPE_UNKNOWN
 
 
 async def run_taxii_ingest(
@@ -365,7 +375,9 @@ async def _process_collection(
             server_url=col.server_url,
             collection_id=col.collection_id,
             last_added_after=fetch_outcome.fetch_timestamp,
-            last_object_count=len(write_outcome.inserted_ids),
+            # P3 Codex R5: record fetched object count (not inserted) so
+            # incremental runs with overlap dedup don't show misleading 0.
+            last_object_count=len(fetch_outcome.objects),
             reset_failures=True,
         )
     else:
