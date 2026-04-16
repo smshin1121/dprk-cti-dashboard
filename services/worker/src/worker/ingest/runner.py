@@ -267,7 +267,10 @@ async def _process_feed_full(
         tp = preview_tags(entry.title, entry.summary, aliases)
         tag_t += tp.total
         tag_u += tp.unknown
-        draft = normalize_entry(entry)
+        try:
+            draft = normalize_entry(entry)
+        except Exception:
+            draft = None
         if draft is not None:
             drafts.append(draft)
 

@@ -23,7 +23,6 @@ __all__ = [
 
 _BENIGN_BOZO_TYPES = (
     feedparser.CharacterEncodingOverride,
-    feedparser.NonXMLContentType,
 )
 
 
