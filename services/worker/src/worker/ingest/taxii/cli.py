@@ -283,7 +283,7 @@ def _print_summary(outcome: TaxiiRunOutcome) -> None:
             status = "FAILED"
         print(
             f"    [{cr.slug}] {status} "
-            f"— {cr.inserted} new, {cr.skipped_duplicate} dup"
+            f"- {cr.inserted} new, {cr.skipped_duplicate} dup"
         )
     if outcome.all_collections_failed:
         print("  STATUS: ALL COLLECTIONS FAILED")
