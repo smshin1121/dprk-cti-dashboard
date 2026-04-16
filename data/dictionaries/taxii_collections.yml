@@ -1,0 +1,81 @@
+# TAXII 2.1 collection list for the DPRK CTI ingest pipeline.
+#
+# Each entry defines a single TAXII collection to poll. The ingest
+# worker fetches STIX 2.1 envelopes from each enabled collection on
+# every run and writes filtered objects to the `staging` table.
+#
+# Schema per entry (enforced by worker.ingest.taxii.config.TaxiiCollectionConfig):
+#   slug                    Unique short identifier (lowercase, hyphenated).
+#   display_name            Human-readable collection label.
+#   server_url              TAXII server base URL (https required).
+#   api_root_path           API root path (starts with /).
+#   collection_id           TAXII collection identifier.
+#   auth_type               "none", "basic", or "header_api_key".
+#   username                (basic only) Username for HTTP Basic auth.
+#   password_env            (basic only) Env var name holding the password.
+#   auth_header_name        (header_api_key only) Header name, e.g. "X-Api-Key".
+#   auth_header_value_env   (header_api_key only) Env var name holding the value.
+#   stix_types              Whitelist of STIX object types to ingest.
+#   enabled                 Whether the worker polls this collection.
+#   poll_interval_minutes   Advisory cadence for external schedulers.
+#   max_pages               Safety limit on pagination depth.
+#
+# Invariants enforced at load time by TaxiiCatalog:
+#   1. Unique slug across all entries.
+#   2. Unique (server_url, collection_id) pair across all entries.
+#
+# URL stability note: TAXII server endpoints are generally more stable
+# than RSS feed URLs, but the first real run after merge should verify
+# each server returns valid TAXII responses. Broken endpoints surface
+# as taxii.fetch_failure_rate warn in dq_events.
+
+- slug: mitre-enterprise-attack
+  display_name: MITRE ATT&CK Enterprise
+  server_url: https://cti-taxii.mitre.org
+  api_root_path: /stix/
+  collection_id: enterprise-attack
+  auth_type: none
+  stix_types:
+    - intrusion-set
+    - malware
+    - attack-pattern
+    - tool
+    - campaign
+    - indicator
+  enabled: true
+  poll_interval_minutes: 30
+  max_pages: 100
+
+- slug: mitre-mobile-attack
+  display_name: MITRE ATT&CK Mobile
+  server_url: https://cti-taxii.mitre.org
+  api_root_path: /stix/
+  collection_id: mobile-attack
+  auth_type: none
+  stix_types:
+    - intrusion-set
+    - malware
+    - attack-pattern
+    - tool
+    - campaign
+    - indicator
+  enabled: true
+  poll_interval_minutes: 30
+  max_pages: 100
+
+- slug: mitre-ics-attack
+  display_name: MITRE ATT&CK ICS
+  server_url: https://cti-taxii.mitre.org
+  api_root_path: /stix/
+  collection_id: ics-attack
+  auth_type: none
+  stix_types:
+    - intrusion-set
+    - malware
+    - attack-pattern
+    - tool
+    - campaign
+    - indicator
+  enabled: true
+  poll_interval_minutes: 60
+  max_pages: 100
