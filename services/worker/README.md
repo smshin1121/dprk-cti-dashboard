@@ -123,7 +123,145 @@ WHERE a.actor = 'rss_ingest'
 | `feed.fetch_failure_rate` | 0.20 | 피드 추가/제거 후 비율 변동 시 |
 | `feed.parse_error_rate` | 0.10 | 벤더 RSS 포맷 변경 감지 시 |
 | `feed.empty_title_rate` | 0.05 | 특정 벤더가 title 생략하는 경우 |
-| `rss.tags.unknown_rate` | 0.30 | aliases.yml 확장 후 unknown 비율 하락 시 |
+| `rss.tags.unknown_rate` | 1.0 (DEPRECATED) | **PR #9에서 deprecated.** 해시태그 추출이 실 피드에서 의미 없음. Phase 4 LLM enrichment에서 대체 예정. TAXII 대체 metric: `taxii.label_unmapped_rate`. |
+
+---
+
+## TAXII 2.1 Ingest (Phase 1.3b / PR #9)
+
+`worker.ingest.taxii` 패키지는 `data/dictionaries/taxii_collections.yml`에
+정의된 TAXII 2.1 컬렉션(초기: MITRE ATT&CK enterprise/mobile/ics)을 폴링하여
+STIX 2.1 객체를 `staging` 테이블에 적재한다. Production 테이블에는 직접 쓰지
+않는다 (D3). `taxii2-client` 대신 `httpx`를 직접 사용한다 (decision A).
+전체 결정 기록(D1–D6, A–I)은 `docs/plans/pr9-taxii-ingest.md`에 있다.
+
+### CLI 호출
+
+```bash
+# 기본 실행 — 모든 enabled 컬렉션을 폴링, staging에 적재
+python -m worker.ingest.taxii run \
+  --database-url postgresql+psycopg://postgres:postgres@localhost:5432/dprk_cti
+
+# 커스텀 컬렉션 리스트 + aliases 경로 지정
+python -m worker.ingest.taxii run \
+  --database-url "$DATABASE_URL" \
+  --collections-path data/dictionaries/taxii_collections.yml \
+  --aliases-path data/dictionaries/aliases.yml
+
+# DQ metric mirror JSONL 생성
+python -m worker.ingest.taxii run \
+  --database-url "$DATABASE_URL" \
+  --dq-report-path artifacts/taxii_dq.jsonl
+
+# 경고 수준에서 실패 처리
+python -m worker.ingest.taxii run \
+  --database-url "$DATABASE_URL" \
+  --fail-on warn
+
+# pending staging 행 조회 (읽기 전용, RSS와 공유)
+python -m worker.ingest.taxii list-pending \
+  --database-url "$DATABASE_URL" \
+  --limit 10 \
+  --json
+```
+
+### 플래그 요약
+
+**run 서브커맨드:**
+
+| 플래그 | 필수 | 기본값 | 용도 |
+|:---|:---:|:---|:---|
+| `--database-url` | O | — | async SQLAlchemy URL. |
+| `--collections-path` | | `data/dictionaries/taxii_collections.yml` | TAXII collection catalog YAML. |
+| `--aliases-path` | | repo 또는 wheel 내 `aliases.yml` | Label coverage metric용 alias dictionary. |
+| `--run-id` | | 새 uuid7 자동 생성 | `audit_log`와 `dq_events`에 공유될 run 식별자. |
+| `--dq-report-path` | | 없음 | JSONL mirror 파일 경로. |
+| `--fail-on` | | `none` | DQ 실패 threshold: `error` / `warn` / `none`. |
+
+**list-pending 서브커맨드:**
+
+| 플래그 | 필수 | 기본값 | 용도 |
+|:---|:---:|:---|:---|
+| `--database-url` | O | — | async SQLAlchemy URL. |
+| `--limit` | | 20 | 최대 반환 행 수. |
+| `--json` | | false | JSON 배열 형태로 출력. |
+
+### Exit code
+
+| 코드 | 의미 | 해석 |
+|:---:|:---|:---|
+| 0 | OK | 성공 또는 warn-only (`--fail-on none` 기본). |
+| 2 | FAILURE | 모든 컬렉션 실패 (all_collections_failed) 또는 `--fail-on` 기준 초과. |
+
+### State advance 규칙 (운영 troubleshooting 핵심)
+
+`taxii_collection_state.last_added_after`는 다음 3가지 조건이 **모두** 충족될 때만 전진한다:
+
+1. **Fetch 완료**: HTTP 오류 없음 AND `max_pages` 미도달 (전체 pagination 완료)
+2. **Normalize 성공**: STIX → StagingRowDraft 변환 중 예외 없음
+3. **Write 성공**: staging_writer에서 예외 없음
+
+**Partial failure 시 state는 전진하지 않는다.** 다음 실행에서 같은 `added_after` 지점부터 다시 폴링하며, `ON CONFLICT DO NOTHING`이 중복을 자동 처리한다.
+
+| 상황 | state 변화 | staging 기록 |
+|:---|:---|:---|
+| 전체 성공 | `last_added_after` 전진, failures=0 | 정상 insert |
+| Fetch 실패 (HTTP 500 등) | `last_error` 기록, failures++ | 없음 |
+| `max_pages` 도달 (불완전 fetch) | `last_error` 기록, failures++ | 가져온 만큼 insert (valid data) |
+| Page 2에서 timeout | `last_error` 기록, failures++ | Page 1 데이터만 insert |
+| Write 실패 | `last_error` 기록, failures++ | 부분/없음 |
+
+이 보수적 전략은 한 번 잘못 전진시키면 누락 복구가 어려운 TAXII 특성을 감안한 것이다.
+
+### audit_log / dq_events 조회 예제
+
+```sql
+-- 특정 TAXII run의 staging insert 건수
+SELECT COUNT(*)
+FROM audit_log
+WHERE actor = 'taxii_ingest'
+  AND action = 'staging_insert'
+  AND (diff_jsonb #>> '{meta,run_id}') = '01JGXXXXXXXXXXXXXXXXXXXX';
+
+-- 최근 TAXII run의 STIX parse error 내역
+SELECT observed_at, expectation, observed, threshold
+FROM dq_events
+WHERE expectation = 'taxii.stix_parse_error_rate'
+ORDER BY observed_at DESC
+LIMIT 5;
+
+-- TAXII run과 DQ event lineage join
+SELECT
+  a.action,
+  a.entity,
+  d.expectation,
+  d.severity,
+  d.observed
+FROM audit_log a
+JOIN dq_events d
+  ON (a.diff_jsonb #>> '{meta,run_id}')::uuid = d.run_id
+WHERE a.actor = 'taxii_ingest'
+  AND a.action = 'taxii_run_completed'
+  AND d.severity = 'warn';
+
+-- taxii_collection_state에서 실패 중인 컬렉션 확인
+SELECT collection_key, consecutive_failures, last_error, last_fetched_at
+FROM taxii_collection_state
+WHERE consecutive_failures > 0
+ORDER BY consecutive_failures DESC;
+```
+
+### D5 threshold 조정 가이드
+
+4개 TAXII DQ metric은 모두 warn-only이다. threshold가 실 데이터와 맞지
+않으면 `worker/data_quality/expectations/taxii_metrics.py`의 상수를 조정:
+
+| Metric | 현재 threshold | 조정 시점 |
+|:---|:---:|:---|
+| `taxii.fetch_failure_rate` | 0.20 | 컬렉션 추가/제거 후 비율 변동 시 |
+| `taxii.stix_parse_error_rate` | 0.10 | MITRE ATT&CK 스키마 변경 감지 시 |
+| `taxii.empty_description_rate` | 0.30 | 초기 tuning 예상 — attack-pattern에 description 없는 경우 흔함 |
+| `taxii.label_unmapped_rate` | 0.50 | aliases.yml 확장 후 unmapped 비율 하락 시. 분모=labels 배열이 있는 object의 label만 (없는 object 제외) |
 
 ---
 
