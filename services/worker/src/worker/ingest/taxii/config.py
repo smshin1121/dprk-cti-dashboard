@@ -105,9 +105,9 @@ class TaxiiCollectionConfig(BaseModel, frozen=True):
     def _server_url_https(cls, v: str) -> str:
         v = v.strip().rstrip("/")
         parsed = urlparse(v)
-        if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        if parsed.scheme != "https" or not parsed.netloc:
             raise ValueError(
-                f"server_url must be an absolute http/https URL, got {v!r}"
+                f"server_url must be an absolute https URL, got {v!r}"
             )
         return v
 

@@ -182,8 +182,24 @@ class TaxiiFetcher:
             last_more = outcome.more
             next_param = outcome.next_param
 
-            if not last_more or next_param is None:
+            if not last_more:
                 break
+
+            # P1 Codex R1: more=true without next is a server-side error.
+            # The collection advertised more data but gave no pagination
+            # token — we cannot advance state because we missed objects.
+            if next_param is None:
+                return CollectionFetchOutcome(
+                    collection_key=config.slug,
+                    objects=tuple(all_objects),
+                    pages_fetched=pages_fetched,
+                    max_pages_reached=False,
+                    fetch_timestamp=fetch_ts,
+                    error=(
+                        f"server returned more=true but no 'next' token "
+                        f"on page {pages_fetched} — incomplete collection"
+                    ),
+                )
 
         # max_pages_reached = loop exhausted AND server indicated more data
         max_pages_reached = last_more and next_param is not None

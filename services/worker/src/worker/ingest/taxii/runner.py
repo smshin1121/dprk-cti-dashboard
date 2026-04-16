@@ -243,21 +243,25 @@ async def _process_collection(
             [],
         )
 
-    if not fetch_outcome.is_success:
+    if not fetch_outcome.is_success and not fetch_outcome.objects:
+        # Total fetch failure with no usable objects — bail early.
         await _update_state_failure(
             session, col, fetch_outcome.error or "fetch failed",
         )
         return (
             CollectionResult(
                 slug=col.slug, fetched=False, fetch_complete=False,
-                objects_in_envelope=len(fetch_outcome.objects),
-                objects_after_filter=0, malformed_objects=0,
-                inserted=0, skipped_duplicate=0,
+                objects_in_envelope=0, objects_after_filter=0,
+                malformed_objects=0, inserted=0, skipped_duplicate=0,
                 state_advanced=False, fetch_error=fetch_outcome.error,
                 total_labels=0, unmapped_labels=0, empty_descriptions=0,
             ),
             [],
         )
+
+    # P2 Codex R1: even on mid-pagination error, process the objects we
+    # did get. They are valid STIX data. State will NOT advance because
+    # fetch_outcome.is_complete is False.
 
     # --- 2. Parse (type filter) ---
     parsed = parse_stix_objects(

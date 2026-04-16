@@ -221,6 +221,29 @@ async def test_fetch_multi_page_collects_all_objects() -> None:
 # ---------------------------------------------------------------------------
 
 
+async def test_more_true_without_next_is_incomplete() -> None:
+    """P1 Codex R1: more=true without next token = server error, not complete."""
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json=_envelope(
+                [_stix_object("malware", "001")],
+                more=True,
+                # next_param intentionally omitted
+            ),
+            headers={"Content-Type": _TAXII_CT},
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        fetcher = TaxiiFetcher(client=client)
+        outcome = await fetcher.fetch_collection(_make_config())
+
+    assert not outcome.is_success  # Error set
+    assert not outcome.is_complete  # NOT complete
+    assert "more=true but no 'next'" in (outcome.error or "")
+    assert len(outcome.objects) == 1  # Objects from page 1 preserved
+
+
 async def test_max_pages_terminates_infinite_pagination() -> None:
     """Server always returns more=True — fetcher stops at max_pages."""
     call_count = 0

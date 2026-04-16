@@ -39,7 +39,7 @@ from worker.ingest.taxii.fetcher import TaxiiFetcher
 from worker.ingest.taxii.runner import TaxiiRunOutcome, run_taxii_ingest
 
 
-__all__ = ["main"]
+__all__ = ["main", "_run_command_for_flow"]
 
 
 EXIT_OK = 0
@@ -136,6 +136,54 @@ def main(argv: list[str] | None = None) -> None:
     else:
         code = EXIT_FAILURE
     sys.exit(code)
+
+
+async def _run_command_for_flow() -> None:
+    """Run the TAXII ingest with default settings, no sys.exit().
+
+    Called by the Prefect flow wrapper (P2 Codex R1 fix).
+    """
+    collections_path = default_collections_path()
+    catalog = load_collections(collections_path)
+
+    aliases = None
+    try:
+        from worker.bootstrap.aliases import load_aliases
+        from worker.bootstrap.cli import _default_aliases_path
+        aliases = load_aliases(_default_aliases_path())
+    except Exception:
+        pass
+
+    run_id = new_uuid7()
+    audit_meta = TaxiiRunMeta(
+        run_id=run_id,
+        collections_path=str(collections_path),
+        started_at=dt.datetime.now(dt.timezone.utc),
+    )
+
+    from worker.ingest.taxii.runner import run_taxii_ingest as _run
+
+    engine = create_async_engine(
+        "postgresql+psycopg://postgres:postgres@localhost:5432/dprk_cti",
+        echo=False,
+    )
+    try:
+        async with AsyncSession(engine, expire_on_commit=False) as session:
+            async with session.begin():
+                fetcher = TaxiiFetcher()
+                try:
+                    await _run(
+                        session,
+                        catalog=catalog,
+                        fetcher=fetcher,
+                        aliases=aliases,
+                        run_id=run_id,
+                        audit_meta=audit_meta,
+                    )
+                finally:
+                    await fetcher.close()
+    finally:
+        await engine.dispose()
 
 
 async def _run_command(args: argparse.Namespace) -> int:

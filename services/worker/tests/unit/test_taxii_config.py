@@ -289,9 +289,15 @@ def test_config_rejects_blank_display_name() -> None:
         TaxiiCollectionConfig(**_minimal_entry(display_name="  "))
 
 
-def test_config_rejects_non_http_server_url() -> None:
+def test_config_rejects_non_https_server_url() -> None:
     with pytest.raises(Exception, match="server_url"):
         TaxiiCollectionConfig(**_minimal_entry(server_url="ftp://bad.com"))
+
+
+def test_config_rejects_http_server_url() -> None:
+    """P1 Codex R1: plain http rejected to prevent credential leak."""
+    with pytest.raises(Exception, match="https"):
+        TaxiiCollectionConfig(**_minimal_entry(server_url="http://insecure.com"))
 
 
 def test_config_rejects_blank_server_url() -> None:
