@@ -11,10 +11,10 @@ def bootstrap_etl() -> None:
     logger.info("Bootstrap ETL scaffold ready")
 
 
-@flow(name="rss-taxii-ingest")
-def ingest_sources() -> None:
-    logger = get_run_logger()
-    logger.info("RSS/TAXII ingest scaffold ready")
+@flow(name="rss-ingest")
+def rss_ingest() -> None:
+    from .ingest.flow import rss_ingest_flow
+    rss_ingest_flow()
 
 
 @flow(name="llm-enrich")
@@ -31,7 +31,7 @@ def anomaly_alerts() -> None:
 
 def run() -> None:
     bootstrap_etl()
-    ingest_sources()
+    rss_ingest()
     llm_enrich()
     anomaly_alerts()
 
