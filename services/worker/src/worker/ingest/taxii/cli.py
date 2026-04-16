@@ -177,6 +177,9 @@ async def _run_command_for_flow() -> None:
     try:
         async with AsyncSession(engine, expire_on_commit=False) as session:
             async with session.begin():
+                # P2 Codex R4: wire DQ sinks so dq_events are persisted.
+                sinks: list = [StdoutSink()]
+                sinks.append(DbSink(session=session, run_id=run_id))
                 fetcher = TaxiiFetcher()
                 try:
                     await _run(
@@ -186,6 +189,7 @@ async def _run_command_for_flow() -> None:
                         aliases=aliases,
                         run_id=run_id,
                         audit_meta=audit_meta,
+                        sinks=sinks,
                     )
                 finally:
                     await fetcher.close()

@@ -60,14 +60,18 @@ def _extract_attack_url(obj: dict) -> str | None:
     for ref in refs:
         if not isinstance(ref, dict):
             continue
-        if ref.get("source_name") == "mitre-attack" and ref.get("url"):
-            return ref["url"]
+        url = ref.get("url")
+        if ref.get("source_name") == "mitre-attack" and isinstance(url, str) and url:
+            return url
 
     # Priority 2: any URL containing attack.mitre.org
+    # P2 Codex R4: guard against non-string url values.
     for ref in refs:
         if not isinstance(ref, dict):
             continue
-        url = ref.get("url", "")
+        url = ref.get("url")
+        if not isinstance(url, str):
+            continue
         if "attack.mitre.org" in url:
             return url
 
