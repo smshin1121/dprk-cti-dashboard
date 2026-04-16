@@ -54,7 +54,7 @@ def normalize_entry(entry: RawFeedEntry) -> StagingRowDraft | None:
         sha256_title=title_hash,
         title=entry.title,
         published=published,
-        summary=entry.summary,
+        summary=None,
     )
 
 

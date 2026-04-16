@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import datetime as dt
 import json
 import sys
 import uuid
@@ -30,7 +31,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from worker.bootstrap.aliases import load_aliases
 from worker.bootstrap.audit import new_uuid7
 from worker.bootstrap.tables import staging_table
+from worker.data_quality.sinks.db import DbSink
 from worker.data_quality.sinks.stdout import StdoutSink
+from worker.ingest.audit import IngestRunMeta
 from worker.ingest.config import default_feeds_path, load_feeds
 from worker.ingest.fetcher import RssFetcher
 from worker.ingest.runner import run_rss_ingest
@@ -134,12 +137,23 @@ async def _run_command(args: argparse.Namespace) -> int:
 
     run_id = uuid.UUID(args.run_id) if args.run_id else new_uuid7()
 
+    audit_meta = IngestRunMeta(
+        run_id=run_id,
+        feeds_path=str(feeds_path),
+        started_at=dt.datetime.now(dt.timezone.utc),
+    )
+
     engine = create_async_engine(args.database_url, echo=False)
-    sinks = [StdoutSink()]
+
+    sinks: list = [StdoutSink()]
+    if args.dq_report_path:
+        from worker.data_quality.sinks.jsonl import JsonlSink
+        sinks.append(JsonlSink(path=args.dq_report_path))
 
     try:
         async with AsyncSession(engine, expire_on_commit=False) as session:
             async with session.begin():
+                sinks.append(DbSink(session=session, run_id=run_id))
                 fetcher = RssFetcher()
                 try:
                     outcome = await run_rss_ingest(
@@ -148,6 +162,7 @@ async def _run_command(args: argparse.Namespace) -> int:
                         fetcher=fetcher,
                         aliases=aliases,
                         run_id=run_id,
+                        audit_meta=audit_meta,
                         sinks=sinks,
                     )
                 finally:
