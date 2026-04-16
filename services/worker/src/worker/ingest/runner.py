@@ -127,15 +127,16 @@ async def run_rss_ingest(
         1 for fr in feed_results_final
         if fr.fetch_error is not None and not fr.not_modified
     )
+    total_not_modified = sum(1 for fr in feed_results_final if fr.not_modified)
 
     n_enabled = len(enabled)
-    n_fetched = n_enabled - total_fetch_failures
+    n_actually_parsed = n_enabled - total_fetch_failures - total_not_modified
     all_failed = n_enabled > 0 and total_fetch_failures == n_enabled
 
     # D10 feed-level DQ metrics via feed_metrics module
     dq_results = (
         check_fetch_failure_rate(n_enabled, total_fetch_failures),
-        check_parse_error_rate(n_fetched, total_parse_errors),
+        check_parse_error_rate(n_actually_parsed, total_parse_errors),
         check_empty_title_rate(total_entries, empty_title_count),
         check_unknown_tag_rate(tag_total, tag_unknown),
     )

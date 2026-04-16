@@ -88,7 +88,7 @@ def parse_feed(
         RawFeedEntry(
             title=_clean_str(e.get("title")),
             link=_clean_str(e.get("link")),
-            published_raw=_clean_str(e.get("published")),
+            published_raw=_clean_str(e.get("published") or e.get("updated")),
             summary=_clean_str(e.get("summary")),
         )
         for e in parsed.entries

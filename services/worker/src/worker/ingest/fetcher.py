@@ -127,8 +127,8 @@ class RssFetcher:
             return FetchOutcome(
                 status_code=response.status_code,
                 content=None,
-                etag=resp_etag,
-                last_modified=resp_last_modified,
+                etag=resp_etag or (state.etag if state else None),
+                last_modified=resp_last_modified or (state.last_modified if state else None),
                 error=f"HTTP {response.status_code}",
             )
 
