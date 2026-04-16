@@ -5,8 +5,9 @@ These tables are a **worker-local view** of the real schema defined by
 ``0002_staging_and_indexes.py``,
 ``0003_audit_entity_nullable.py``,
 ``0004_bigint_pk_migration.py``,
-``0005_dq_events.py``, and
-``0006_rss_feed_state.py``. They intentionally omit PostgreSQL-
+``0005_dq_events.py``,
+``0006_rss_feed_state.py``, and
+``0007_taxii_collection_state.py``. They intentionally omit PostgreSQL-
 specific columns (pgvector embeddings, ARRAY aliases) that sqlite-
 memory cannot represent, so unit tests can run the same upsert code
 against an in-memory database.
@@ -474,6 +475,48 @@ rss_feed_state_table = sa.Table(
 )
 
 
+# ---------------------------------------------------------------------------
+# taxii_collection_state (PR #9 Group B — migration 0007 mirror)
+# ---------------------------------------------------------------------------
+#
+# Mirror of the production table created by
+# ``db/migrations/versions/0007_taxii_collection_state.py``. Exists so
+# sqlite-memory unit tests can exercise the TAXII collection state
+# read/write helpers without a live Postgres instance. TAXII state
+# tracks ``last_added_after`` (timestamp for incremental polling),
+# unlike RSS state which tracks ETag/Last-Modified (HTTP conditional GET).
+
+taxii_collection_state_table = sa.Table(
+    "taxii_collection_state",
+    metadata,
+    sa.Column(
+        "collection_key", sa.Text(), primary_key=True, nullable=False,
+    ),
+    sa.Column("server_url", sa.Text(), nullable=False),
+    sa.Column("collection_id", sa.Text(), nullable=False),
+    sa.Column("last_added_after", sa.Text(), nullable=True),
+    sa.Column(
+        "last_fetched_at",
+        sa.DateTime(timezone=True),
+        nullable=True,
+    ),
+    sa.Column("last_object_count", sa.Integer(), nullable=True),
+    sa.Column("last_error", sa.Text(), nullable=True),
+    sa.Column(
+        "consecutive_failures",
+        sa.Integer(),
+        nullable=False,
+        server_default=sa.text("0"),
+    ),
+    sa.Column(
+        "updated_at",
+        sa.DateTime(timezone=True),
+        nullable=False,
+        server_default=sa.func.current_timestamp(),
+    ),
+)
+
+
 __all__ = [
     "audit_log_table",
     "dq_events_table",
@@ -492,4 +535,5 @@ __all__ = [
     "sources_table",
     "staging_table",
     "tags_table",
+    "taxii_collection_state_table",
 ]
