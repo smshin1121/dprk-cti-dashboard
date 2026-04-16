@@ -21,6 +21,7 @@ import argparse
 import asyncio
 import datetime as dt
 import json
+import platform
 import sys
 import uuid
 from pathlib import Path
@@ -114,12 +115,21 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _run_async(coro):  # noqa: ANN001
+    """Run an async coroutine, using SelectorEventLoop on Windows."""
+    if platform.system() == "Windows":
+        import selectors
+        loop_factory = asyncio.SelectorEventLoop
+        return asyncio.run(coro, loop_factory=loop_factory)
+    return asyncio.run(coro)
+
+
 def main(argv: list[str] | None = None) -> None:
     args = build_parser().parse_args(argv)
     if args.command == "run":
-        code = asyncio.run(_run_command(args))
+        code = _run_async(_run_command(args))
     elif args.command == "list-pending":
-        code = asyncio.run(_list_pending_command(args))
+        code = _run_async(_list_pending_command(args))
     else:
         code = EXIT_FAILURE
     sys.exit(code)

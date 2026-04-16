@@ -43,15 +43,15 @@
   poll_interval_minutes: 15
 
 - slug: mandiant-threat-intel
-  display_name: Google Cloud Threat Intelligence (Mandiant)
-  url: https://cloud.google.com/blog/topics/threat-intelligence/rss/
-  kind: atom
+  display_name: Mandiant Threat Intelligence Blog
+  url: https://www.mandiant.com/resources/blog/rss.xml
+  kind: rss
   enabled: true
   poll_interval_minutes: 30
 
 - slug: recordedfuture-blog
   display_name: Recorded Future Blog
-  url: https://www.recordedfuture.com/blog/rss.xml
+  url: https://www.recordedfuture.com/feed
   kind: rss
   enabled: true
   poll_interval_minutes: 30
