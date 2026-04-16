@@ -11,14 +11,28 @@ metrics and emits them through the standard DQ sink fan-out.
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass, field
-from decimal import Decimal
+from dataclasses import dataclass
 from typing import Any
 
+import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from worker.bootstrap.aliases import AliasDictionary
+from worker.data_quality.expectations.feed_metrics import (
+    check_empty_title_rate,
+    check_fetch_failure_rate,
+    check_parse_error_rate,
+    check_unknown_tag_rate,
+)
 from worker.data_quality.results import ExpectationResult, Sink
+from worker.ingest.audit import (
+    IngestRunMeta,
+    RSS_RUN_COMPLETED,
+    RSS_RUN_FAILED,
+    RSS_RUN_STARTED,
+    write_ingest_run_audit,
+    write_staging_insert_audit,
+)
 from worker.ingest.config import FeedCatalog, FeedConfig
 from worker.ingest.feed_state import FeedStateRow, load_state, upsert_state
 from worker.ingest.fetcher import FetchOutcome, RssFetcher
@@ -70,10 +84,22 @@ async def run_rss_ingest(
     fetcher: RssFetcher,
     aliases: AliasDictionary,
     run_id: uuid.UUID,
+    audit_meta: IngestRunMeta | None = None,
     sinks: list[Sink] | None = None,
 ) -> RunOutcome:
     """Run the full RSS ingest pipeline with per-feed isolation."""
     enabled = catalog.enabled
+
+    # Audit: rss_run_started (savepoint-wrapped)
+    if audit_meta is not None:
+        try:
+            async with session.begin_nested():
+                await write_ingest_run_audit(
+                    session, action=RSS_RUN_STARTED, meta=audit_meta,
+                )
+        except Exception:
+            pass
+
     feed_results_final: list[FeedResult] = []
     all_inserted_ids_final: list[int] = []
     tag_total = 0
@@ -84,7 +110,7 @@ async def run_rss_ingest(
     for feed_cfg in enabled:
         fr, inserted_ids, entries_count, empty_titles, tag_t, tag_u = (
             await _process_feed_full(
-                session, feed_cfg, fetcher, aliases
+                session, feed_cfg, fetcher, aliases, audit_meta,
             )
         )
         feed_results_final.append(fr)
@@ -103,17 +129,15 @@ async def run_rss_ingest(
     )
 
     n_enabled = len(enabled)
+    n_fetched = n_enabled - total_fetch_failures
     all_failed = n_enabled > 0 and total_fetch_failures == n_enabled
 
-    # Compute D10 feed-level DQ metrics
-    dq_results = _compute_dq_metrics(
-        n_feeds=n_enabled,
-        n_fetch_failures=total_fetch_failures,
-        n_parse_errors=total_parse_errors,
-        n_entries=total_entries,
-        n_empty_titles=empty_title_count,
-        n_tag_total=tag_total,
-        n_tag_unknown=tag_unknown,
+    # D10 feed-level DQ metrics via feed_metrics module
+    dq_results = (
+        check_fetch_failure_rate(n_enabled, total_fetch_failures),
+        check_parse_error_rate(n_fetched, total_parse_errors),
+        check_empty_title_rate(total_entries, empty_title_count),
+        check_unknown_tag_rate(tag_total, tag_unknown),
     )
 
     # Emit through sinks
@@ -122,7 +146,26 @@ async def run_rss_ingest(
             try:
                 await sink.write(list(dq_results))
             except Exception:
-                pass  # sink failures don't abort the run
+                pass
+
+    # Audit: rss_run_completed or rss_run_failed
+    if audit_meta is not None:
+        detail = {
+            "total_inserted": total_inserted,
+            "total_skipped_duplicate": total_skipped,
+            "total_fetch_failures": total_fetch_failures,
+            "total_parse_errors": total_parse_errors,
+        }
+        action = RSS_RUN_FAILED if all_failed else RSS_RUN_COMPLETED
+        if all_failed:
+            detail["all_feeds_failed"] = True
+        try:
+            async with session.begin_nested():
+                await write_ingest_run_audit(
+                    session, action=action, meta=audit_meta, detail=detail,
+                )
+        except Exception:
+            pass
 
     return RunOutcome(
         run_id=run_id,
@@ -142,6 +185,7 @@ async def _process_feed_full(
     feed: FeedConfig,
     fetcher: RssFetcher,
     aliases: AliasDictionary,
+    audit_meta: IngestRunMeta | None = None,
 ) -> tuple[FeedResult, list[int], int, int, int, int]:
     """Process one feed. Returns (FeedResult, inserted_ids, entries_count,
     empty_title_count, tag_total, tag_unknown).
@@ -232,6 +276,33 @@ async def _process_feed_full(
         write_outcome = await write_staging_rows(session, drafts)
         inserted_ids = list(write_outcome.inserted_ids)
 
+        # Audit: staging_insert per inserted row (savepoint-wrapped)
+        if audit_meta is not None and write_outcome.inserted_ids:
+            from worker.bootstrap.tables import staging_table
+            id_to_url = {}
+            if write_outcome.inserted_ids:
+                result = await session.execute(
+                    sa.select(
+                        staging_table.c.id, staging_table.c.url_canonical
+                    ).where(
+                        staging_table.c.id.in_(list(write_outcome.inserted_ids))
+                    )
+                )
+                id_to_url = {row.id: row.url_canonical for row in result.all()}
+
+            for sid in write_outcome.inserted_ids:
+                url_c = id_to_url.get(sid, "")
+                try:
+                    async with session.begin_nested():
+                        await write_staging_insert_audit(
+                            session,
+                            meta=audit_meta,
+                            staging_id=sid,
+                            url_canonical=url_c,
+                        )
+                except Exception:
+                    pass
+
     return (
         FeedResult(
             slug=feed.slug,
@@ -263,66 +334,3 @@ async def _update_state_failure(
         pass
 
 
-def _compute_dq_metrics(
-    *,
-    n_feeds: int,
-    n_fetch_failures: int,
-    n_parse_errors: int,
-    n_entries: int,
-    n_empty_titles: int,
-    n_tag_total: int,
-    n_tag_unknown: int,
-) -> tuple[ExpectationResult, ...]:
-    """Compute the 4 D10 feed-level DQ metrics."""
-    results: list[ExpectationResult] = []
-
-    # 1. feed.fetch_failure_rate
-    fetch_rate = Decimal(str(n_fetch_failures / n_feeds)) if n_feeds > 0 else Decimal("0")
-    fetch_threshold = Decimal("0.20")
-    results.append(ExpectationResult(
-        name="feed.fetch_failure_rate",
-        severity="warn" if fetch_rate > fetch_threshold else "pass",
-        observed=fetch_rate,
-        threshold=fetch_threshold,
-        observed_rows=n_fetch_failures,
-        detail={"total_feeds": n_feeds, "failed_feeds": n_fetch_failures},
-    ))
-
-    # 2. feed.parse_error_rate
-    n_fetched = n_feeds - n_fetch_failures
-    parse_rate = Decimal(str(n_parse_errors / n_fetched)) if n_fetched > 0 else Decimal("0")
-    parse_threshold = Decimal("0.10")
-    results.append(ExpectationResult(
-        name="feed.parse_error_rate",
-        severity="warn" if parse_rate > parse_threshold else "pass",
-        observed=parse_rate,
-        threshold=parse_threshold,
-        observed_rows=n_parse_errors,
-        detail={"fetched_feeds": n_fetched, "parse_errors": n_parse_errors},
-    ))
-
-    # 3. feed.empty_title_rate
-    empty_rate = Decimal(str(n_empty_titles / n_entries)) if n_entries > 0 else Decimal("0")
-    empty_threshold = Decimal("0.05")
-    results.append(ExpectationResult(
-        name="feed.empty_title_rate",
-        severity="warn" if empty_rate > empty_threshold else "pass",
-        observed=empty_rate,
-        threshold=empty_threshold,
-        observed_rows=n_empty_titles,
-        detail={"total_entries": n_entries, "empty_titles": n_empty_titles},
-    ))
-
-    # 4. rss.tags.unknown_rate
-    unknown_rate = Decimal(str(n_tag_unknown / n_tag_total)) if n_tag_total > 0 else Decimal("0")
-    unknown_threshold = Decimal("0.30")
-    results.append(ExpectationResult(
-        name="rss.tags.unknown_rate",
-        severity="warn" if unknown_rate > unknown_threshold else "pass",
-        observed=unknown_rate,
-        threshold=unknown_threshold,
-        observed_rows=n_tag_unknown,
-        detail={"total_tags": n_tag_total, "unknown_tags": n_tag_unknown},
-    ))
-
-    return tuple(results)
