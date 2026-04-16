@@ -186,6 +186,8 @@ audit_log         (id, actor, action, entity, entity_id, timestamp, diff_jsonb)
 
 Worker는 Prefect(또는 Airflow) 플로우로 관리되며, 실패 시 지수 백오프 재시도·DLQ(dead letter queue)를 사용한다. 수집된 보고서는 **Staging → Human Review → Production** 3단계 게이트를 거친다(기본값: `researcher` 이상의 승인 필요, 자동 승인은 설정 가능).
 
+> **PR #8 errata (2026-04-16).** §14 W4의 "RSS/TAXII 수집 Worker"는 2개 PR로 분할 구현됨. **PR #8**: RSS/Atom만 (`feedparser` + `httpx`), staging 테이블 write-only, Prefect @flow 장식만 (deployment/schedule 미포함). **PR #9**: TAXII 2.1 (`taxii2-client`). RSS 구현의 D-decision 전문은 `docs/plans/pr8-rss-ingest.md`에 있다. HTTP fetch와 feed XML parse를 분리하여 `httpx`가 네트워크, `feedparser.parse(bytes)`가 파싱을 담당한다 — `feedparser.parse(url)` 형태의 네트워크 내장 호출은 금지. Feed runtime state (ETag, Last-Modified, 연속 실패 카운터)는 `rss_feed_state` 테이블에 저장하며 `sources` 테이블과 분리된다 (feed 수명과 CTI source entity 수명이 다르기 때문).
+
 ### 3.4 LLM 보조 정규화
 
 | 작업 | 입력 | 출력 | 모델 정책 |
@@ -757,7 +759,7 @@ v1.0 §6 클릭-스루 탐색을 유지하고 다음 추가:
 - **W1**: 저장소 부트스트랩, CI/CD, Docker Compose, OIDC 스캐폴딩, 관측성 기본.
 - **W2**: DB 스키마 · pgvector · Alembic 마이그레이션, Bootstrap ETL(시트 → DB), 동의어 사전.
 - **W3**: 데이터 품질 게이트(pytest + SQL, §3.2 errata), 감사 로그, audit 기본.
-- **W4**: RSS/TAXII 수집 Worker (Prefect 플로우), Staging → Review 큐.
+- **W4**: RSS/TAXII 수집 Worker (Prefect 플로우), Staging → Review 큐. *(PR #8 errata: RSS=PR #8, TAXII=PR #9로 분할. §3.3 errata 참조.)*
 - **W5**: 핵심 API(summary, reports, incidents, actors), OpenAPI 계약, Pact 베이스라인.
 
 ### Phase 2 — Core Dashboard (6주) *(FE 워크스트림)*
