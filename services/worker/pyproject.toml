@@ -41,6 +41,7 @@ packages = ["src/worker"]
 # at the repo root; this entry mirrors that file into the wheel
 # at `worker/bootstrap/data/aliases.yml`.
 "../../data/dictionaries/aliases.yml" = "worker/bootstrap/data/aliases.yml"
+"../../data/dictionaries/feeds.yml" = "worker/ingest/data/feeds.yml"
 
 [dependency-groups]
 dev = [
