@@ -21,6 +21,8 @@ dependencies = [
   # in-memory sqlite engine. The cost is ~30KB of pure-Python wheel;
   # production runs against Postgres ignore this driver entirely.
   "aiosqlite>=0.20",
+  # RSS ingest (PR #8)
+  "feedparser>=6.0.11",
 ]
 
 [project.scripts]
@@ -41,6 +43,7 @@ packages = ["src/worker"]
 # at the repo root; this entry mirrors that file into the wheel
 # at `worker/bootstrap/data/aliases.yml`.
 "../../data/dictionaries/aliases.yml" = "worker/bootstrap/data/aliases.yml"
+"../../data/dictionaries/feeds.yml" = "worker/ingest/data/feeds.yml"
 
 [dependency-groups]
 dev = [

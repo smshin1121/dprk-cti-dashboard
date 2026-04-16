@@ -3,8 +3,10 @@
 These tables are a **worker-local view** of the real schema defined by
 ``db/migrations/versions/0001_initial_schema.py``,
 ``0002_staging_and_indexes.py``,
-``0003_audit_entity_nullable.py``, and
-``0004_bigint_pk_migration.py``. They intentionally omit PostgreSQL-
+``0003_audit_entity_nullable.py``,
+``0004_bigint_pk_migration.py``,
+``0005_dq_events.py``, and
+``0006_rss_feed_state.py``. They intentionally omit PostgreSQL-
 specific columns (pgvector embeddings, ARRAY aliases) that sqlite-
 memory cannot represent, so unit tests can run the same upsert code
 against an in-memory database.
@@ -372,6 +374,106 @@ dq_events_table = sa.Table(
 )
 
 
+# ---------------------------------------------------------------------------
+# staging (migration 0002 mirror)
+# ---------------------------------------------------------------------------
+#
+# Mirror of the staging table from 0002_staging_and_indexes.py. The RSS
+# ingest worker writes to this table via ON CONFLICT (url_canonical) DO
+# NOTHING. pgvector `embedding` column omitted — sqlite cannot represent
+# it, and PR #8 always writes NULL (LLM enrichment is Phase 4).
+
+staging_table = sa.Table(
+    "staging",
+    metadata,
+    sa.Column("id", _BIGINT, primary_key=True, autoincrement=True),
+    sa.Column(
+        "created_at",
+        sa.DateTime(timezone=True),
+        nullable=False,
+        server_default=sa.func.current_timestamp(),
+    ),
+    sa.Column(
+        "source_id",
+        _BIGINT,
+        sa.ForeignKey("sources.id", ondelete="SET NULL"),
+        nullable=True,
+    ),
+    sa.Column("url", sa.Text(), nullable=True),
+    sa.Column("url_canonical", sa.Text(), nullable=False, unique=True),
+    sa.Column("sha256_title", sa.Text(), nullable=True),
+    sa.Column("title", sa.Text(), nullable=True),
+    sa.Column("raw_text", sa.Text(), nullable=True),
+    sa.Column("lang", sa.Text(), nullable=True),
+    sa.Column("published", sa.DateTime(timezone=True), nullable=True),
+    sa.Column("summary", sa.Text(), nullable=True),
+    sa.Column(
+        "tags_jsonb",
+        postgresql.JSONB(astext_type=sa.Text()).with_variant(
+            sa.JSON(), "sqlite"
+        ),
+        nullable=True,
+    ),
+    sa.Column("confidence", sa.Numeric(precision=4, scale=3), nullable=True),
+    sa.Column(
+        "status",
+        sa.Text(),
+        nullable=False,
+        server_default="pending",
+    ),
+    sa.Column("reviewed_by", sa.Text(), nullable=True),
+    sa.Column("reviewed_at", sa.DateTime(timezone=True), nullable=True),
+    sa.Column(
+        "promoted_report_id",
+        _BIGINT,
+        sa.ForeignKey("reports.id", ondelete="SET NULL"),
+        nullable=True,
+    ),
+    sa.Column("error", sa.Text(), nullable=True),
+    sa.CheckConstraint(
+        "status IN ('pending','approved','rejected','promoted','error')",
+        name="staging_status",
+    ),
+)
+
+
+# ---------------------------------------------------------------------------
+# rss_feed_state (PR #8 Group B — migration 0006 mirror)
+# ---------------------------------------------------------------------------
+#
+# Mirror of the production table created by
+# ``db/migrations/versions/0006_rss_feed_state.py``. Exists so sqlite-
+# memory unit tests can exercise the feed state read/write helpers
+# without a live Postgres instance.
+
+rss_feed_state_table = sa.Table(
+    "rss_feed_state",
+    metadata,
+    sa.Column("feed_slug", sa.Text(), primary_key=True, nullable=False),
+    sa.Column("etag", sa.Text(), nullable=True),
+    sa.Column("last_modified", sa.Text(), nullable=True),
+    sa.Column(
+        "last_fetched_at",
+        sa.DateTime(timezone=True),
+        nullable=True,
+    ),
+    sa.Column("last_status_code", sa.Integer(), nullable=True),
+    sa.Column("last_error", sa.Text(), nullable=True),
+    sa.Column(
+        "consecutive_failures",
+        sa.Integer(),
+        nullable=False,
+        server_default=sa.text("0"),
+    ),
+    sa.Column(
+        "updated_at",
+        sa.DateTime(timezone=True),
+        nullable=False,
+        server_default=sa.func.current_timestamp(),
+    ),
+)
+
+
 __all__ = [
     "audit_log_table",
     "dq_events_table",
@@ -386,6 +488,8 @@ __all__ = [
     "report_codenames_table",
     "report_tags_table",
     "reports_table",
+    "rss_feed_state_table",
     "sources_table",
+    "staging_table",
     "tags_table",
 ]

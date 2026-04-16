@@ -78,6 +78,8 @@ jobs:
         run: |
           uv run pytest \
             --cov=src/worker/bootstrap \
+            --cov=src/worker/ingest \
+            --cov=src/worker/data_quality \
             --cov-report=term-missing \
             --cov-report=xml:coverage.xml \
             --cov-fail-under=70

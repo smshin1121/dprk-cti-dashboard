@@ -1,0 +1,57 @@
+# RSS/Atom feed list for the DPRK CTI ingest pipeline.
+#
+# Each entry defines a single vendor feed. The ingest worker polls
+# every enabled feed on each run and writes parsed entries to the
+# `staging` table.
+#
+# Schema per entry (enforced by worker.ingest.config.FeedConfig):
+#   slug                 Unique short identifier (lowercase, hyphenated).
+#   display_name         Human-readable vendor/feed label.
+#   url                  Feed endpoint. Must be publicly accessible.
+#   kind                 "rss" or "atom".
+#   enabled              Whether the worker polls this feed.
+#   poll_interval_minutes  Advisory cadence for external schedulers.
+#
+# Invariants enforced at load time by FeedCatalog:
+#   1. Unique slug across all entries.
+#   2. Unique url across all entries.
+#
+# URL stability note: vendor blog platforms change URLs without
+# notice. The first real-feed run after merge should verify each
+# URL returns 200 + valid XML. Broken URLs surface as
+# feed.fetch_failure_rate warn in dq_events.
+
+- slug: ahnlab-asec
+  display_name: AhnLab ASEC Blog
+  url: https://asec.ahnlab.com/en/feed/
+  kind: rss
+  enabled: true
+  poll_interval_minutes: 15
+
+- slug: estsecurity-blog
+  display_name: ESTsecurity ALYac Blog
+  url: https://blog.alyac.co.kr/rss
+  kind: rss
+  enabled: true
+  poll_interval_minutes: 15
+
+- slug: kaspersky-securelist
+  display_name: Kaspersky SecureList
+  url: https://securelist.com/feed/
+  kind: rss
+  enabled: true
+  poll_interval_minutes: 15
+
+- slug: mandiant-threat-intel
+  display_name: Google Cloud Threat Intelligence (Mandiant)
+  url: https://cloud.google.com/blog/topics/threat-intelligence/rss/
+  kind: atom
+  enabled: true
+  poll_interval_minutes: 30
+
+- slug: recordedfuture-blog
+  display_name: Recorded Future Blog
+  url: https://www.recordedfuture.com/blog/rss.xml
+  kind: rss
+  enabled: true
+  poll_interval_minutes: 30

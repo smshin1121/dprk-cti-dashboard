@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Test Atom CTI Feed</title>
+  <link href="https://atom-example.com"/>
+  <id>urn:uuid:test-atom-feed</id>
+  <updated>2026-04-15T10:00:00Z</updated>
+  <entry>
+    <title>ScarCruft Malware Analysis #APT37</title>
+    <link href="https://atom-example.com/posts/scarcruft-analysis"/>
+    <id>urn:uuid:scarcruft-001</id>
+    <published>2026-04-15T10:00:00Z</published>
+    <summary>Detailed analysis of ScarCruft tooling.</summary>
+  </entry>
+</feed>
