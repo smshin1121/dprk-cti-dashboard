@@ -297,8 +297,9 @@ def load_collections(path: Path | str) -> TaxiiCatalog:
 
     # P2 Codex R5: validate that auth env vars exist at load time so
     # misconfiguration is caught early, not during a scheduled fetch.
+    # P3 Codex R6: skip disabled collections — they are never polled.
     for col in collections:
-        if col.auth_type != "none":
+        if col.enabled and col.auth_type != "none":
             try:
                 col.resolve_auth_headers()
             except TaxiiCatalogError:

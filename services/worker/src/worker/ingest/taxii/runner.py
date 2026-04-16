@@ -142,7 +142,7 @@ async def run_taxii_ingest(
     total_empty_descriptions = 0
     total_objects_in_envelope = 0
     total_malformed = 0
-    total_objects_ingested = 0
+    total_objects_actually_inserted = 0
 
     for col_cfg in enabled:
         cr, inserted_ids = await _process_collection(
@@ -155,7 +155,9 @@ async def run_taxii_ingest(
         total_empty_descriptions += cr.empty_descriptions
         total_objects_in_envelope += cr.objects_in_envelope
         total_malformed += cr.malformed_objects
-        total_objects_ingested += cr.inserted + cr.skipped_duplicate
+        # P2 Codex R6: count only actually inserted rows for
+        # empty_description_rate, not overlap duplicates.
+        total_objects_actually_inserted += cr.inserted
 
     total_inserted = sum(cr.inserted for cr in collection_results)
     total_skipped = sum(cr.skipped_duplicate for cr in collection_results)
@@ -176,7 +178,7 @@ async def run_taxii_ingest(
             total_objects_in_envelope, total_malformed,
         ),
         check_taxii_empty_description_rate(
-            total_objects_ingested, total_empty_descriptions,
+            total_objects_actually_inserted, total_empty_descriptions,
         ),
         check_taxii_label_unmapped_rate(
             total_labels, total_unmapped_labels,
@@ -286,15 +288,19 @@ async def _process_collection(
     drafts: list[StagingRowDraft] = []
     normalize_failed = False
     for pobj in parsed.objects:
-        # Count labels (denominator = objects that HAVE labels array)
+        # Count labels (denominator = objects that HAVE labels array).
+        # P2 Codex R6: when aliases is None, skip label counting entirely
+        # so the metric reports 0/0 → pass (honest "can't measure")
+        # instead of 0/N → false perfect coverage.
         raw = pobj.raw
-        labels = raw.get("labels")
-        if isinstance(labels, list) and labels:
-            for label in labels:
-                if isinstance(label, str) and label.strip():
-                    col_labels += 1
-                    if aliases and not _check_label_mapped(label, aliases):
-                        col_unmapped += 1
+        if aliases is not None:
+            labels = raw.get("labels")
+            if isinstance(labels, list) and labels:
+                for label in labels:
+                    if isinstance(label, str) and label.strip():
+                        col_labels += 1
+                        if not _check_label_mapped(label, aliases):
+                            col_unmapped += 1
 
         try:
             draft = normalize_stix_object(pobj)
