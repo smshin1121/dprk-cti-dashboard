@@ -133,6 +133,21 @@ def test_empty_id_is_malformed() -> None:
     assert result.malformed_count == 1
 
 
+def test_non_string_id_is_malformed() -> None:
+    """P2 Codex R3: dict/list id should not produce bogus urn:stix: keys."""
+    objects = [{"type": "malware", "id": {"bad": True}, "name": "X"}]
+    result = parse_stix_objects(objects, type_whitelist=DEFAULT_STIX_TYPES)
+    assert len(result.objects) == 0
+    assert result.malformed_count == 1
+
+
+def test_non_string_type_is_malformed() -> None:
+    objects = [{"type": ["malware"], "id": "malware--abc", "name": "X"}]
+    result = parse_stix_objects(objects, type_whitelist=DEFAULT_STIX_TYPES)
+    assert len(result.objects) == 0
+    assert result.malformed_count == 1
+
+
 def test_non_dict_object_is_malformed() -> None:
     objects = ["not a dict", 42, None]  # type: ignore[list-item]
     result = parse_stix_objects(objects, type_whitelist=DEFAULT_STIX_TYPES)

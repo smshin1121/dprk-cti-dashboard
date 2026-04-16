@@ -77,8 +77,12 @@ def parse_stix_objects(
             malformed += 1
             continue
 
-        # Check required fields
-        missing = [f for f in _REQUIRED_FIELDS if f not in obj or not obj[f]]
+        # Check required fields exist and are strings (P2 Codex R3:
+        # reject non-string id/type to prevent bogus urn:stix: keys).
+        missing = [
+            f for f in _REQUIRED_FIELDS
+            if f not in obj or not isinstance(obj[f], str) or not obj[f].strip()
+        ]
         if missing:
             malformed += 1
             continue

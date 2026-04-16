@@ -153,7 +153,11 @@ async def run_taxii_ingest(
         1 for cr in collection_results if cr.fetch_error is not None
     )
     n_enabled = len(enabled)
-    all_failed = n_enabled > 0 and total_fetch_failures == n_enabled
+    # P1 Codex R3: a run is "all failed" when no collection advanced state,
+    # not just when all fetches failed. A run where every fetch succeeds but
+    # every write/normalize fails is equally useless to operators.
+    any_advanced = any(cr.state_advanced for cr in collection_results)
+    all_failed = n_enabled > 0 and not any_advanced
 
     # D5 TAXII DQ metrics
     dq_results = (
@@ -295,12 +299,15 @@ async def _process_collection(
             drafts.append(draft)
 
     # --- 4. Write to staging ---
+    # P1 Codex R3: wrap in savepoint so a write error doesn't poison the
+    # session for subsequent collections (per-collection isolation).
     write_outcome = WriteOutcome(inserted_ids=(), skipped_duplicate_count=0)
     write_failed = False
     if drafts:
         try:
-            write_outcome = await write_staging_rows(session, drafts)
-            inserted_ids = list(write_outcome.inserted_ids)
+            async with session.begin_nested():
+                write_outcome = await write_staging_rows(session, drafts)
+                inserted_ids = list(write_outcome.inserted_ids)
         except Exception:
             write_failed = True
 
