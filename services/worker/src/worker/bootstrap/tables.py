@@ -6,8 +6,9 @@ These tables are a **worker-local view** of the real schema defined by
 ``0003_audit_entity_nullable.py``,
 ``0004_bigint_pk_migration.py``,
 ``0005_dq_events.py``,
-``0006_rss_feed_state.py``, and
-``0007_taxii_collection_state.py``. They intentionally omit PostgreSQL-
+``0006_rss_feed_state.py``,
+``0007_taxii_collection_state.py``, and
+``0008_staging_decision_reason.py``. They intentionally omit PostgreSQL-
 specific columns (pgvector embeddings, ARRAY aliases) that sqlite-
 memory cannot represent, so unit tests can run the same upsert code
 against an in-memory database.
@@ -431,6 +432,11 @@ staging_table = sa.Table(
         nullable=True,
     ),
     sa.Column("error", sa.Text(), nullable=True),
+    # Added by migration 0008 for PR #10 review/promote API.
+    # REJECT path stores the required reason here; APPROVE path ignores
+    # this column. Reviewer `notes` are deliberately NOT stored on the
+    # row — they land in audit_log.diff_jsonb.reviewer_notes only.
+    sa.Column("decision_reason", sa.Text(), nullable=True),
     sa.CheckConstraint(
         "status IN ('pending','approved','rejected','promoted','error')",
         name="staging_status",
