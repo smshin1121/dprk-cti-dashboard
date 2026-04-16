@@ -23,7 +23,14 @@ __all__ = [
 
 @dataclass(frozen=True, slots=True)
 class StagingRowDraft:
-    """Ready-to-insert staging row. All LLM-filled columns are None."""
+    """Ready-to-insert staging row. All LLM-filled columns are None.
+
+    ``raw_text`` carries raw ingested content (e.g. STIX description).
+    RSS entries set it to None; TAXII entries set it to the STIX
+    ``description`` field (or None if absent — never empty string).
+    Distinct from ``summary`` which is reserved for LLM-generated text
+    (Phase 4).
+    """
 
     url: str | None
     url_canonical: str
@@ -31,6 +38,7 @@ class StagingRowDraft:
     title: str | None
     published: dt.datetime | None
     summary: str | None
+    raw_text: str | None = None
 
 
 def normalize_entry(entry: RawFeedEntry) -> StagingRowDraft | None:

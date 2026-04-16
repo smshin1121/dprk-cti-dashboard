@@ -95,9 +95,10 @@ def test_unknown_tag_rate_pass() -> None:
     assert r.severity == "pass"
 
 
-def test_unknown_tag_rate_warn() -> None:
+def test_unknown_tag_rate_deprecated_always_passes() -> None:
+    """D6 deprecation (PR #9): threshold raised to 1.0, always passes."""
     r = check_unknown_tag_rate(total_tags=10, unknown_tags=5)
-    assert r.severity == "warn"
+    assert r.severity == "pass"  # Was "warn" at 0.30 threshold, now 1.0
 
 
 def test_unknown_tag_rate_zero_tags() -> None:

@@ -180,13 +180,15 @@ audit_log         (id, actor, action, entity, entity_id, timestamp, diff_jsonb)
 | 소스 유형 | 구현 | 주기 | 비고 |
 |:---|:---|:---|:---|
 | RSS/Atom | `feedparser` 기반 폴링 | 15분 | Ahnlab, EST, Kaspersky, Mandiant, Recorded Future 등 |
-| TAXII 2.1 | `taxii2-client` | 30분 | 공개 컬렉션 (MITRE, OASIS) |
+| TAXII 2.1 | `httpx` (TAXII 2.1 HTTP+JSON 직접 구현) | 30분 | 공개 컬렉션 (MITRE ATT&CK enterprise/mobile/ics) |
 | HTML 크롤 | `httpx` + `selectolax` + robots.txt 준수 | 1시간 | 벤더 블로그 백필 |
 | Telegram/X | 공식 API 또는 RSS 브릿지 | 30분 | 선택적, TLP 고려 |
 
 Worker는 Prefect(또는 Airflow) 플로우로 관리되며, 실패 시 지수 백오프 재시도·DLQ(dead letter queue)를 사용한다. 수집된 보고서는 **Staging → Human Review → Production** 3단계 게이트를 거친다(기본값: `researcher` 이상의 승인 필요, 자동 승인은 설정 가능).
 
-> **PR #8 errata (2026-04-16).** §14 W4의 "RSS/TAXII 수집 Worker"는 2개 PR로 분할 구현됨. **PR #8**: RSS/Atom만 (`feedparser` + `httpx`), staging 테이블 write-only, Prefect @flow 장식만 (deployment/schedule 미포함). **PR #9**: TAXII 2.1 (`taxii2-client`). RSS 구현의 D-decision 전문은 `docs/plans/pr8-rss-ingest.md`에 있다. HTTP fetch와 feed XML parse를 분리하여 `httpx`가 네트워크, `feedparser.parse(bytes)`가 파싱을 담당한다 — `feedparser.parse(url)` 형태의 네트워크 내장 호출은 금지. Feed runtime state (ETag, Last-Modified, 연속 실패 카운터)는 `rss_feed_state` 테이블에 저장하며 `sources` 테이블과 분리된다 (feed 수명과 CTI source entity 수명이 다르기 때문).
+> **PR #8 errata (2026-04-16).** §14 W4의 "RSS/TAXII 수집 Worker"는 2개 PR로 분할 구현됨. **PR #8**: RSS/Atom만 (`feedparser` + `httpx`), staging 테이블 write-only, Prefect @flow 장식만 (deployment/schedule 미포함). RSS D-decision 전문은 `docs/plans/pr8-rss-ingest.md`에 있다. HTTP fetch와 feed XML parse를 분리하여 `httpx`가 네트워크, `feedparser.parse(bytes)`가 파싱을 담당한다 — `feedparser.parse(url)` 형태의 네트워크 내장 호출은 금지. Feed runtime state (ETag, Last-Modified, 연속 실패 카운터)는 `rss_feed_state` 테이블에 저장하며 `sources` 테이블과 분리된다.
+>
+> **PR #9 errata (2026-04-17).** TAXII 2.1 구현은 `taxii2-client` 대신 `httpx` 직접 구현으로 변경됨 (decision A). `taxii2-client`는 sync-only (requests 기반) + 2022년 이후 유지보수 모드이므로, TAXII 2.1 HTTP+JSON 프로토콜을 httpx ~120 LOC로 직접 구현. 새 runtime dependency 없음. STIX 2.1 envelope 파싱, mandatory pagination (`more`/`next`), `added_after` incremental polling (5분 overlap window), auth 3종 (none/basic/header_api_key) 지원. TAXII collection state는 `taxii_collection_state` 테이블에 별도 저장 (RSS와 다른 polling 의미론). TAXII D-decision 전문은 `docs/plans/pr9-taxii-ingest.md`에 있다.
 
 ### 3.4 LLM 보조 정규화
 

@@ -27,7 +27,12 @@ __all__ = [
 _FETCH_FAILURE_THRESHOLD = Decimal("0.20")
 _PARSE_ERROR_THRESHOLD = Decimal("0.10")
 _EMPTY_TITLE_THRESHOLD = Decimal("0.05")
-_UNKNOWN_TAG_THRESHOLD = Decimal("0.30")
+# DEPRECATED — observational only (decision D6, PR #9). Hashtag extraction
+# is not meaningful against real vendor feeds. Threshold raised to 1.0 so
+# the metric always passes. Real tag coverage lands with Phase 4 LLM
+# enrichment. The TAXII replacement is taxii.label_unmapped_rate in
+# worker.data_quality.expectations.taxii_metrics.
+_UNKNOWN_TAG_THRESHOLD = Decimal("1.0")
 
 
 def check_fetch_failure_rate(
@@ -79,6 +84,16 @@ def check_unknown_tag_rate(
     total_tags: int,
     unknown_tags: int,
 ) -> ExpectationResult:
+    """DEPRECATED — observational only (decision D6, PR #9).
+
+    Hashtag extraction is not meaningful against real vendor feeds.
+    Threshold is 1.0 (always-pass). This metric is kept for backward-
+    compatible dq_events queries but is no longer a signal — only a
+    smoke detector for metric computation failures.
+
+    Real tag coverage for TAXII: ``taxii.label_unmapped_rate``.
+    Real tag coverage for RSS: deferred to Phase 4 LLM enrichment.
+    """
     rate = Decimal(str(unknown_tags / total_tags)) if total_tags > 0 else Decimal("0")
     return ExpectationResult(
         name="rss.tags.unknown_rate",

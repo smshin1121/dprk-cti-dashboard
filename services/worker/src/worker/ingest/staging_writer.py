@@ -68,7 +68,7 @@ async def write_staging_rows(
                 "published": d.published,
                 "summary": d.summary,
                 "source_id": None,
-                "raw_text": None,
+                "raw_text": d.raw_text,
                 "lang": None,
                 "tags_jsonb": None,
                 "confidence": None,

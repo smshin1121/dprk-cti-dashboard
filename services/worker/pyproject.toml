@@ -44,6 +44,7 @@ packages = ["src/worker"]
 # at `worker/bootstrap/data/aliases.yml`.
 "../../data/dictionaries/aliases.yml" = "worker/bootstrap/data/aliases.yml"
 "../../data/dictionaries/feeds.yml" = "worker/ingest/data/feeds.yml"
+"../../data/dictionaries/taxii_collections.yml" = "worker/ingest/taxii/data/taxii_collections.yml"
 
 [dependency-groups]
 dev = [
