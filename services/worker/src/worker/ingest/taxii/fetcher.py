@@ -295,7 +295,21 @@ class TaxiiFetcher:
                 error=f"envelope is not a JSON object on page {page_num}",
             )
 
-        objects = envelope.get("objects", [])
+        # P1 Codex R7: require explicit objects field. A generic JSON
+        # response (rate-limit, login page) without "objects" should not
+        # be treated as a successful empty collection.
+        if "objects" not in envelope:
+            return _PageResult(
+                objects=[],
+                more=False,
+                next_param=None,
+                error=(
+                    f"TAXII envelope missing 'objects' field "
+                    f"on page {page_num} — not a valid TAXII response"
+                ),
+            )
+
+        objects = envelope["objects"]
         if not isinstance(objects, list):
             return _PageResult(
                 objects=[],

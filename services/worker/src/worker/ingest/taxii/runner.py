@@ -309,9 +309,6 @@ async def _process_collection(
             draft = None
 
         if draft is not None:
-            # Count empty descriptions
-            if draft.raw_text is None:
-                col_empty_desc += 1
             drafts.append(draft)
 
     # --- 4. Write to staging ---
@@ -359,6 +356,21 @@ async def _process_collection(
                         )
                 except Exception:
                     pass
+
+    # P2 Codex R7: count empty descriptions only for actually inserted
+    # rows (not overlap duplicates) to avoid inflated/impossible rates.
+    if write_outcome.inserted_ids and not write_failed:
+        inserted_canonicals = set()
+        from worker.bootstrap.tables import staging_table
+        id_result = await session.execute(
+            sa.select(staging_table.c.url_canonical).where(
+                staging_table.c.id.in_(list(write_outcome.inserted_ids))
+            )
+        )
+        inserted_canonicals = {row.url_canonical for row in id_result.all()}
+        for draft in drafts:
+            if draft.url_canonical in inserted_canonicals and draft.raw_text is None:
+                col_empty_desc += 1
 
     # --- 5. State advance (CRITICAL: conservative condition) ---
     #
