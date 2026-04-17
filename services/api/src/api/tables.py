@@ -76,6 +76,16 @@ groups_table = sa.Table(
     sa.Column("id", _BIGINT, primary_key=True, autoincrement=True),
     sa.Column("name", sa.String(length=128), nullable=False, unique=True),
     sa.Column("mitre_intrusion_set_id", sa.String(length=64), nullable=True),
+    # ``aka`` is migration 0001 line 27 — a PG ARRAY of string aliases
+    # (APT38, Hidden Cobra, etc). Added to the mirror for PR #11 Group B
+    # (GET /actors returns aka). PG uses ARRAY; sqlite falls back to JSON
+    # so the unit-test engine can round-trip the list. Nullable here
+    # (production has server_default='{}' — tests set explicit values).
+    sa.Column(
+        "aka",
+        postgresql.ARRAY(sa.String(length=128)).with_variant(sa.JSON(), "sqlite"),
+        nullable=True,
+    ),
     sa.Column("color", sa.String(length=16), nullable=True),
     sa.Column("description", sa.Text(), nullable=True),
 )

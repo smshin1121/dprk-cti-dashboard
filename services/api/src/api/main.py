@@ -7,6 +7,7 @@ from .config import get_settings
 from .deps import verify_token
 from .telemetry import setup_telemetry
 from .routers import (
+    actors,
     alerts,
     analytics,
     auth,
@@ -97,6 +98,12 @@ app.include_router(
     staging.router,
     prefix="/api/v1/staging",
     tags=["staging"],
+    dependencies=[Depends(verify_token)],
+)
+app.include_router(
+    actors.router,
+    prefix="/api/v1/actors",
+    tags=["actors"],
     dependencies=[Depends(verify_token)],
 )
 app.include_router(
