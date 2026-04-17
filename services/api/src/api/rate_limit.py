@@ -57,10 +57,13 @@ non-async key_func. Tested in ``test_rate_limit.py``.
 from __future__ import annotations
 
 import logging
+import time
 from functools import lru_cache
 
 from fastapi import Request
+from fastapi.responses import JSONResponse
 from slowapi import Limiter
+from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
 from .config import Settings, get_settings
@@ -154,7 +157,16 @@ def build_limiter(settings: Settings | None = None) -> Limiter:
         storage_uri=storage_uri,
         enabled=settings.rate_limit_enabled,
         default_limits=[],  # No global default — each route opts in.
-        headers_enabled=True,  # X-RateLimit-Remaining / Retry-After
+        # ``headers_enabled=False`` here and manual injection only in
+        # the 429 path (see ``rate_limit_exceeded_handler``). Reason:
+        # slowapi's success-path header injection requires the handler
+        # to return a ``starlette.responses.Response`` subclass, but
+        # many of our handlers return Pydantic models and let FastAPI
+        # serialize. slowapi would raise on every successful request
+        # otherwise. Plan D2 only requires headers on the 429 response
+        # anyway ("초과 시 429 + Retry-After + X-RateLimit-Remaining"),
+        # so success-path headers are out of scope.
+        headers_enabled=False,
     )
 
 
@@ -169,8 +181,72 @@ def get_limiter() -> Limiter:
     return build_limiter()
 
 
+def rate_limit_exceeded_handler(
+    request: Request, exc: RateLimitExceeded
+) -> JSONResponse:
+    """Custom 429 response — JSON body consistently.
+
+    Replaces slowapi's default text response so the contract is the
+    same regardless of entry point:
+
+    - **API clients** (JSON consumers) see a structured error body
+      they can branch on without parsing free-form strings.
+    - **Browser redirect flows** (``/auth/login`` / ``/auth/callback``):
+      a redirect-safe plain body was considered (Group G reviewer
+      note). Rejected because 429 on those endpoints is already a
+      terminal error state — the user cannot continue the OIDC
+      flow until the window resets. JSON is rendered as-is by the
+      browser, same as any other API error, so no extra handling
+      is needed. Keeping one body shape everywhere also lets the
+      frontend error interceptor handle 429 uniformly.
+
+    Rate-limit headers (``X-RateLimit-Remaining`` /
+    ``X-RateLimit-Limit`` / ``Retry-After``) are injected by
+    slowapi's existing ``_inject_headers`` hook — we reuse that so
+    the per-route ``@limiter.limit`` metadata still flows through.
+    """
+    detail_str = str(exc.detail) if exc.detail else "rate limit exceeded"
+    response = JSONResponse(
+        status_code=429,
+        content={
+            "error": "rate_limit_exceeded",
+            "message": detail_str,
+        },
+    )
+    # Manual header injection — ``headers_enabled=False`` on the
+    # Limiter (see ``build_limiter`` comment). We compute headers
+    # here on the 429 path only, which is the only path plan D2
+    # requires them on.
+    #
+    # ``request.state.view_rate_limit`` is the canonical source —
+    # a tuple of ``(RateLimitItem, list[key_component])``. Using
+    # ``exc.limit`` here is the wrong shape (``Limit`` namedtuple
+    # wrapping the RateLimitItem) and raises AttributeError inside
+    # limits.strategies.get_window_stats.
+    view_limit = getattr(request.state, "view_rate_limit", None)
+    if view_limit is not None:
+        limit_item, key = view_limit
+        try:
+            stats = request.app.state.limiter.limiter.get_window_stats(
+                limit_item, *key
+            )
+            now = int(time.time())
+            response.headers["Retry-After"] = str(max(1, int(stats.reset_time) - now))
+            response.headers["X-RateLimit-Limit"] = str(limit_item.amount)
+            response.headers["X-RateLimit-Remaining"] = str(max(0, stats.remaining))
+            response.headers["X-RateLimit-Reset"] = str(int(stats.reset_time))
+        except Exception:
+            # Best-effort — an exception handler must never raise
+            # again or the client receives a 500 for a rate-limit
+            # situation. Missing headers are a degraded but valid
+            # 429 response.
+            logger.warning("rate_limit.header_injection_failed", exc_info=True)
+    return response
+
+
 __all__ = [
     "build_limiter",
     "get_limiter",
+    "rate_limit_exceeded_handler",
     "session_or_ip_key",
 ]

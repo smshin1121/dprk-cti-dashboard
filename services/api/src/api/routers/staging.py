@@ -36,13 +36,14 @@ from datetime import datetime
 from typing import Annotated
 
 import sqlalchemy as sa
-from fastapi import APIRouter, Depends, Path, Query
+from fastapi import APIRouter, Depends, Path, Query, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth.schemas import CurrentUser
 from ..db import get_db
 from ..deps import require_role
+from ..rate_limit import get_limiter
 from ..schemas.review import (
     DuplicateMatchHint,
     StagingDetail,
@@ -59,6 +60,11 @@ router = APIRouter()
 # imported from the reports router to avoid a cross-router dep — the
 # two modules are narrowly coupled and either could evolve.
 _ALLOWED_REVIEWER_ROLES = ("analyst", "researcher", "admin")
+
+# PR #11 Group G — 30/min/user (plan D2 mutation bucket). Staging GET
+# endpoints share the reviewer workflow rate so a bot walking the
+# queue cannot drain the pool faster than a human reviewer would.
+_limiter = get_limiter()
 
 
 # ---------------------------------------------------------------------------
@@ -111,9 +117,22 @@ def _decode_cursor(cursor: str) -> tuple[datetime, int]:
         400: {"description": "Malformed cursor"},
         401: {"description": "Missing or invalid session cookie"},
         403: {"description": "Authenticated role not analyst/researcher/admin"},
+        429: {
+            "description": "Rate limit exceeded — 30/min/user (plan D2 mutation bucket).",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "error": "rate_limit_exceeded",
+                        "message": "30 per 1 minute",
+                    }
+                }
+            },
+        },
     },
 )
+@_limiter.limit("30/minute")
 async def list_pending_review(
+    request: Request,
     status: Annotated[StagingStatus, Query()] = "pending",
     cursor: Annotated[str | None, Query()] = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
@@ -289,9 +308,22 @@ async def _find_duplicate_matches(
         401: {"description": "Missing or invalid session cookie"},
         403: {"description": "Authenticated role not analyst/researcher/admin"},
         404: {"description": "Staging row not found"},
+        429: {
+            "description": "Rate limit exceeded — 30/min/user (plan D2 mutation bucket).",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "error": "rate_limit_exceeded",
+                        "message": "30 per 1 minute",
+                    }
+                }
+            },
+        },
     },
 )
+@_limiter.limit("30/minute")
 async def get_staging_detail(
+    request: Request,
     staging_id: Annotated[int, Path(ge=1)],
     session: AsyncSession = Depends(get_db),
     current_user: CurrentUser = Depends(require_role(*_ALLOWED_REVIEWER_ROLES)),

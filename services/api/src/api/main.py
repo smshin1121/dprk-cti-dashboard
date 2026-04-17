@@ -2,13 +2,12 @@ import os
 
 from fastapi import Depends, FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
 from .config import get_settings
 from .deps import verify_token
-from .rate_limit import get_limiter
+from .rate_limit import get_limiter, rate_limit_exceeded_handler
 from .telemetry import setup_telemetry
 from .routers import (
     actors,
@@ -57,7 +56,10 @@ app = FastAPI(
 # ``build_limiter`` makes opt-in the only path to enforcement.
 _limiter = get_limiter()
 app.state.limiter = _limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+# Custom handler returns JSON (plan D13 — 429 body shape matches the
+# OpenAPI `rate_limit_exceeded` example for every decorated route,
+# including the auth/callback browser-redirect path).
+app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
 app.add_middleware(SlowAPIMiddleware)
 
 # ---------------------------------------------------------------------------

@@ -13,7 +13,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Annotated
 
-from fastapi import APIRouter, Body, Depends, Query, Response
+from fastapi import APIRouter, Body, Depends, Query, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import AfterValidator
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..auth.schemas import CurrentUser
 from ..db import get_db
 from ..deps import require_role
+from ..rate_limit import get_limiter
 from ..promote import service as promote_service
 from ..promote.errors import (
     PromoteValidationError,
@@ -46,6 +47,10 @@ router = APIRouter()
 # (their read endpoints land in PR #11). require_role is already
 # variadic, so no helper wrapper needed.
 ALLOWED_REVIEWER_ROLES = ("analyst", "researcher", "admin")
+
+# PR #11 Group G (mutation 30/min/user) + Group H (read 60/min/user)
+# both use this limiter. Decorators live per-endpoint below.
+_limiter = get_limiter()
 
 # PR #11 read endpoints expand the triad to all five authenticated
 # roles (plan "Inherited locks" + §9.3 RBAC matrix row "View
@@ -234,9 +239,22 @@ async def similar_reports(report_id: int, k: int = 10) -> JSONResponse:
                 "state (approved / error) or is missing NOT NULL fields"
             )
         },
+        429: {
+            "description": "Rate limit exceeded — 30/min/user (plan D2 mutation bucket).",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "error": "rate_limit_exceeded",
+                        "message": "30 per 1 minute",
+                    }
+                }
+            },
+        },
     },
 )
+@_limiter.limit("30/minute")
 async def review_staging(
+    request: Request,
     staging_id: int,
     payload: ReviewDecisionRequest = Body(...),
     session: AsyncSession = Depends(get_db),
