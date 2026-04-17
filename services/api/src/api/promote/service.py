@@ -61,6 +61,7 @@ from ..tables import audit_log_table, staging_table
 from .errors import (
     PromoteValidationError,
     StagingAlreadyDecidedError,
+    StagingInvalidStateError,
     StagingNotFoundError,
 )
 from .repositories import upsert_report, upsert_source
@@ -190,17 +191,25 @@ async def _lock_and_load_staging(
     return row
 
 
-def _raise_if_already_decided(
+def _raise_if_not_pending(
     row: sa.engine.Row, staging_id: int
 ) -> None:
     """Enforce the pending-only precondition.
 
-    The reachable post-decision states are ``promoted`` and
-    ``rejected``. ``approved`` and ``error`` are in the staging CHECK
-    enum for future flows (auto-promote, etl errors) but the PR #10
-    endpoint never drives the row into those states — if we observe
-    them here something else wrote the row, and treating it as
-    "already decided" is the safest default.
+    Two distinct exception classes map cleanly to the narrowly typed
+    HTTP surface:
+
+    - ``promoted`` / ``rejected`` → ``StagingAlreadyDecidedError``
+      (router → 409 with ``AlreadyDecidedError`` body; the DTO locks
+      ``current_status`` to ``Literal["promoted","rejected"]`` per
+      plan §2.2 B).
+    - ``approved`` / ``error`` (or any other non-pending value) →
+      ``StagingInvalidStateError`` (router → 422). These CHECK enum
+      values are reserved for future/operational flows that the
+      review endpoint deliberately does not handle, so the router
+      must avoid the 409 AlreadyDecidedError DTO — serializing
+      ``"approved"`` through ``DecidedStatus`` would fail Pydantic
+      validation and bury the real issue under a type error.
     """
     if row.status == "pending":
         return
@@ -211,15 +220,9 @@ def _raise_if_already_decided(
             decided_by=row.reviewed_by or "",
             decided_at=row.reviewed_at or datetime.now(timezone.utc),
         )
-    # approved / error: surface as already_decided too, but with the
-    # literal current status so the 409 body reflects the truth.
-    # The router narrows the response enum via DecidedStatus — if we
-    # ever expose this case externally, the DTO will need widening.
-    raise StagingAlreadyDecidedError(
+    raise StagingInvalidStateError(
         staging_id=staging_id,
         current_status=row.status,
-        decided_by=row.reviewed_by or "",
-        decided_at=row.reviewed_at or datetime.now(timezone.utc),
     )
 
 
@@ -334,7 +337,7 @@ async def promote_staging_row(
     back the whole batch.
     """
     row = await _lock_and_load_staging(session, staging_id)
-    _raise_if_already_decided(row, staging_id)
+    _raise_if_not_pending(row, staging_id)
 
     # Source resolution. staging.source_id is nullable; fall back
     # to the synthetic 'unknown' source so ``reports.source_id``
@@ -440,7 +443,7 @@ async def reject_staging_row(
     (or equivalent). This function performs zero commit/rollback.
     """
     row = await _lock_and_load_staging(session, staging_id)
-    _raise_if_already_decided(row, staging_id)
+    _raise_if_not_pending(row, staging_id)
 
     update_stmt = (
         sa.update(staging_table)

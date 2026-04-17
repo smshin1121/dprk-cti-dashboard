@@ -55,6 +55,39 @@ class StagingAlreadyDecidedError(PromoteError):
 
 
 @dataclass
+class StagingInvalidStateError(PromoteError):
+    """Raised when the staging row is neither ``pending`` (decidable)
+    nor a reachable post-decision state (``promoted`` / ``rejected``).
+
+    The ``staging.status`` CHECK enum (migration 0002) permits
+    ``approved`` and ``error`` as future/operational states —
+    ``approved`` is reserved for a later auto-promote flow,
+    ``error`` is written by ingest workers when a staging row hit a
+    handling failure. PR #10 endpoints deliberately do NOT handle
+    those rows: approving or rejecting a row already in ``approved``
+    would race the auto-promote flow; approving an ``error`` row
+    hides the underlying ingest failure.
+
+    Router maps to 422 (not 409) — the 409 body is narrowly typed as
+    ``{current_status: Literal["promoted","rejected"]}`` in
+    ``api.schemas.review.AlreadyDecidedError`` per plan §2.2 B lock,
+    and widening that would re-expose states the endpoint never
+    drives the row into. The 422 body surfaces the literal current
+    status so the reviewer sees the operational state instead of
+    the misleading "already decided" phrasing.
+    """
+
+    staging_id: int
+    current_status: str
+
+    def __str__(self) -> str:  # pragma: no cover — trivial
+        return (
+            f"staging row {self.staging_id} is in state "
+            f"{self.current_status!r}, which the review endpoint does not handle"
+        )
+
+
+@dataclass
 class PromoteValidationError(PromoteError):
     """Raised when the staging row is in a shape the promote path
     cannot materialize into ``reports`` — e.g. a missing NOT NULL
@@ -76,5 +109,6 @@ __all__ = [
     "PromoteError",
     "PromoteValidationError",
     "StagingAlreadyDecidedError",
+    "StagingInvalidStateError",
     "StagingNotFoundError",
 ]

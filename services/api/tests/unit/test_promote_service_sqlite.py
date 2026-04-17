@@ -40,6 +40,7 @@ from api.promote import service as promote_service
 from api.promote.errors import (
     PromoteValidationError,
     StagingAlreadyDecidedError,
+    StagingInvalidStateError,
     StagingNotFoundError,
 )
 from api.promote.service import (
@@ -650,6 +651,85 @@ class TestAlreadyDecided:
                 reviewer_sub="user-a",
                 reviewer_notes=None,
             )
+
+
+class TestInvalidStagingState:
+    """CHECK enum values 'approved' / 'error' are reserved for future
+    or operational flows (plan §2.2 B narrowing) — the review endpoint
+    must NOT wrap them in the 409 AlreadyDecidedError envelope because
+    the DTO's current_status Literal does not include them. Service
+    raises StagingInvalidStateError; router will map to 422."""
+
+    async def test_approve_on_staging_in_approved_state_raises_invalid(
+        self, session: AsyncSession
+    ) -> None:
+        staging_id = await _insert_staging(session, status="approved")
+        with pytest.raises(StagingInvalidStateError) as exc_info:
+            await run_promote(
+                session,
+                staging_id=staging_id,
+                reviewer_sub="user-a",
+                reviewer_notes=None,
+            )
+        assert exc_info.value.staging_id == staging_id
+        assert exc_info.value.current_status == "approved"
+
+    async def test_approve_on_staging_in_error_state_raises_invalid(
+        self, session: AsyncSession
+    ) -> None:
+        staging_id = await _insert_staging(session, status="error")
+        with pytest.raises(StagingInvalidStateError) as exc_info:
+            await run_promote(
+                session,
+                staging_id=staging_id,
+                reviewer_sub="user-a",
+                reviewer_notes=None,
+            )
+        assert exc_info.value.current_status == "error"
+
+    async def test_reject_on_staging_in_approved_state_raises_invalid(
+        self, session: AsyncSession
+    ) -> None:
+        staging_id = await _insert_staging(session, status="approved")
+        with pytest.raises(StagingInvalidStateError):
+            await run_reject(
+                session,
+                staging_id=staging_id,
+                reviewer_sub="user-a",
+                decision_reason="x",
+                reviewer_notes=None,
+            )
+
+    async def test_reject_on_staging_in_error_state_raises_invalid(
+        self, session: AsyncSession
+    ) -> None:
+        staging_id = await _insert_staging(session, status="error")
+        with pytest.raises(StagingInvalidStateError):
+            await run_reject(
+                session,
+                staging_id=staging_id,
+                reviewer_sub="user-a",
+                decision_reason="x",
+                reviewer_notes=None,
+            )
+
+    async def test_invalid_state_is_not_already_decided_error(
+        self, session: AsyncSession
+    ) -> None:
+        """Guards against a regression that collapses the two error
+        classes back into one. If someone 'simplifies' the service
+        by re-unifying, this test fails loudly."""
+        staging_id = await _insert_staging(session, status="approved")
+        with pytest.raises(StagingInvalidStateError) as exc_info:
+            await run_promote(
+                session,
+                staging_id=staging_id,
+                reviewer_sub="user-a",
+                reviewer_notes=None,
+            )
+        # Explicitly assert the type — not just 'some exception',
+        # and not StagingAlreadyDecidedError.
+        assert not isinstance(exc_info.value, StagingAlreadyDecidedError)
 
 
 # ---------------------------------------------------------------------------
