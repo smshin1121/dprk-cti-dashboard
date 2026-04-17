@@ -733,6 +733,122 @@ class TestInvalidStagingState:
 
 
 # ---------------------------------------------------------------------------
+# Race-lost re-fetch (Codex R1 P2)
+# ---------------------------------------------------------------------------
+
+
+class TestRaceLostRefetch:
+    """The conditional UPDATE ... WHERE status='pending' RETURNING id
+    returns empty when another transaction already decided the row.
+    Under PG + FOR UPDATE this branch is effectively unreachable
+    because ``_raise_if_not_pending`` fires first, but Codex R1 P2
+    flagged that when it DOES fire the 409 body must carry the
+    ACTUAL winner's state, not a hardcoded guess derived from the
+    caller's own intent (promote → "promoted" / reject → "rejected").
+    A cross-decision race would otherwise mislead the client.
+
+    These tests force the race-lost branch by monkeypatching
+    ``_raise_if_not_pending`` to no-op, seeding the staging row in a
+    non-pending state (with distinct reviewed_by / reviewed_at), and
+    asserting the error surfaces the re-fetched values — including
+    the opposite-intent status in the cross-decision case.
+    """
+
+    async def test_promote_race_lost_to_reject_reports_real_status(
+        self, session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Approve caller loses to a concurrent reject — 409 body must
+        carry current_status='rejected' (the winner's), not 'promoted'
+        (the caller's intent)."""
+        monkeypatch.setattr(promote_service, "_raise_if_not_pending", lambda *_a, **_k: None)
+        prior_ts = dt.datetime(2026, 2, 1, 12, 0, tzinfo=dt.timezone.utc)
+        staging_id = await _insert_staging(
+            session,
+            status="rejected",
+            reviewed_by="reject-winner",
+            reviewed_at=prior_ts,
+        )
+        with pytest.raises(StagingAlreadyDecidedError) as exc_info:
+            await run_promote(
+                session,
+                staging_id=staging_id,
+                reviewer_sub="promote-loser",
+                reviewer_notes=None,
+            )
+        err = exc_info.value
+        assert err.current_status == "rejected"
+        assert err.decided_by == "reject-winner"
+        # aiosqlite strips tzinfo on DATETIME round-trip — comparing
+        # the naive forms proves the value came from the staging row
+        # rather than a fresh now(). Real-PG preserves tzinfo; the
+        # Group H integration scenarios cover the tz-aware assertion.
+        assert err.decided_at.replace(tzinfo=None) == prior_ts.replace(tzinfo=None)
+
+    async def test_reject_race_lost_to_promote_reports_real_status(
+        self, session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Reject caller loses to a concurrent promote — 409 body must
+        carry current_status='promoted' (the winner's), not 'rejected'
+        (the caller's intent)."""
+        monkeypatch.setattr(promote_service, "_raise_if_not_pending", lambda *_a, **_k: None)
+        prior_ts = dt.datetime(2026, 2, 1, 12, 0, tzinfo=dt.timezone.utc)
+        staging_id = await _insert_staging(
+            session,
+            status="promoted",
+            reviewed_by="promote-winner",
+            reviewed_at=prior_ts,
+        )
+        with pytest.raises(StagingAlreadyDecidedError) as exc_info:
+            await run_reject(
+                session,
+                staging_id=staging_id,
+                reviewer_sub="reject-loser",
+                decision_reason="would-be-reject-reason",
+                reviewer_notes=None,
+            )
+        err = exc_info.value
+        assert err.current_status == "promoted"
+        assert err.decided_by == "promote-winner"
+        # aiosqlite strips tzinfo on DATETIME round-trip — comparing
+        # the naive forms proves the value came from the staging row
+        # rather than a fresh now(). Real-PG preserves tzinfo; the
+        # Group H integration scenarios cover the tz-aware assertion.
+        assert err.decided_at.replace(tzinfo=None) == prior_ts.replace(tzinfo=None)
+
+    async def test_promote_race_lost_same_direction_reports_real_fields(
+        self, session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Approve caller loses to another concurrent approve — 409
+        body still needs the real decided_by / decided_at, not ``""``
+        / ``now()`` (prior behavior had lost those too)."""
+        monkeypatch.setattr(promote_service, "_raise_if_not_pending", lambda *_a, **_k: None)
+        prior_ts = dt.datetime(2026, 3, 15, 8, 30, tzinfo=dt.timezone.utc)
+        staging_id = await _insert_staging(
+            session,
+            status="promoted",
+            reviewed_by="promote-winner",
+            reviewed_at=prior_ts,
+        )
+        with pytest.raises(StagingAlreadyDecidedError) as exc_info:
+            await run_promote(
+                session,
+                staging_id=staging_id,
+                reviewer_sub="promote-loser",
+                reviewer_notes=None,
+            )
+        err = exc_info.value
+        assert err.current_status == "promoted"
+        # Previously these were always "" and datetime.now(...) — the
+        # fix recovers them from the real winner's staging row.
+        assert err.decided_by == "promote-winner"
+        # aiosqlite strips tzinfo on DATETIME round-trip — comparing
+        # the naive forms proves the value came from the staging row
+        # rather than a fresh now(). Real-PG preserves tzinfo; the
+        # Group H integration scenarios cover the tz-aware assertion.
+        assert err.decided_at.replace(tzinfo=None) == prior_ts.replace(tzinfo=None)
+
+
+# ---------------------------------------------------------------------------
 # Validation — reports NOT NULL projection
 # ---------------------------------------------------------------------------
 

@@ -191,6 +191,49 @@ async def _lock_and_load_staging(
     return row
 
 
+async def _fetch_decided_state(
+    session: AsyncSession,
+    staging_id: int,
+    *,
+    fallback_status: str,
+) -> tuple[str, str, datetime]:
+    """Re-read ``(status, reviewed_by, reviewed_at)`` after the
+    conditional UPDATE's RETURNING came back empty.
+
+    The FOR UPDATE lock makes the race-lost branch effectively
+    unreachable under PG's default isolation, but Codex R1 P2 flagged
+    that when it DOES fire (cross-decision race, or non-locking
+    dialect like SQLite) the hardcoded ``"promoted"`` / ``"rejected"``
+    values could misreport the real decision. A promote caller losing
+    to a concurrent reject should see ``current_status="rejected"``
+    in the 409 body, not a stale guess derived from the caller's own
+    intent. ``decided_by`` / ``decided_at`` are similarly recovered
+    from the staging row rather than left as `""` / `now()`.
+
+    Defensive fallback keeps the 409 HTTP contract valid even if the
+    re-read returns nothing decidable (row vanished / stays pending
+    due to an inconsistency we cannot diagnose here): return the
+    caller-provided ``fallback_status`` with an empty actor and a
+    fresh ``now()`` timestamp. That matches the pre-fix behavior so
+    no existing callers regress.
+    """
+    result = await session.execute(
+        sa.select(
+            staging_table.c.status,
+            staging_table.c.reviewed_by,
+            staging_table.c.reviewed_at,
+        ).where(staging_table.c.id == staging_id)
+    )
+    row = result.one_or_none()
+    if row is not None and row.status in {"promoted", "rejected"}:
+        return (
+            row.status,
+            row.reviewed_by or "",
+            row.reviewed_at or datetime.now(timezone.utc),
+        )
+    return fallback_status, "", datetime.now(timezone.utc)
+
+
 def _raise_if_not_pending(
     row: sa.engine.Row, staging_id: int
 ) -> None:
@@ -390,11 +433,17 @@ async def promote_staging_row(
         # Raised before audit_log INSERT — the caller's rollback
         # preserves everything including the source/report rows
         # written above (they are inside the same transaction).
+        # Re-read the row so the 409 body reports the actual
+        # winner's state (Codex R1 P2 — cross-decision race would
+        # otherwise surface a misleading current_status).
+        status, decided_by, decided_at = await _fetch_decided_state(
+            session, staging_id, fallback_status="promoted"
+        )
         raise StagingAlreadyDecidedError(
             staging_id=staging_id,
-            current_status="promoted",  # conservative best-guess
-            decided_by="",
-            decided_at=datetime.now(timezone.utc),
+            current_status=status,
+            decided_by=decided_by,
+            decided_at=decided_at,
         )
 
     await _emit_audit(
@@ -461,11 +510,17 @@ async def reject_staging_row(
     )
     updated = await session.execute(update_stmt)
     if updated.scalar_one_or_none() is None:
+        # Same Codex R1 P2 re-read as the approve path — a reject
+        # caller losing to a concurrent promote must surface
+        # current_status="promoted", not the reject-intent guess.
+        status, decided_by, decided_at = await _fetch_decided_state(
+            session, staging_id, fallback_status="rejected"
+        )
         raise StagingAlreadyDecidedError(
             staging_id=staging_id,
-            current_status="rejected",
-            decided_by="",
-            decided_at=datetime.now(timezone.utc),
+            current_status=status,
+            decided_by=decided_by,
+            decided_at=decided_at,
         )
 
     await _emit_audit(
