@@ -12,6 +12,7 @@ from .routers import (
     analytics,
     auth,
     export,
+    incidents,
     ingest,
     meta,
     reports,
@@ -104,6 +105,12 @@ app.include_router(
     actors.router,
     prefix="/api/v1/actors",
     tags=["actors"],
+    dependencies=[Depends(verify_token)],
+)
+app.include_router(
+    incidents.router,
+    prefix="/api/v1/incidents",
+    tags=["incidents"],
     dependencies=[Depends(verify_token)],
 )
 app.include_router(

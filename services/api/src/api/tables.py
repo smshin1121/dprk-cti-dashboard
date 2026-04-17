@@ -213,6 +213,64 @@ report_codenames_table = sa.Table(
 
 
 # ---------------------------------------------------------------------------
+# incidents + 3 join tables (migration 0001 lines 134-166)
+# ---------------------------------------------------------------------------
+#
+# Added for PR #11 Group D (GET /incidents). Mirrors migration 0001 1:1.
+# reported is nullable in the schema but the list endpoint filters
+# ``reported IS NOT NULL`` (cursor needs a date value — see
+# api.read.repositories.list_incidents). Detail endpoints (Phase 3)
+# can surface null-reported rows separately.
+
+incidents_table = sa.Table(
+    "incidents",
+    metadata,
+    sa.Column("id", _BIGINT, primary_key=True, autoincrement=True),
+    sa.Column("reported", sa.Date(), nullable=True),
+    sa.Column("title", sa.String(length=255), nullable=False),
+    sa.Column("description", sa.Text(), nullable=True),
+    sa.Column("est_loss_usd", sa.BigInteger(), nullable=True),
+    sa.Column("attribution_confidence", sa.String(length=16), nullable=True),
+)
+
+incident_motivations_table = sa.Table(
+    "incident_motivations",
+    metadata,
+    sa.Column(
+        "incident_id",
+        _BIGINT,
+        sa.ForeignKey("incidents.id"),
+        primary_key=True,
+    ),
+    sa.Column("motivation", sa.String(length=64), primary_key=True),
+)
+
+incident_sectors_table = sa.Table(
+    "incident_sectors",
+    metadata,
+    sa.Column(
+        "incident_id",
+        _BIGINT,
+        sa.ForeignKey("incidents.id"),
+        primary_key=True,
+    ),
+    sa.Column("sector_code", sa.String(length=32), primary_key=True),
+)
+
+incident_countries_table = sa.Table(
+    "incident_countries",
+    metadata,
+    sa.Column(
+        "incident_id",
+        _BIGINT,
+        sa.ForeignKey("incidents.id"),
+        primary_key=True,
+    ),
+    sa.Column("country_iso2", sa.String(length=2), primary_key=True),
+)
+
+
+# ---------------------------------------------------------------------------
 # staging (migration 0002 + 0008 decision_reason)
 # ---------------------------------------------------------------------------
 #
@@ -304,6 +362,10 @@ __all__ = [
     "audit_log_table",
     "codenames_table",
     "groups_table",
+    "incident_countries_table",
+    "incident_motivations_table",
+    "incident_sectors_table",
+    "incidents_table",
     "metadata",
     "report_codenames_table",
     "report_tags_table",

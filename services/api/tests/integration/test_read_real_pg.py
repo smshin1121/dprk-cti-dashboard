@@ -52,6 +52,10 @@ if not _PG_URL:
 from api.tables import (  # noqa: E402
     codenames_table,
     groups_table,
+    incident_countries_table,
+    incident_motivations_table,
+    incident_sectors_table,
+    incidents_table,
     report_tags_table,
     reports_table,
     sources_table,
@@ -61,6 +65,7 @@ from api.tables import (  # noqa: E402
 
 ACTORS_URL = "/api/v1/actors"
 REPORTS_URL = "/api/v1/reports"
+INCIDENTS_URL = "/api/v1/incidents"
 
 
 # ---------------------------------------------------------------------------
@@ -102,7 +107,9 @@ async def clean_pg(pg_engine: AsyncEngine) -> None:
         await conn.execute(
             sa.text(
                 "TRUNCATE report_tags, reports, tags, sources, "
-                "codenames, groups "
+                "codenames, groups, "
+                "incident_motivations, incident_sectors, "
+                "incident_countries, incidents "
                 "RESTART IDENTITY CASCADE"
             )
         )
@@ -370,3 +377,124 @@ async def test_scenario_2_reports_filters_and_join_dedup(
     resp = await read_client.get(REPORTS_URL, cookies={"dprk_cti_session": cookie})
     id_order = [it["id"] for it in resp.json()["items"]]
     assert id_order == [r_both, r_rans, r_esp]
+
+
+# ---------------------------------------------------------------------------
+# Scenario 3 — /incidents multi-country + aggregate dedup (plan §5.2)
+# ---------------------------------------------------------------------------
+
+
+async def _seed_incident_pg(
+    session: AsyncSession,
+    *,
+    title: str,
+    reported: _dt.date | None,
+    motivations: list[str] | None = None,
+    sectors: list[str] | None = None,
+    countries: list[str] | None = None,
+) -> int:
+    result = await session.execute(
+        sa.insert(incidents_table)
+        .values(title=title, reported=reported)
+        .returning(incidents_table.c.id)
+    )
+    iid = result.scalar_one()
+    for m in motivations or []:
+        await session.execute(
+            sa.insert(incident_motivations_table).values(
+                incident_id=iid, motivation=m
+            )
+        )
+    for sec in sectors or []:
+        await session.execute(
+            sa.insert(incident_sectors_table).values(
+                incident_id=iid, sector_code=sec
+            )
+        )
+    for c in countries or []:
+        await session.execute(
+            sa.insert(incident_countries_table).values(
+                incident_id=iid, country_iso2=c
+            )
+        )
+    await session.commit()
+    return iid
+
+
+async def test_scenario_3_incidents_multi_country_and_dedup(
+    read_client: AsyncClient,
+    make_session_cookie,
+    pg_session: AsyncSession,
+    clean_pg,
+) -> None:
+    """Plan §5.2 scenario 3. Exercises what sqlite cannot:
+
+    - PG ``array_agg`` aggregate across the correlated scalar
+      subquery pattern — proves the subquery returns a Python list,
+      not a comma string (sqlite fallback).
+    - Multi-country OR semantics under the real PG planner:
+      ``?country=KR&country=US`` unions two sets, de-duped by the
+      incident primary key (outer row count stays one).
+    - Correlated subquery pattern does NOT Cartesian-multiply when
+      an incident has multiple rows on all three join tables.
+    """
+    i_kr = await _seed_incident_pg(
+        pg_session,
+        title="KR incident",
+        reported=_dt.date(2024, 5, 2),
+        motivations=["financial"],
+        countries=["KR"],
+    )
+    i_us = await _seed_incident_pg(
+        pg_session,
+        title="US incident",
+        reported=_dt.date(2024, 3, 15),
+        motivations=["espionage"],
+        countries=["US"],
+    )
+    i_jp = await _seed_incident_pg(
+        pg_session,
+        title="JP incident",
+        reported=_dt.date(2024, 1, 1),
+        motivations=["disruption"],
+        countries=["JP"],
+    )
+    i_multi = await _seed_incident_pg(
+        pg_session,
+        title="Multi-row incident",
+        reported=_dt.date(2024, 6, 1),
+        motivations=["financial", "espionage"],
+        sectors=["crypto", "gov", "finance"],
+        countries=["KR", "US"],
+    )
+
+    cookie = await _analyst_cookie(make_session_cookie)
+
+    # Multi-country OR — KR and US both included; JP excluded. i_multi
+    # (KR+US) appears exactly once despite matching BOTH countries —
+    # the dedup invariant.
+    resp = await read_client.get(
+        f"{INCIDENTS_URL}?country=KR&country=US",
+        cookies={"dprk_cti_session": cookie},
+    )
+    assert resp.status_code == 200
+    ids = [it["id"] for it in resp.json()["items"]]
+    assert ids.count(i_multi) == 1
+    assert set(ids) == {i_kr, i_us, i_multi}
+
+    # Aggregated arrays on PG use array_agg → real Python lists,
+    # sorted alphabetically by _normalize_aggregate.
+    items_by_id = {it["id"]: it for it in resp.json()["items"]}
+    assert items_by_id[i_multi]["motivations"] == ["espionage", "financial"]
+    assert items_by_id[i_multi]["sectors"] == ["crypto", "finance", "gov"]
+    assert items_by_id[i_multi]["countries"] == ["KR", "US"]
+
+    # AND across filters: motivation=financial + country=KR
+    # matches i_kr (financial+KR) AND i_multi (financial+KR) — but
+    # NOT i_us (espionage) and NOT i_jp (disruption).
+    resp = await read_client.get(
+        f"{INCIDENTS_URL}?motivation=financial&country=KR",
+        cookies={"dprk_cti_session": cookie},
+    )
+    got = {it["id"] for it in resp.json()["items"]}
+    assert got == {i_kr, i_multi}
