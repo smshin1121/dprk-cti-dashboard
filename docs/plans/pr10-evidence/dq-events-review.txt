@@ -1,0 +1,17 @@
+-- review.* expectations invoked inline (Windows event-loop pitfall workaround) with run_id=0d5a65ca-bd2d-4688-b7c1-be3f856530e6 --
+
+-- dq_events review.* rows --
+       expectation        | severity |              observed              | observed_rows |                                                              detail                                                               
+--------------------------+----------+------------------------------------+---------------+-----------------------------------------------------------------------------------------------------------------------------------
+ review.avg_latency_hours | pass     | 0.00007358819444444444444444444444 |             2 | {"decided_rows": 2, "threshold_rationale": "initial 72-hour warn threshold; tune after real reviewer-capacity data accumulates"}
+ review.backlog_size      | pass     |                                  0 |             0 | {"pending_count": 0, "threshold_rationale": "initial 500-row warn threshold; tune after real reviewer-capacity data accumulates"}
+(2 rows)
+
+
+-- backlog result --
+severity=pass observed=0 observed_rows=0 threshold=500
+detail={'pending_count': 0, 'threshold_rationale': 'initial 500-row warn threshold; tune after real reviewer-capacity data accumulates'}
+
+-- latency result --
+severity=pass observed=0.00007358819444444444444444444444 observed_rows=2 threshold=72
+detail={'decided_rows': 2, 'threshold_rationale': 'initial 72-hour warn threshold; tune after real reviewer-capacity data accumulates'}

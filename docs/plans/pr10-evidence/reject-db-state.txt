@@ -1,0 +1,13 @@
+-- staging row after reject --
+ id |  status  |     reviewed_by      | promoted_report_id |             decision_reason             
+----+----------+----------------------+--------------------+-----------------------------------------
+  2 | rejected | analyst-manual-verif |                    | manual verif — duplicate-check feedback
+(1 row)
+
+
+-- audit_log for rejected row --
+        actor         |      action      | entity  | entity_id |             decision_reason             |           reviewer_notes           
+----------------------+------------------+---------+-----------+-----------------------------------------+------------------------------------
+ analyst-manual-verif | STAGING_REJECTED | staging | 2         | manual verif — duplicate-check feedback | reviewer-internal note, audit-only
+(1 row)
+

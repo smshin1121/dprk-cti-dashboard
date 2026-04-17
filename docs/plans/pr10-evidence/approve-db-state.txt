@@ -1,0 +1,20 @@
+-- staging row after approve --
+ id |  status  |     reviewed_by      | promoted_report_id | decision_reason 
+----+----------+----------------------+--------------------+-----------------
+  1 | promoted | analyst-manual-verif |                  1 | 
+(1 row)
+
+
+-- audit_log for approved row --
+        actor         |     action      | entity  | entity_id | attached_existing |       reviewer_notes        
+----------------------+-----------------+---------+-----------+-------------------+-----------------------------
+ analyst-manual-verif | REPORT_PROMOTED | reports | 1         | false             | manual verif — approve path
+(1 row)
+
+
+-- reports row inserted --
+ id |               title                |        url_canonical         | source_id 
+----+------------------------------------+------------------------------+-----------
+  1 | PR10 manual verif - approve target | http://verif.example/approve |         1
+(1 row)
+
