@@ -49,10 +49,18 @@ if not _PG_URL:
     )
 
 
-from api.tables import codenames_table, groups_table  # noqa: E402
+from api.tables import (  # noqa: E402
+    codenames_table,
+    groups_table,
+    report_tags_table,
+    reports_table,
+    sources_table,
+    tags_table,
+)
 
 
 ACTORS_URL = "/api/v1/actors"
+REPORTS_URL = "/api/v1/reports"
 
 
 # ---------------------------------------------------------------------------
@@ -86,14 +94,15 @@ async def pg_session(
 async def clean_pg(pg_engine: AsyncEngine) -> None:
     """Truncate the read-surface tables between tests.
 
-    CASCADE covers codenames → groups FK. RESTART IDENTITY keeps
-    test-local ids deterministic so assertions on ``id`` do not
-    drift across runs.
+    CASCADE covers the FK chain (report_tags → reports,
+    codenames → groups). RESTART IDENTITY keeps test-local ids
+    deterministic so assertions on ``id`` do not drift across runs.
     """
     async with pg_engine.begin() as conn:
         await conn.execute(
             sa.text(
-                "TRUNCATE codenames, groups "
+                "TRUNCATE report_tags, reports, tags, sources, "
+                "codenames, groups "
                 "RESTART IDENTITY CASCADE"
             )
         )
@@ -147,6 +156,59 @@ async def _seed_codenames(session: AsyncSession, codenames: list[dict]) -> None:
     for c in codenames:
         await session.execute(sa.insert(codenames_table).values(**c))
     await session.commit()
+
+
+async def _seed_source(session: AsyncSession, name: str) -> int:
+    result = await session.execute(
+        sa.insert(sources_table)
+        .values(name=name, type="vendor")
+        .returning(sources_table.c.id)
+    )
+    src_id = result.scalar_one()
+    await session.commit()
+    return src_id
+
+
+async def _seed_tag(session: AsyncSession, name: str) -> int:
+    result = await session.execute(
+        sa.insert(tags_table)
+        .values(name=name, type="actor")
+        .returning(tags_table.c.id)
+    )
+    tag_id = result.scalar_one()
+    await session.commit()
+    return tag_id
+
+
+async def _seed_report(
+    session: AsyncSession,
+    *,
+    title: str,
+    url: str,
+    source_id: int,
+    published,
+    tag_ids: list[int] | None = None,
+) -> int:
+    result = await session.execute(
+        sa.insert(reports_table)
+        .values(
+            title=title,
+            url=url,
+            url_canonical=url,
+            sha256_title=f"sha-{title[:16]}",
+            source_id=source_id,
+            published=published,
+        )
+        .returning(reports_table.c.id)
+    )
+    rid = result.scalar_one()
+    if tag_ids:
+        for tid in tag_ids:
+            await session.execute(
+                sa.insert(report_tags_table).values(report_id=rid, tag_id=tid)
+            )
+    await session.commit()
+    return rid
 
 
 async def _analyst_cookie(make_session_cookie) -> str:
@@ -215,3 +277,96 @@ async def test_scenario_1_actors_list_and_default_sort(
     # aka round-trips as an actual array — PG ARRAY not sqlite JSON.
     assert items_by_name["Lazarus Group"]["aka"] == ["APT38", "Hidden Cobra"]
     assert items_by_name["Andariel"]["aka"] == []
+
+
+# ---------------------------------------------------------------------------
+# Scenario 2 — /reports filter combinations + JOIN dedup (plan §5.2)
+# ---------------------------------------------------------------------------
+
+
+import datetime as _dt  # noqa: E402 — scoped usage below
+
+
+async def test_scenario_2_reports_filters_and_join_dedup(
+    read_client: AsyncClient,
+    make_session_cookie,
+    pg_session: AsyncSession,
+    clean_pg,
+) -> None:
+    """Plan §5.2 scenario 2. Exercises the invariants that sqlite
+    cannot fully prove:
+
+    - ``ILIKE`` is case-insensitive across all characters on PG
+      (sqlite's LIKE is case-insensitive only on ASCII by default
+      and diverges on non-ASCII).
+    - EXISTS-based tag filter keeps row count invariant when a
+      report carries MULTIPLE matching tags (would multiply rows
+      under a naive INNER JOIN).
+    - ``?tag=a&tag=b`` OR semantics inside a repeatable + ``?tag=a&
+      source=X`` AND semantics across distinct filters, on a real
+      PG planner.
+    """
+    src_a = await _seed_source(pg_session, "src-A")
+    src_b = await _seed_source(pg_session, "src-B")
+    tag_rans = await _seed_tag(pg_session, "ransomware")
+    tag_esp = await _seed_tag(pg_session, "espionage")
+
+    # r_both carries BOTH tags + src_A → the dedup-regression case.
+    r_both = await _seed_report(
+        pg_session,
+        title="LAZARUS Finance Playbook",  # uppercase for ILIKE case test
+        url="https://ex/both",
+        source_id=src_a,
+        published=_dt.date(2026, 3, 15),
+        tag_ids=[tag_rans, tag_esp],
+    )
+    r_rans = await _seed_report(
+        pg_session,
+        title="ransomware operator activity",
+        url="https://ex/rans",
+        source_id=src_a,
+        published=_dt.date(2026, 3, 14),
+        tag_ids=[tag_rans],
+    )
+    r_esp = await _seed_report(
+        pg_session,
+        title="spy operation update",
+        url="https://ex/esp",
+        source_id=src_b,
+        published=_dt.date(2026, 3, 13),
+        tag_ids=[tag_esp],
+    )
+
+    cookie = await _analyst_cookie(make_session_cookie)
+
+    # Dedup: r_both carries both tags; ?tag=ransomware&tag=espionage
+    # must still return it ONCE.
+    resp = await read_client.get(
+        f"{REPORTS_URL}?tag=ransomware&tag=espionage",
+        cookies={"dprk_cti_session": cookie},
+    )
+    assert resp.status_code == 200
+    ids = [it["id"] for it in resp.json()["items"]]
+    assert ids.count(r_both) == 1, "EXISTS must not multiply rows"
+    assert set(ids) == {r_both, r_rans, r_esp}
+
+    # AND across filters — tag=ransomware + source=src-A drops r_esp.
+    resp = await read_client.get(
+        f"{REPORTS_URL}?tag=ransomware&source=src-A",
+        cookies={"dprk_cti_session": cookie},
+    )
+    ids = {it["id"] for it in resp.json()["items"]}
+    assert ids == {r_both, r_rans}
+
+    # ILIKE case-insensitive on PG — uppercase seed matches lowercase query.
+    resp = await read_client.get(
+        f"{REPORTS_URL}?q=lazarus", cookies={"dprk_cti_session": cookie}
+    )
+    titles = [it["title"] for it in resp.json()["items"]]
+    assert titles == ["LAZARUS Finance Playbook"]
+
+    # Default sort published DESC + tie-break id DESC — r_both is newest,
+    # then r_rans, then r_esp.
+    resp = await read_client.get(REPORTS_URL, cookies={"dprk_cti_session": cookie})
+    id_order = [it["id"] for it in resp.json()["items"]]
+    assert id_order == [r_both, r_rans, r_esp]
