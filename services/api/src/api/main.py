@@ -11,6 +11,7 @@ from .routers import (
     alerts,
     analytics,
     auth,
+    dashboard,
     export,
     incidents,
     ingest,
@@ -111,6 +112,12 @@ app.include_router(
     incidents.router,
     prefix="/api/v1/incidents",
     tags=["incidents"],
+    dependencies=[Depends(verify_token)],
+)
+app.include_router(
+    dashboard.router,
+    prefix="/api/v1/dashboard",
+    tags=["dashboard"],
     dependencies=[Depends(verify_token)],
 )
 app.include_router(

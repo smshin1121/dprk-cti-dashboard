@@ -56,6 +56,7 @@ from api.tables import (  # noqa: E402
     incident_motivations_table,
     incident_sectors_table,
     incidents_table,
+    report_codenames_table,
     report_tags_table,
     reports_table,
     sources_table,
@@ -66,6 +67,7 @@ from api.tables import (  # noqa: E402
 ACTORS_URL = "/api/v1/actors"
 REPORTS_URL = "/api/v1/reports"
 INCIDENTS_URL = "/api/v1/incidents"
+DASHBOARD_URL = "/api/v1/dashboard/summary"
 
 
 # ---------------------------------------------------------------------------
@@ -106,8 +108,8 @@ async def clean_pg(pg_engine: AsyncEngine) -> None:
     async with pg_engine.begin() as conn:
         await conn.execute(
             sa.text(
-                "TRUNCATE report_tags, reports, tags, sources, "
-                "codenames, groups, "
+                "TRUNCATE report_tags, report_codenames, reports, tags, "
+                "sources, codenames, groups, "
                 "incident_motivations, incident_sectors, "
                 "incident_countries, incidents "
                 "RESTART IDENTITY CASCADE"
@@ -498,3 +500,156 @@ async def test_scenario_3_incidents_multi_country_and_dedup(
     )
     got = {it["id"] for it in resp.json()["items"]}
     assert got == {i_kr, i_multi}
+
+
+# ---------------------------------------------------------------------------
+# Scenario 4 — /dashboard/summary on real PG (plan §5.2)
+# ---------------------------------------------------------------------------
+
+
+async def test_scenario_4_dashboard_summary_totals_and_top_groups(
+    read_client: AsyncClient,
+    make_session_cookie,
+    pg_session: AsyncSession,
+    clean_pg,
+) -> None:
+    """Plan §5.2 scenario 4. PG-specific invariants:
+
+    - ``EXTRACT(YEAR FROM published)`` returns a numeric (not the
+      sqlite ``strftime`` string) — the aggregator's ``CAST ... AS
+      INTEGER`` must still yield a clean int.
+    - ``top_groups`` multi-join chain (groups ← codenames ←
+      report_codenames ← reports) collapses to one row per group
+      under PG's ``COUNT(DISTINCT report_id)``, including the case
+      where one report has two codenames in the same group.
+    """
+    src = await _seed_source(pg_session, "src-a")
+    g_laz = (
+        await pg_session.execute(
+            sa.insert(groups_table)
+            .values(name="Lazarus Group")
+            .returning(groups_table.c.id)
+        )
+    ).scalar_one()
+    g_kim = (
+        await pg_session.execute(
+            sa.insert(groups_table).values(name="Kimsuky").returning(groups_table.c.id)
+        )
+    ).scalar_one()
+    await pg_session.commit()
+
+    c_laz_1 = (
+        await pg_session.execute(
+            sa.insert(codenames_table)
+            .values(name="Bluenoroff", group_id=g_laz)
+            .returning(codenames_table.c.id)
+        )
+    ).scalar_one()
+    c_laz_2 = (
+        await pg_session.execute(
+            sa.insert(codenames_table)
+            .values(name="Andariel-cn", group_id=g_laz)
+            .returning(codenames_table.c.id)
+        )
+    ).scalar_one()
+    c_kim = (
+        await pg_session.execute(
+            sa.insert(codenames_table)
+            .values(name="Velvet Chollima", group_id=g_kim)
+            .returning(codenames_table.c.id)
+        )
+    ).scalar_one()
+    await pg_session.commit()
+
+    # Three reports across two years; r_dual has TWO codenames in the
+    # SAME Lazarus group so dedup via COUNT(DISTINCT report_id) must
+    # count it as 1 toward Lazarus.
+    async def _add_report(title: str, published, codename_ids):
+        rid = (
+            await pg_session.execute(
+                sa.insert(reports_table)
+                .values(
+                    title=title,
+                    url=f"https://ex/{title}",
+                    url_canonical=f"https://ex/{title}",
+                    sha256_title=f"sha-{title}",
+                    source_id=src,
+                    published=published,
+                )
+                .returning(reports_table.c.id)
+            )
+        ).scalar_one()
+        for cid in codename_ids:
+            await pg_session.execute(
+                sa.insert(report_codenames_table).values(
+                    report_id=rid, codename_id=cid
+                )
+            )
+        await pg_session.commit()
+        return rid
+
+    await _add_report("r-dual", _dt.date(2024, 3, 1), [c_laz_1, c_laz_2])
+    await _add_report("r-laz2", _dt.date(2024, 6, 1), [c_laz_1])
+    await _add_report("r-kim", _dt.date(2023, 2, 1), [c_kim])
+
+    # Incidents: two financial, one espionage (year 2024).
+    for m in ["financial", "espionage"]:
+        iid = (
+            await pg_session.execute(
+                sa.insert(incidents_table)
+                .values(title=f"inc-{m}", reported=_dt.date(2024, 1, 1))
+                .returning(incidents_table.c.id)
+            )
+        ).scalar_one()
+        await pg_session.execute(
+            sa.insert(incident_motivations_table).values(
+                incident_id=iid, motivation=m
+            )
+        )
+    iid = (
+        await pg_session.execute(
+            sa.insert(incidents_table)
+            .values(title="inc-fin-2", reported=_dt.date(2024, 1, 1))
+            .returning(incidents_table.c.id)
+        )
+    ).scalar_one()
+    await pg_session.execute(
+        sa.insert(incident_motivations_table).values(
+            incident_id=iid, motivation="financial"
+        )
+    )
+    await pg_session.commit()
+
+    cookie = await _analyst_cookie(make_session_cookie)
+    resp = await read_client.get(DASHBOARD_URL, cookies={"dprk_cti_session": cookie})
+
+    assert resp.status_code == 200
+    body = resp.json()
+
+    # Totals reflect row counts.
+    assert body["total_reports"] == 3
+    assert body["total_incidents"] == 3
+    assert body["total_actors"] == 2
+
+    # PG EXTRACT(YEAR) returns numeric → CAST to int; 2024 has 2 reports,
+    # 2023 has 1 report. DESC order.
+    assert body["reports_by_year"] == [
+        {"year": 2024, "count": 2},
+        {"year": 2023, "count": 1},
+    ]
+
+    # Motivations alphabetized; espionage=1, financial=2.
+    assert body["incidents_by_motivation"] == [
+        {"motivation": "espionage", "count": 1},
+        {"motivation": "financial", "count": 2},
+    ]
+
+    # top_groups: Lazarus has r_dual + r_laz2 = 2 distinct reports.
+    # r_dual has two codenames in Lazarus but COUNT(DISTINCT id) = 1.
+    # Kimsuky has r_kim = 1 report.
+    top = body["top_groups"]
+    assert len(top) == 2
+    assert top[0]["name"] == "Lazarus Group"
+    assert top[0]["report_count"] == 2  # not 3 (dedup proof)
+    assert top[1]["name"] == "Kimsuky"
+    assert top[1]["report_count"] == 1
