@@ -37,6 +37,11 @@ def _inject_env_vars() -> None:
         "SESSION_COOKIE_SECURE": "false",
         "SESSION_COOKIE_SAMESITE": "lax",
         "CORS_ORIGINS": "http://localhost:3000",
+        # PR #11 Group F env lock — test env is forced to memory://
+        # inside _resolve_storage_uri regardless of this value, but
+        # setting it here keeps the intent visible in the fixture
+        # setup and future-proofs against a policy change.
+        "RATE_LIMIT_STORAGE_URL": "memory://",
     }
     for key, value in defaults.items():
         os.environ.setdefault(key, value)

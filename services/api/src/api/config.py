@@ -75,6 +75,20 @@ class Settings(BaseSettings):
     session_signing_key: str = Field(...)
     session_ttl_seconds: int = 3600
 
+    # Rate-limit storage (plan D1). PR #11 Group F locks the
+    # environment policy:
+    #   - prod:  required to start with ``redis://`` (fail-closed; any
+    #            other scheme raises at startup)
+    #   - test:  forced to ``memory://`` so fakeredis is not needed and
+    #            slowapi's built-in in-process storage gives
+    #            deterministic window semantics
+    #   - dev:   honors the env value. If empty, reuses ``redis_url``
+    #            so the dev Redis session store serves double duty.
+    # Enforcement lives in ``api.rate_limit.build_limiter`` so the
+    # policy holds regardless of how ``Settings()`` is constructed.
+    rate_limit_enabled: bool = True
+    rate_limit_storage_url: str = ""
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

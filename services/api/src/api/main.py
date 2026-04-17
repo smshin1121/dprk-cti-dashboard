@@ -2,9 +2,13 @@ import os
 
 from fastapi import Depends, FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 
 from .config import get_settings
 from .deps import verify_token
+from .rate_limit import get_limiter
 from .telemetry import setup_telemetry
 from .routers import (
     actors,
@@ -38,6 +42,23 @@ app = FastAPI(
     redoc_url=_redoc_url,
     openapi_url=_openapi_url,
 )
+
+
+# ---------------------------------------------------------------------------
+# Rate limiting (PR #11 Group F)
+# ---------------------------------------------------------------------------
+#
+# Build the limiter once at import time so environment-policy errors
+# (plan F lock — prod requires redis://) fail the process loudly
+# rather than the first request. The limiter itself does nothing
+# until Group G / H decorate routes with ``@limiter.limit(...)``.
+# ``/healthz``, ``/openapi.json``, ``/docs``, ``/redoc``, and any
+# un-decorated route remain unrestricted — ``default_limits=[]`` in
+# ``build_limiter`` makes opt-in the only path to enforcement.
+_limiter = get_limiter()
+app.state.limiter = _limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
 
 # ---------------------------------------------------------------------------
 # CORS — never use ["*"]; only origins declared in env are allowed.
