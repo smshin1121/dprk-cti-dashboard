@@ -226,8 +226,8 @@ class TestRunCheckOnSession:
         )
         assert exit_code == EXIT_OK
         assert outcome.had_sink_failure is False
-        # 11 expectations ran
-        assert len(outcome.results) == 11
+        # PR #7 locked 11; PR #10 Group G added 2 review.* metrics → 13.
+        assert len(outcome.results) == 13
 
     async def test_stdout_header_contains_run_id(
         self, db_session: AsyncSession
@@ -286,9 +286,9 @@ class TestRunCheckOnSession:
             stdout=io.StringIO(),
         )
         assert report_path.exists()
-        # 11 expectations → 11 JSONL lines
+        # 13 expectations → 13 JSONL lines (PR #10 Group G added 2).
         lines = report_path.read_text("utf-8").splitlines()
-        assert len(lines) == 11
+        assert len(lines) == 13
 
     async def test_db_rows_share_run_id(
         self, db_session: AsyncSession
@@ -307,16 +307,16 @@ class TestRunCheckOnSession:
         rows = (
             await db_session.execute(sa.select(dq_events_table.c.run_id))
         ).all()
-        assert len(rows) == 11
+        assert len(rows) == 13  # PR #10 Group G added 2 review.* metrics
         for (row_run_id,) in rows:
             assert str(row_run_id) == str(run_id)
 
     async def test_exit_code_follows_worst_severity(
         self, db_session: AsyncSession
     ) -> None:
-        """Against an empty DB all 11 expectations pass, so exit code
-        is OK. This pins the happy path; severity-specific failure
-        tests live in :class:`TestDecideExitCode`."""
+        """Against an empty DB all expectations (13 after PR #10 G)
+        pass, so exit code is OK. This pins the happy path;
+        severity-specific failure tests live in :class:`TestDecideExitCode`."""
         _outcome, exit_code = await run_check_on_session(
             db_session,
             aliases=_test_aliases(),
