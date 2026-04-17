@@ -128,13 +128,16 @@ class TestConstantsAndReExports:
 
 
 class TestRegistryContract:
-    def test_exactly_eleven_expectations(self) -> None:
-        """Review point 3 — D13 locks 11 expectations total."""
-        assert len(ALL_EXPECTATION_NAMES) == 11
+    def test_exactly_thirteen_expectations(self) -> None:
+        """D13 locked 11 expectations (PR #7); PR #10 Group G added
+        review.backlog_size + review.avg_latency_hours for a total
+        of 13."""
+        assert len(ALL_EXPECTATION_NAMES) == 13
 
     def test_names_match_d13_registry(self) -> None:
-        """Review point 4 — every name matches the plan-locked
-        dotted identifier."""
+        """Every name matches the plan-locked dotted identifier. PR
+        #10 additions land after the PR #7 set so the existing
+        ordering is preserved for downstream stdout-summary stability."""
         assert ALL_EXPECTATION_NAMES == (
             "reports.tlp.value_domain",
             "sources.country.iso2_conformance",
@@ -147,18 +150,20 @@ class TestRegistryContract:
             "codenames.group_id.null_rate",
             "codenames.named_by_source_id.null_rate",
             "reports.url_canonical.dedup_rate",
+            "review.backlog_size",
+            "review.avg_latency_hours",
         )
 
-    def test_build_all_expectations_returns_11_items_in_registry_order(
+    def test_build_all_expectations_returns_registry_in_declared_order(
         self,
     ) -> None:
         aliases = AliasDictionary(_by_type={"groups": {"lazarus": "Lazarus"}})
         built = build_all_expectations(aliases)
-        assert len(built) == 11
+        assert len(built) == 13
         assert [e.name for e in built] == list(ALL_EXPECTATION_NAMES)
 
     def test_no_duplicate_names(self) -> None:
-        assert len(set(ALL_EXPECTATION_NAMES)) == 11
+        assert len(set(ALL_EXPECTATION_NAMES)) == 13
 
 
 # ---------------------------------------------------------------------------
@@ -190,6 +195,8 @@ _CLEAN_SEVERITY: dict[str, str] = {
     "codenames.group_id.null_rate": "pass",
     "codenames.named_by_source_id.null_rate": "pass",
     "reports.url_canonical.dedup_rate": "pass",
+    "review.backlog_size": "pass",
+    "review.avg_latency_hours": "pass",
 }
 
 #: Per-expectation maximum severity when violated. This is the
@@ -207,6 +214,8 @@ _MAX_VIOLATION_SEVERITY: dict[str, str] = {
     "codenames.group_id.null_rate": "warn",
     "codenames.named_by_source_id.null_rate": "warn",
     "reports.url_canonical.dedup_rate": "warn",
+    "review.backlog_size": "warn",
+    "review.avg_latency_hours": "warn",
 }
 
 
@@ -231,11 +240,17 @@ class TestSeverityMapCoverage:
         ]
         assert len(error_names) == 7
 
-    def test_d13_warn_count_is_four(self) -> None:
+    def test_warn_count_is_six_after_pr10_group_g(self) -> None:
+        """D13 locked 4 warn-severity expectations for PR #7. PR #10
+        Group G adds 2 more (review.backlog_size, review.avg_latency_hours)
+        — both warn-only per plan §2.1 D4 lock. Total: 6."""
         warn_names = [
             n for n, s in _MAX_VIOLATION_SEVERITY.items() if s == "warn"
         ]
-        assert len(warn_names) == 4
+        assert len(warn_names) == 6
+        # PR #10 additions are BOTH warn.
+        assert "review.backlog_size" in warn_names
+        assert "review.avg_latency_hours" in warn_names
 
 
 # ---------------------------------------------------------------------------

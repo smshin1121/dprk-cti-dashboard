@@ -27,6 +27,10 @@ from worker.data_quality.expectations.referential_integrity import (
     build_groups_canonical_forward_check,
     build_groups_canonical_reverse_check,
 )
+from worker.data_quality.expectations.review_metrics import (
+    review_avg_latency_hours,
+    review_backlog_size,
+)
 from worker.data_quality.expectations.value_domain import (
     value_domain_incident_countries_iso2,
     value_domain_reports_tlp,
@@ -67,6 +71,10 @@ ALL_EXPECTATION_NAMES: tuple[str, ...] = (
     "codenames.named_by_source_id.null_rate",
     # prior-decision — dedup_rate (1 warn)
     "reports.url_canonical.dedup_rate",
+    # PR #10 Group G — review.* operational metrics (2 warn).
+    # Manual/CI DQ run only; never emitted per-request from the API.
+    "review.backlog_size",
+    "review.avg_latency_hours",
 )
 
 
@@ -94,4 +102,6 @@ def build_all_expectations(aliases: AliasDictionary) -> list[Expectation]:
         null_rate_codenames_group_id,
         null_rate_codenames_named_by_source_id,
         dedup_rate_reports_url_canonical,
+        review_backlog_size,
+        review_avg_latency_hours,
     ]

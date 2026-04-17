@@ -252,3 +252,81 @@ jobs:
           name: dq-report-jsonl
           path: artifacts/dq_report.jsonl
           if-no-files-found: warn
+
+  # -------------------------------------------------------------------------
+  # api-integration — PR #10 Phase 2.1 Group H
+  #
+  # Real-PG acceptance for the promote / reject endpoint. Plan §5.2 locks
+  # this as a REQUIRED status check: production write path is non-negotiable
+  # and sqlite-memory unit tests cannot verify FOR UPDATE row-locking,
+  # ON CONFLICT, SERIALIZABLE-ish single-winner, or JSONB round-trip.
+  # -------------------------------------------------------------------------
+  api-integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: dprk_cti_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # Sync URL for the alembic upgrade step.
+      ALEMBIC_DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/dprk_cti_test
+      # Async URL for the pytest integration run — switches driver to psycopg_async.
+      POSTGRES_TEST_URL: postgresql+psycopg_async://postgres:postgres@localhost:5432/dprk_cti_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v4
+      - name: Sync api dev dependencies
+        working-directory: services/api
+        run: uv sync
+      - name: Run alembic upgrade head
+        run: uv run --project services/api alembic -c db/alembic.ini upgrade head
+      - name: Run api integration tests (real-PG)
+        working-directory: services/api
+        run: uv run pytest tests/integration -m integration -v
+      - name: Verify OpenAPI surface for review endpoints
+        working-directory: services/api
+        env:
+          APP_ENV: dev  # openapi_url is None in prod; only dev exposes it
+          DATABASE_URL: ${{ env.ALEMBIC_DATABASE_URL }}
+          REDIS_URL: redis://localhost:6379/0
+          JWT_SECRET: ci-openapi-check-secret-at-least-32-chars
+          OIDC_CLIENT_ID: dprk-cti
+          OIDC_CLIENT_SECRET: ci-openapi-check
+          OIDC_ISSUER_URL: http://keycloak.test/realms/dprk
+          OIDC_REDIRECT_BASE_URL: http://localhost:8000
+          SESSION_SIGNING_KEY: ci-openapi-check-signing-key-32chars
+          SESSION_COOKIE_NAME: dprk_cti_session
+          SESSION_COOKIE_SECURE: "false"
+          SESSION_COOKIE_SAMESITE: lax
+          CORS_ORIGINS: http://localhost:3000
+        run: |
+          uv run python -c "
+          from api.main import app
+          spec = app.openapi()
+          paths = spec['paths']
+          required = [
+              '/api/v1/reports/review/{staging_id}',
+              '/api/v1/staging/review',
+              '/api/v1/staging/{staging_id}',
+          ]
+          for p in required:
+              assert p in paths, f'missing path in OpenAPI: {p}'
+          # review endpoint must declare the 3 error responses we ship.
+          review_responses = paths['/api/v1/reports/review/{staging_id}']['post']['responses']
+          for code in ('401', '403', '404', '409', '422'):
+              assert code in review_responses, f'missing {code} response'
+          print('openapi surface ok:', sorted(required))
+          "

@@ -15,6 +15,7 @@ from .routers import (
     meta,
     reports,
     search,
+    staging,
 )
 
 _settings = get_settings()
@@ -90,6 +91,12 @@ app.include_router(
     reports.router,
     prefix="/api/v1/reports",
     tags=["reports"],
+    dependencies=[Depends(verify_token)],
+)
+app.include_router(
+    staging.router,
+    prefix="/api/v1/staging",
+    tags=["staging"],
     dependencies=[Depends(verify_token)],
 )
 app.include_router(
