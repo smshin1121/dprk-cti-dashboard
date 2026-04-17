@@ -39,6 +39,7 @@ dev = [
     "respx>=0.21",
     "freezegun>=1.5",
     "cryptography>=42",
+    "aiosqlite>=0.20",
 ]
 
 [tool.pytest.ini_options]
