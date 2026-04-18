@@ -1,14 +1,22 @@
+import { QueryClientProvider } from '@tanstack/react-query'
 import { render, screen } from '@testing-library/react'
+import type { ReactNode } from 'react'
 import {
   RouterProvider,
   createMemoryRouter,
 } from 'react-router-dom'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { createQueryClient } from '../../lib/queryClient'
 import { useFilterStore } from '../../stores/filters'
 import { Shell } from '../Shell'
 
+// Group G introduced UserMenu into the Shell, which calls useAuth →
+// useMe → useQuery. Shell integration tests now need a QueryClient
+// wrapper and a mocked /me response so the topbar mounts fully.
+
 function renderShell() {
+  const client = createQueryClient()
   const router = createMemoryRouter(
     [
       {
@@ -20,7 +28,10 @@ function renderShell() {
     ],
     { initialEntries: ['/'] },
   )
-  return render(<RouterProvider router={router} />)
+  function Wrapper({ children }: { children: ReactNode }) {
+    return <QueryClientProvider client={client}>{children}</QueryClientProvider>
+  }
+  return render(<RouterProvider router={router} />, { wrapper: Wrapper })
 }
 
 function resetStore(): void {
@@ -33,7 +44,21 @@ function resetStore(): void {
 }
 
 describe('Shell — FilterBar integration (plan D5)', () => {
-  beforeEach(resetStore)
+  beforeEach(() => {
+    resetStore()
+    vi.spyOn(global, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          sub: 'x',
+          email: 'analyst@dprk.test',
+          name: null,
+          roles: ['analyst'],
+        }),
+        { status: 200 },
+      ),
+    )
+  })
+  afterEach(() => vi.restoreAllMocks())
 
   it('mounts FilterBar inside the Shell layout', () => {
     renderShell()

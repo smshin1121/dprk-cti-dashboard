@@ -1,24 +1,31 @@
 /**
  * Outer layout frame for all authenticated routes. Renders a
- * structural top-nav (title + nav links + theme toggle) and an
- * <Outlet/> for the active route.
+ * structural top-nav (title + nav links + ⌘K trigger + user menu),
+ * a FilterBar, and an <Outlet/> for the active route.
  *
  * Token usage (plan D4 lock): every color here goes through a
  * semantic Tailwind class backed by CSS vars (bg-app, bg-surface,
  * text-ink, border-border-card, text-signal). Switching html[data-theme]
  * flips every surface in one repaint without touching component
- * code — test `Shell reflects data-theme attribute via CSS vars`
- * pins this invariant.
+ * code — Shell theme test pins this invariant.
  *
- * ThemeToggle lives in the top-nav as a standalone affordance for
- * PR #12. Group G moves it into the user-menu dropdown alongside
- * logout; that refactor keeps `useThemeStore.cycleMode` as the
- * click handler so no behavior change lands with the move.
+ * Group G relocation (plan D5):
+ *   - Standalone ThemeToggle removed from the topbar; it now lives
+ *     inside UserMenu's dropdown. `useThemeStore.cycleMode` stays
+ *     the click handler so behavior is unchanged — only the mount
+ *     location moved.
+ *   - CommandPaletteButton added to the topbar (⌘K trigger; empty
+ *     dialog skeleton per plan §1 non-goal).
+ *   - UserMenu added to the topbar; renders only when authenticated
+ *     (defensive — Shell normally renders only under RouteGate's
+ *     auth branch, but UserMenu has its own null guard for mount
+ *     races during logout).
  */
 
 import { NavLink, Outlet } from 'react-router-dom'
 
-import { ThemeToggle } from '../components/ThemeToggle'
+import { CommandPaletteButton } from '../components/CommandPaletteButton'
+import { UserMenu } from '../components/UserMenu'
 import { FilterBar } from './FilterBar'
 
 const NAV_ITEMS = [
@@ -53,7 +60,8 @@ export function Shell(): JSX.Element {
             </NavLink>
           ))}
         </nav>
-        <ThemeToggle />
+        <CommandPaletteButton />
+        <UserMenu />
       </header>
       <FilterBar />
       <main data-testid="shell-main" className="flex-1">
