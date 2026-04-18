@@ -1,32 +1,43 @@
 /**
- * ⌘K command registry — PR #13 plan D3 lock.
+ * ⌘K command registry — PR #13 plan D3 lock + D5 i18n bridge.
  *
- * This module is pure data + a label getter. It carries NO hook / store
- * / router dependencies, so it can be imported from tests, the
- * component, and future i18n wiring without pulling in React-runtime
- * context. The component that renders the palette
- * (`components/CommandPaletteButton.tsx`) owns the action wiring — it
- * imports these IDs + labels and maps each to a hook/store call.
+ * This module is pure data + a label getter. No React hooks, no
+ * component dependencies. It IS allowed to read from i18next because
+ * i18next exposes a plain function (`i18n.t(...)`) — not a hook —
+ * so the registry stays usable in non-React contexts (tests, future
+ * workers) without importing React.
  *
- * Scope (plan D3 lock — deliberately narrow):
- *   - nav.dashboard / nav.reports / nav.incidents / nav.actors
- *   - theme.cycle
- *   - filters.clear
- *   - auth.logout
+ * Registry purity contract (Group C/D review criterion):
+ *   - `COMMAND_IDS` is a stable `as const` tuple — the single source
+ *     of truth for what the palette exposes.
+ *   - `getCommandLabel(id)` / `getCommandKeywords(id)` are pure-ish
+ *     functions: given the current i18next state, they return strings
+ *     deterministically. Calling them does not mutate anything.
+ *   - The component iterates `COMMAND_IDS` at render time and calls
+ *     the getters there; locale change causes a re-render (via
+ *     `useTranslation`) which re-resolves labels.
  *
- * Explicitly excluded (plan D3 + §1 non-goals):
- *   - Full-text search across reports / incidents / actors data
- *   - Server-backed search
- *   - Bulk or mutation actions (anything that creates/updates/deletes)
+ * Scope (plan D3, unchanged):
+ *   Navigate: /dashboard /reports /incidents /actors
+ *   View:     theme cycle, clear filters
+ *   Session:  sign out
  *
- * i18n preparation (Group F):
- * Labels are stored here as the single source of truth for display
- * strings. The getCommandLabel() indirection means Group F can swap
- * the implementation to `t(command.labelKey)` without touching the
- * component or tests' command-ID assertions. Tests that check labels
- * use the getter so they automatically align with the i18n source
- * once Group F lands.
+ * i18n swap (plan D5):
+ * Labels route through `i18n.t('commands.${id}')`. The previous
+ * hardcoded `LABELS` table is deleted — `ko.json` / `en.json` now
+ * own the display strings. Keywords stay hardcoded English for the
+ * fuzzy matcher; label already contains the translated words so
+ * Korean input matches against label text directly.
+ *
+ * NOTE — no `COMMAND_DEFINITIONS` const:
+ * The previous `.map(...)` construction evaluated `getCommandLabel`
+ * at module load, which predated i18n initialization. Evaluating
+ * labels at render time is the correct behaviour once `t()` is
+ * involved — the getter is called per render under `useTranslation`
+ * subscription, so locale changes flow through naturally.
  */
+
+import i18n from '../i18n'
 
 export const COMMAND_IDS = [
   'nav.dashboard',
@@ -42,36 +53,13 @@ export type CommandId = (typeof COMMAND_IDS)[number]
 
 export interface CommandDefinition {
   id: CommandId
-  /**
-   * Display label. Today returned verbatim from the module-local
-   * table. Group F will route this through `react-i18next.t(...)`
-   * using the command id as the translation key. The component does
-   * not re-hardcode any of these strings.
-   */
   label: string
-  /**
-   * Additional words cmdk's fuzzy matcher should index for this
-   * command. Helps with "nav" / "go" / "jump" style searches even
-   * though they don't appear in the visible label.
-   */
   keywords: string[]
 }
 
-/**
- * Labels map — single point of change for Group F i18n. The
- * component reads through `getCommandLabel(id)` so replacing this
- * table with a call to `t(...)` is a one-line edit.
- */
-const LABELS: Record<CommandId, string> = {
-  'nav.dashboard': 'Go to Dashboard',
-  'nav.reports': 'Go to Reports',
-  'nav.incidents': 'Go to Incidents',
-  'nav.actors': 'Go to Actors',
-  'theme.cycle': 'Cycle theme (light / dark / system)',
-  'filters.clear': 'Clear all filters',
-  'auth.logout': 'Sign out',
-}
-
+/** Keywords stay English — they're fuzzy-match hints, not the
+ *  primary search target. The translated label is already in the
+ *  cmdk `value` string so Korean / English text searches hit. */
 const KEYWORDS: Record<CommandId, string[]> = {
   'nav.dashboard': ['navigate', 'go', 'home', 'kpi', 'overview'],
   'nav.reports': ['navigate', 'go', 'list', 'intel'],
@@ -83,19 +71,9 @@ const KEYWORDS: Record<CommandId, string[]> = {
 }
 
 export function getCommandLabel(id: CommandId): string {
-  return LABELS[id]
+  return i18n.t(`commands.${id}`)
 }
 
 export function getCommandKeywords(id: CommandId): string[] {
   return KEYWORDS[id]
 }
-
-/**
- * Static command metadata list. Order is the default display order in
- * the palette when the user hasn't typed a filter. Navigation commands
- * first (most frequent action class), then view-affecting commands
- * (theme, clear filters), then destructive/session (sign out).
- */
-export const COMMAND_DEFINITIONS: readonly CommandDefinition[] = COMMAND_IDS.map(
-  (id) => ({ id, label: getCommandLabel(id), keywords: getCommandKeywords(id) }),
-)

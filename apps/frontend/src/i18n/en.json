@@ -1,0 +1,48 @@
+{
+  "shell": {
+    "nav": {
+      "dashboard": "Dashboard",
+      "reports": "Reports",
+      "incidents": "Incidents",
+      "actors": "Actors"
+    },
+    "brand": "DPRK CTI",
+    "search": {
+      "placeholder": "Search",
+      "dialogLabel": "Command palette",
+      "emptyLabel": "No matching command.",
+      "inputPlaceholder": "Type a command…"
+    }
+  },
+  "userMenu": {
+    "theme": "Theme",
+    "language": "Language",
+    "signOut": "Sign out",
+    "triggerAriaLabel": "Account menu for {{email}}"
+  },
+  "locale": {
+    "ko": "한국어",
+    "en": "English",
+    "ariaLabel": "Language toggle"
+  },
+  "commands": {
+    "nav.dashboard": "Go to Dashboard",
+    "nav.reports": "Go to Reports",
+    "nav.incidents": "Go to Incidents",
+    "nav.actors": "Go to Actors",
+    "theme.cycle": "Cycle theme (light / dark / system)",
+    "filters.clear": "Clear all filters",
+    "auth.logout": "Sign out"
+  },
+  "list": {
+    "loading": "Loading…",
+    "empty": "No items found.",
+    "error": "Failed to load data.",
+    "retry": "Retry",
+    "rateLimited": "Too many requests. Please slow down."
+  },
+  "dashboard": {
+    "empty": "No data for current filters.",
+    "error": "Failed to load dashboard data."
+  }
+}

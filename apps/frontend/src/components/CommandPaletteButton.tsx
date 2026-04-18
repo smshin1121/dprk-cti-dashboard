@@ -42,11 +42,13 @@
 import { Command } from 'cmdk'
 import { Command as CommandIcon } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 
 import { useLogout } from '../features/auth/useLogout'
 import {
-  COMMAND_DEFINITIONS,
+  COMMAND_IDS,
+  getCommandKeywords,
   getCommandLabel,
   type CommandId,
 } from '../lib/commands'
@@ -81,6 +83,10 @@ export function CommandPaletteButton(): JSX.Element {
   const cycleTheme = useThemeStore((s) => s.cycleMode)
   const clearFilters = useFilterStore((s) => s.clear)
   const logoutMutation = useLogout()
+  // `useTranslation` subscribes this component to locale changes,
+  // so switching ko↔en re-renders and re-resolves every
+  // `getCommandLabel(id)` call below.
+  const { t } = useTranslation()
 
   useEffect(() => {
     function handler(event: KeyboardEvent): void {
@@ -129,14 +135,14 @@ export function CommandPaletteButton(): JSX.Element {
         type="button"
         data-testid="cmdk-trigger"
         onClick={() => setOpen(true)}
-        aria-label="Open command palette"
+        aria-label={t('shell.search.dialogLabel')}
         className={cn(
           'flex h-8 items-center gap-2 rounded border border-border-card bg-app px-3 text-xs text-ink-muted',
           'hover:border-signal hover:text-ink focus:outline-none focus:ring-2 focus:ring-signal',
         )}
       >
         <CommandIcon aria-hidden className="h-3 w-3" />
-        <span>Search</span>
+        <span>{t('shell.search.placeholder')}</span>
         <kbd
           className={cn(
             'ml-2 rounded border border-border-card bg-surface px-1 py-0.5 text-[10px] text-ink-subtle',
@@ -149,7 +155,7 @@ export function CommandPaletteButton(): JSX.Element {
       <Command.Dialog
         open={open}
         onOpenChange={setOpen}
-        label="Command palette"
+        label={t('shell.search.dialogLabel')}
         data-testid="cmdk-dialog"
         className={cn(
           'fixed inset-0 z-50 flex items-start justify-center bg-black/40 p-20',
@@ -162,7 +168,7 @@ export function CommandPaletteButton(): JSX.Element {
         >
           <Command.Input
             data-testid="cmdk-input"
-            placeholder="Type a command…"
+            placeholder={t('shell.search.inputPlaceholder')}
             className={cn(
               'w-full border-b border-border-card bg-transparent px-4 py-3 text-sm outline-none placeholder:text-ink-subtle',
             )}
@@ -175,26 +181,30 @@ export function CommandPaletteButton(): JSX.Element {
               data-testid="cmdk-empty"
               className="px-4 py-6 text-center text-sm text-ink-muted"
             >
-              No matching command.
+              {t('shell.search.emptyLabel')}
             </Command.Empty>
 
-            {COMMAND_DEFINITIONS.map((def) => (
-              <Command.Item
-                key={def.id}
-                value={[def.id, def.label, ...def.keywords].join(' ')}
-                data-testid={`cmdk-item-${def.id}`}
-                onSelect={() => runCommand(def.id)}
-                className={cn(
-                  'flex cursor-pointer items-center justify-between rounded px-4 py-2 text-sm',
-                  'data-[selected=true]:bg-app',
-                )}
-              >
-                <span>{getCommandLabel(def.id)}</span>
-                <span className="text-[10px] uppercase tracking-wider text-ink-subtle">
-                  {def.id}
-                </span>
-              </Command.Item>
-            ))}
+            {COMMAND_IDS.map((id) => {
+              const label = getCommandLabel(id)
+              const keywords = getCommandKeywords(id)
+              return (
+                <Command.Item
+                  key={id}
+                  value={[id, label, ...keywords].join(' ')}
+                  data-testid={`cmdk-item-${id}`}
+                  onSelect={() => runCommand(id)}
+                  className={cn(
+                    'flex cursor-pointer items-center justify-between rounded px-4 py-2 text-sm',
+                    'data-[selected=true]:bg-app',
+                  )}
+                >
+                  <span>{label}</span>
+                  <span className="text-[10px] uppercase tracking-wider text-ink-subtle">
+                    {id}
+                  </span>
+                </Command.Item>
+              )
+            })}
           </Command.List>
         </div>
       </Command.Dialog>
