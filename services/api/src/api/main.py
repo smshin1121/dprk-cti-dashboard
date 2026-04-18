@@ -2,15 +2,28 @@ import os
 
 from fastapi import Depends, FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from limits.errors import StorageError
+from redis.exceptions import ConnectionError as RedisConnectionError
+from redis.exceptions import TimeoutError as RedisTimeoutError
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 
 from .config import get_settings
 from .deps import verify_token
+from .rate_limit import (
+    get_limiter,
+    handle_storage_unavailable,
+    rate_limit_exceeded_handler,
+)
 from .telemetry import setup_telemetry
 from .routers import (
+    actors,
     alerts,
     analytics,
     auth,
+    dashboard,
     export,
+    incidents,
     ingest,
     meta,
     reports,
@@ -35,6 +48,35 @@ app = FastAPI(
     redoc_url=_redoc_url,
     openapi_url=_openapi_url,
 )
+
+
+# ---------------------------------------------------------------------------
+# Rate limiting (PR #11 Group F)
+# ---------------------------------------------------------------------------
+#
+# Build the limiter once at import time so environment-policy errors
+# (plan F lock — prod requires redis://) fail the process loudly
+# rather than the first request. The limiter itself does nothing
+# until Group G / H decorate routes with ``@limiter.limit(...)``.
+# ``/healthz``, ``/openapi.json``, ``/docs``, ``/redoc``, and any
+# un-decorated route remain unrestricted — ``default_limits=[]`` in
+# ``build_limiter`` makes opt-in the only path to enforcement.
+_limiter = get_limiter()
+app.state.limiter = _limiter
+# Custom handler returns JSON (plan D13 — 429 body shape matches the
+# OpenAPI `rate_limit_exceeded` example for every decorated route,
+# including the auth/callback browser-redirect path).
+app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
+# Storage backend (Redis) failure handler — 503 JSON instead of bare
+# 500 when the rate-limit Redis is unreachable. Codex R1 P2 lock:
+# rate_limit.py's fail-closed docstring promised a 503 path; this
+# registration is what makes the promise real. Covers both limits'
+# wrapper (`StorageError`) and redis-py's raw connection errors
+# (which slowapi's Redis backend does not always re-wrap).
+app.add_exception_handler(StorageError, handle_storage_unavailable)
+app.add_exception_handler(RedisConnectionError, handle_storage_unavailable)
+app.add_exception_handler(RedisTimeoutError, handle_storage_unavailable)
+app.add_middleware(SlowAPIMiddleware)
 
 # ---------------------------------------------------------------------------
 # CORS — never use ["*"]; only origins declared in env are allowed.
@@ -97,6 +139,24 @@ app.include_router(
     staging.router,
     prefix="/api/v1/staging",
     tags=["staging"],
+    dependencies=[Depends(verify_token)],
+)
+app.include_router(
+    actors.router,
+    prefix="/api/v1/actors",
+    tags=["actors"],
+    dependencies=[Depends(verify_token)],
+)
+app.include_router(
+    incidents.router,
+    prefix="/api/v1/incidents",
+    tags=["incidents"],
+    dependencies=[Depends(verify_token)],
+)
+app.include_router(
+    dashboard.router,
+    prefix="/api/v1/dashboard",
+    tags=["dashboard"],
     dependencies=[Depends(verify_token)],
 )
 app.include_router(

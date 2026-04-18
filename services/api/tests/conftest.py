@@ -37,6 +37,11 @@ def _inject_env_vars() -> None:
         "SESSION_COOKIE_SECURE": "false",
         "SESSION_COOKIE_SAMESITE": "lax",
         "CORS_ORIGINS": "http://localhost:3000",
+        # PR #11 Group F env lock — test env is forced to memory://
+        # inside _resolve_storage_uri regardless of this value, but
+        # setting it here keeps the intent visible in the fixture
+        # setup and future-proofs against a policy change.
+        "RATE_LIMIT_STORAGE_URL": "memory://",
     }
     for key, value in defaults.items():
         os.environ.setdefault(key, value)
@@ -65,6 +70,32 @@ async def fake_redis() -> fakeredis.aioredis.FakeRedis:
     r = fakeredis.aioredis.FakeRedis()
     yield r
     await r.aclose()
+
+
+# ---------------------------------------------------------------------------
+# Rate-limit isolation — reset slowapi memory:// storage between tests
+# ---------------------------------------------------------------------------
+#
+# PR #11 Group G attaches @limiter.limit(...) to several routes. With
+# default_limits=[] the middleware is a no-op on undecorated routes,
+# but decorated routes accumulate bucket state across tests within
+# the same process. Without reset: a test that makes 30 staging
+# requests trips the 30/min/user bucket for every subsequent test
+# that reuses the same session cookie. This fixture is autouse so
+# every test starts with a clean slate.
+#
+# E2E rate-limit tests (tests/integration/test_rate_limit_e2e.py)
+# deliberately exhaust a bucket within a single test — they run
+# BETWEEN two reset calls so they never leak limit state.
+
+
+@pytest.fixture(autouse=True)
+def _reset_rate_limiter():
+    from api.main import app
+
+    app.state.limiter.reset()
+    yield
+    app.state.limiter.reset()
 
 
 # ---------------------------------------------------------------------------

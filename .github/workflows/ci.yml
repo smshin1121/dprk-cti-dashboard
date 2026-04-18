@@ -254,6 +254,36 @@ jobs:
           if-no-files-found: warn
 
   # -------------------------------------------------------------------------
+  # contract-verify — PR #11 Phase 2.2 Group I
+  #
+  # Pact producer verification. Enumerates ``contracts/pacts/*.json`` and
+  # runs ``pact-python``'s Verifier against the live API. Baseline posture:
+  # no consumer contract file is committed yet (FE ships in PR #12), so
+  # the harness skips-with-ok and this job is green. Once FE commits a
+  # pact file, the harness flips to live verification automatically —
+  # CI becomes a fail-fast guard on consumer contract drift without
+  # requiring a workflow edit.
+  #
+  # Kept as a dedicated job (separate from api-tests) so the status
+  # check surface is load-bearing: a reviewer can see at a glance
+  # whether contract-verify is the signal to watch for FE↔BE drift.
+  # -------------------------------------------------------------------------
+  contract-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Sync api dev dependencies (includes pact-python)
+        working-directory: services/api
+        run: uv sync
+      - name: Run Pact producer verifier harness
+        working-directory: services/api
+        run: uv run pytest tests/contract -v
+
+  # -------------------------------------------------------------------------
   # api-integration — PR #10 Phase 2.1 Group H
   #
   # Real-PG acceptance for the promote / reject endpoint. Plan §5.2 locks

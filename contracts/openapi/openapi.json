@@ -1,0 +1,2878 @@
+{
+  "components": {
+    "schemas": {
+      "ActorItem": {
+        "description": "Single actor row in the ``/actors`` list view.\n\n``codenames`` flattens the ``codenames`` table join on\n``group_id``. Fields mirror the v1.0 §5.4 shape verbatim so the\nFE consumer lands without a rename pass.",
+        "examples": [
+          {
+            "aka": [
+              "APT38",
+              "Hidden Cobra"
+            ],
+            "codenames": [
+              "Andariel",
+              "Bluenoroff"
+            ],
+            "description": "DPRK-attributed cyber espionage and financially motivated group",
+            "id": 3,
+            "mitre_intrusion_set_id": "G0032",
+            "name": "Lazarus Group"
+          }
+        ],
+        "properties": {
+          "aka": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Aka",
+            "type": "array"
+          },
+          "codenames": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Codenames",
+            "type": "array"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "mitre_intrusion_set_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mitre Intrusion Set Id"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "ActorItem",
+        "type": "object"
+      },
+      "ActorListResponse": {
+        "description": "Offset-paginated response for ``GET /api/v1/actors``.\n\nPlan D3 lock: actors stay on offset because the group count is\nsmall and sort-stable under inserts (``name ASC, id ASC`` per\nD11). ``total`` lets the FE compute remaining pages without a\nsecond ``HEAD``-style call.",
+        "examples": [
+          {
+            "items": [
+              {
+                "aka": [
+                  "APT38",
+                  "Hidden Cobra"
+                ],
+                "codenames": [
+                  "Andariel",
+                  "Bluenoroff"
+                ],
+                "description": "DPRK-attributed cyber espionage and financially motivated group",
+                "id": 3,
+                "mitre_intrusion_set_id": "G0032",
+                "name": "Lazarus Group"
+              }
+            ],
+            "limit": 50,
+            "offset": 0,
+            "total": 12
+          },
+          {
+            "items": [],
+            "limit": 50,
+            "offset": 0,
+            "total": 0
+          }
+        ],
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ActorItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "maximum": 200.0,
+            "minimum": 1.0,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "minimum": 0.0,
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "minimum": 0.0,
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "limit",
+          "offset",
+          "total"
+        ],
+        "title": "ActorListResponse",
+        "type": "object"
+      },
+      "AlreadyDecidedError": {
+        "description": "409 body when the staging row is no longer ``pending``.\n\n``current_status`` is narrowed to ``promoted|rejected`` — the only\nstates the PR #10 endpoint can drive the row into (plan §2.2 B). If\na future flow introduces ``approved`` as an intermediate state, the\nreachable-state enum here must widen in lock-step.",
+        "properties": {
+          "current_status": {
+            "enum": [
+              "promoted",
+              "rejected"
+            ],
+            "title": "Current Status",
+            "type": "string"
+          },
+          "decided_at": {
+            "format": "date-time",
+            "title": "Decided At",
+            "type": "string"
+          },
+          "decided_by": {
+            "title": "Decided By",
+            "type": "string"
+          },
+          "error": {
+            "const": "already_decided",
+            "default": "already_decided",
+            "title": "Error",
+            "type": "string"
+          }
+        },
+        "required": [
+          "current_status",
+          "decided_by",
+          "decided_at"
+        ],
+        "title": "AlreadyDecidedError",
+        "type": "object"
+      },
+      "ApproveRequest": {
+        "description": "POST body for approve: promotes the staging row to ``reports``.\n\n``decision_reason`` is intentionally not declared here. Clients that\nsend it get it silently dropped (plan §2.1 D1 \"approve 시 무시\"):\napprove has no semantic \"reason\" — the approval itself is the\naction. ``notes`` is optional and lands in\n``audit_log.diff_jsonb.reviewer_notes``.",
+        "properties": {
+          "decision": {
+            "const": "approve",
+            "title": "Decision",
+            "type": "string"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "maxLength": 5000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          }
+        },
+        "required": [
+          "decision"
+        ],
+        "title": "ApproveRequest",
+        "type": "object"
+      },
+      "CurrentUser": {
+        "description": "Identity surfaced to route handlers via Depends(verify_token).",
+        "properties": {
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "roles": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Roles",
+            "type": "array"
+          },
+          "sub": {
+            "title": "Sub",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sub",
+          "email",
+          "roles"
+        ],
+        "title": "CurrentUser",
+        "type": "object"
+      },
+      "DashboardMotivationCount": {
+        "description": "One point in ``DashboardSummary.incidents_by_motivation``.",
+        "examples": [
+          {
+            "count": 27,
+            "motivation": "financial"
+          }
+        ],
+        "properties": {
+          "count": {
+            "minimum": 0.0,
+            "title": "Count",
+            "type": "integer"
+          },
+          "motivation": {
+            "title": "Motivation",
+            "type": "string"
+          }
+        },
+        "required": [
+          "motivation",
+          "count"
+        ],
+        "title": "DashboardMotivationCount",
+        "type": "object"
+      },
+      "DashboardSummary": {
+        "description": "Response for ``GET /api/v1/dashboard/summary``.\n\nPlan D6 lock: three scalar totals + three aggregate arrays. The\nshape is the minimum an FE KPI card view (§14 Phase 2 W1–W2)\nneeds — no nesting beyond one level, no per-day series (that\nlives on the analytics endpoints in Phase 3).",
+        "examples": [
+          {
+            "incidents_by_motivation": [
+              {
+                "count": 81,
+                "motivation": "financial"
+              },
+              {
+                "count": 52,
+                "motivation": "espionage"
+              },
+              {
+                "count": 21,
+                "motivation": "disruption"
+              }
+            ],
+            "reports_by_year": [
+              {
+                "count": 201,
+                "year": 2022
+              },
+              {
+                "count": 287,
+                "year": 2023
+              },
+              {
+                "count": 318,
+                "year": 2024
+              }
+            ],
+            "top_groups": [
+              {
+                "group_id": 3,
+                "name": "Lazarus Group",
+                "report_count": 412
+              },
+              {
+                "group_id": 5,
+                "name": "Kimsuky",
+                "report_count": 287
+              }
+            ],
+            "total_actors": 12,
+            "total_incidents": 154,
+            "total_reports": 1204
+          }
+        ],
+        "properties": {
+          "incidents_by_motivation": {
+            "items": {
+              "$ref": "#/components/schemas/DashboardMotivationCount"
+            },
+            "title": "Incidents By Motivation",
+            "type": "array"
+          },
+          "reports_by_year": {
+            "items": {
+              "$ref": "#/components/schemas/DashboardYearCount"
+            },
+            "title": "Reports By Year",
+            "type": "array"
+          },
+          "top_groups": {
+            "items": {
+              "$ref": "#/components/schemas/DashboardTopGroup"
+            },
+            "title": "Top Groups",
+            "type": "array"
+          },
+          "total_actors": {
+            "minimum": 0.0,
+            "title": "Total Actors",
+            "type": "integer"
+          },
+          "total_incidents": {
+            "minimum": 0.0,
+            "title": "Total Incidents",
+            "type": "integer"
+          },
+          "total_reports": {
+            "minimum": 0.0,
+            "title": "Total Reports",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total_reports",
+          "total_incidents",
+          "total_actors"
+        ],
+        "title": "DashboardSummary",
+        "type": "object"
+      },
+      "DashboardTopGroup": {
+        "description": "One entry in ``DashboardSummary.top_groups`` (length bounded by\nthe ``top_n`` query param — min 1, max 20, default 5).",
+        "examples": [
+          {
+            "group_id": 3,
+            "name": "Lazarus Group",
+            "report_count": 104
+          }
+        ],
+        "properties": {
+          "group_id": {
+            "title": "Group Id",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "report_count": {
+            "minimum": 0.0,
+            "title": "Report Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "group_id",
+          "name",
+          "report_count"
+        ],
+        "title": "DashboardTopGroup",
+        "type": "object"
+      },
+      "DashboardYearCount": {
+        "description": "One point in ``DashboardSummary.reports_by_year``.",
+        "examples": [
+          {
+            "count": 38,
+            "year": 2024
+          }
+        ],
+        "properties": {
+          "count": {
+            "minimum": 0.0,
+            "title": "Count",
+            "type": "integer"
+          },
+          "year": {
+            "maximum": 2100.0,
+            "minimum": 1900.0,
+            "title": "Year",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "year",
+          "count"
+        ],
+        "title": "DashboardYearCount",
+        "type": "object"
+      },
+      "DuplicateMatchHint": {
+        "description": "One pre-existing ``reports`` row that may overlap with this\nstaging row, surfaced on the detail view to help the reviewer\nspot duplicates before approving.\n\n``match_type`` enumerates the lookup that found the match:\n``url_canonical`` (exact canonical URL hit, the UNIQUE dedup key)\nor ``sha256_title_source_scoped`` (same title hash within the same\nsource — the bootstrap ETL fallback). No title-only global match\nis surfaced (too noisy — generic headlines collide).",
+        "properties": {
+          "match_type": {
+            "enum": [
+              "url_canonical",
+              "sha256_title_source_scoped"
+            ],
+            "title": "Match Type",
+            "type": "string"
+          },
+          "report_id": {
+            "title": "Report Id",
+            "type": "integer"
+          },
+          "report_published": {
+            "format": "date",
+            "title": "Report Published",
+            "type": "string"
+          },
+          "report_title": {
+            "title": "Report Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "match_type",
+          "report_id",
+          "report_title",
+          "report_published"
+        ],
+        "title": "DuplicateMatchHint",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "IncidentItem": {
+        "description": "Single incident row in the ``/incidents`` list view.\n\n``motivations`` / ``sectors`` / ``countries`` are flattened from\nthe three N:M join tables (``incident_motivations`` /\n``incident_sectors`` / ``incident_countries``) — the aggregator\nin Group D does the grouping so the client sees a flat list per\nrow instead of three round-trips.",
+        "examples": [
+          {
+            "attribution_confidence": "HIGH",
+            "countries": [
+              "VN",
+              "SG"
+            ],
+            "description": "620M USD bridge compromise attributed to Lazarus",
+            "est_loss_usd": 620000000,
+            "id": 18,
+            "motivations": [
+              "financial"
+            ],
+            "reported": "2024-05-02",
+            "sectors": [
+              "crypto"
+            ],
+            "title": "Axie Infinity Ronin bridge exploit"
+          }
+        ],
+        "properties": {
+          "attribution_confidence": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attribution Confidence"
+          },
+          "countries": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Countries",
+            "type": "array"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "est_loss_usd": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Est Loss Usd"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "motivations": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Motivations",
+            "type": "array"
+          },
+          "reported": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reported"
+          },
+          "sectors": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Sectors",
+            "type": "array"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title"
+        ],
+        "title": "IncidentItem",
+        "type": "object"
+      },
+      "IncidentListResponse": {
+        "description": "Keyset-paginated response for ``GET /api/v1/incidents``.",
+        "examples": [
+          {
+            "items": [
+              {
+                "attribution_confidence": "HIGH",
+                "countries": [
+                  "VN",
+                  "SG"
+                ],
+                "description": "620M USD bridge compromise attributed to Lazarus",
+                "est_loss_usd": 620000000,
+                "id": 18,
+                "motivations": [
+                  "financial"
+                ],
+                "reported": "2024-05-02",
+                "sectors": [
+                  "crypto"
+                ],
+                "title": "Axie Infinity Ronin bridge exploit"
+              }
+            ],
+            "next_cursor": "MjAyNC0wNS0wMnwxOA"
+          },
+          {
+            "items": []
+          }
+        ],
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/IncidentItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "IncidentListResponse",
+        "type": "object"
+      },
+      "RejectRequest": {
+        "description": "POST body for reject: soft-rejects the staging row.\n\n``decision_reason`` is required and non-empty after whitespace\nstripping — a reject with no reason is unsafe (audit forensics\nrequire the cause). ``notes`` is optional and audit-only.\n\nReopen (``rejected → pending``) is a future admin-only action, out\nof PR #10 scope (plan §3 Out of scope, §2.2 C).",
+        "properties": {
+          "decision": {
+            "const": "reject",
+            "title": "Decision",
+            "type": "string"
+          },
+          "decision_reason": {
+            "maxLength": 5000,
+            "minLength": 1,
+            "title": "Decision Reason",
+            "type": "string"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "maxLength": 5000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          }
+        },
+        "required": [
+          "decision",
+          "decision_reason"
+        ],
+        "title": "RejectRequest",
+        "type": "object"
+      },
+      "ReportItem": {
+        "description": "Single report row in the ``/reports`` list view.\n\nMinimal fields only — detail endpoints are plan D9 deferred to\nPhase 3 (``/reports/{id}`` + ``/reports/{id}/similar`` land\ntogether). ``tlp`` ships now so the FE does not need a schema\nmigration when AMBER filtering arrives (plan D4).",
+        "examples": [
+          {
+            "id": 42,
+            "lang": "en",
+            "published": "2026-03-15",
+            "source_id": 7,
+            "source_name": "Mandiant",
+            "title": "Lazarus targets South Korean crypto exchanges",
+            "tlp": "WHITE",
+            "url": "https://mandiant.com/blog/lazarus-2026q1",
+            "url_canonical": "https://mandiant.com/blog/lazarus-2026q1"
+          }
+        ],
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "lang": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lang"
+          },
+          "published": {
+            "format": "date",
+            "title": "Published",
+            "type": "string"
+          },
+          "source_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Id"
+          },
+          "source_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Name"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "tlp": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tlp"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          },
+          "url_canonical": {
+            "title": "Url Canonical",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "url",
+          "url_canonical",
+          "published"
+        ],
+        "title": "ReportItem",
+        "type": "object"
+      },
+      "ReportListResponse": {
+        "description": "Keyset-paginated response for ``GET /api/v1/reports``.\n\n``next_cursor`` is ``None`` on the final page. The cursor is\nopaque — see ``api.read.pagination``.",
+        "examples": [
+          {
+            "items": [
+              {
+                "id": 42,
+                "lang": "en",
+                "published": "2026-03-15",
+                "source_id": 7,
+                "source_name": "Mandiant",
+                "title": "Lazarus targets South Korean crypto exchanges",
+                "tlp": "WHITE",
+                "url": "https://mandiant.com/blog/lazarus-2026q1",
+                "url_canonical": "https://mandiant.com/blog/lazarus-2026q1"
+              }
+            ],
+            "next_cursor": "MjAyNi0wMy0xNXw0Mg"
+          },
+          {
+            "items": []
+          }
+        ],
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ReportItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "ReportListResponse",
+        "type": "object"
+      },
+      "ReviewDecisionResponse": {
+        "description": "200 body for both approve and reject. Minimal shape by design\n(plan §8 #2 lock): clients reading from ``staging`` / ``reports``\ndirectly don't need the service to re-serialize the full row.\n\n``report_id`` is populated on approve (new or attached_existing),\n``None`` on reject.",
+        "properties": {
+          "report_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Report Id"
+          },
+          "staging_id": {
+            "title": "Staging Id",
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "promoted",
+              "rejected"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "staging_id",
+          "report_id",
+          "status"
+        ],
+        "title": "ReviewDecisionResponse",
+        "type": "object"
+      },
+      "StagingDetail": {
+        "description": "Response body for ``GET /staging/{id}``.\n\nSurfaces the raw staging columns plus duplicate-match hints so the\nreviewer has enough context to decide without additional queries.\nLLM-filled columns (``summary`` / ``tags_jsonb`` / ``embedding``)\nare included when non-NULL but Phase 2 staging has them all NULL\n— Phase 4 enrichment is the trigger (plan §2.3 LLM-filled scope).",
+        "properties": {
+          "confidence": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "decision_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decision Reason"
+          },
+          "duplicate_matches": {
+            "items": {
+              "$ref": "#/components/schemas/DuplicateMatchHint"
+            },
+            "title": "Duplicate Matches",
+            "type": "array"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "lang": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lang"
+          },
+          "promoted_report_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Promoted Report Id"
+          },
+          "published": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published"
+          },
+          "raw_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Raw Text"
+          },
+          "reviewed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed At"
+          },
+          "reviewed_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed By"
+          },
+          "sha256_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sha256 Title"
+          },
+          "source_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Id"
+          },
+          "source_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Name"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "approved",
+              "rejected",
+              "promoted",
+              "error"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "url_canonical": {
+            "title": "Url Canonical",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "created_at",
+          "source_id",
+          "source_name",
+          "url",
+          "url_canonical",
+          "sha256_title",
+          "title",
+          "raw_text",
+          "lang",
+          "published",
+          "summary",
+          "confidence",
+          "status",
+          "reviewed_by",
+          "reviewed_at",
+          "decision_reason",
+          "promoted_report_id",
+          "error"
+        ],
+        "title": "StagingDetail",
+        "type": "object"
+      },
+      "StagingReviewItem": {
+        "description": "Item row for ``GET /staging/review``.\n\nThe list endpoint orders by ``created_at ASC, id ASC`` (FIFO, plan\n§2.1 D1 lock) so this DTO intentionally does NOT expose a\nserver-chosen ranking field — ordering is contract, not data.\n\n``status`` carries the full ``StagingStatus`` because the list\nendpoint accepts ``?status=`` filters for other states\n(operational views of rejected / promoted).",
+        "properties": {
+          "confidence": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "lang": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lang"
+          },
+          "published": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published"
+          },
+          "source_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Id"
+          },
+          "source_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Name"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "approved",
+              "rejected",
+              "promoted",
+              "error"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "url_canonical": {
+            "title": "Url Canonical",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "created_at",
+          "source_id",
+          "source_name",
+          "title",
+          "url",
+          "url_canonical",
+          "published",
+          "lang",
+          "confidence",
+          "status"
+        ],
+        "title": "StagingReviewItem",
+        "type": "object"
+      },
+      "StagingReviewListResponse": {
+        "description": "Envelope for ``GET /staging/review`` — FIFO page + opaque cursor.\n\nCursor is an opaque string (base64-encoded ``(created_at, id)``\ntuple) so the server retains freedom to evolve the pagination\nimplementation. The DTO leaves ``next_cursor`` as ``None`` when\nthe current page is the last.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/StagingReviewItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "StagingReviewListResponse",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "description": "Implementation-prep OpenAPI skeleton for the DPRK CTI platform.",
+    "title": "DPRK CTI API",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/v1/actors": {
+      "get": {
+        "description": "Returns the list of threat-actor groups (name, MITRE intrusion set id, aka aliases, description) together with their codenames. Offset pagination — actors is a small, sort-stable set; keyset pagination is used for /reports and /incidents (plan D3). Default sort is `name ASC, id ASC` (plan D11).",
+        "operationId": "list_actors_endpoint_api_v1_actors_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "empty": {
+                    "summary": "No groups seeded yet",
+                    "value": {
+                      "items": [],
+                      "limit": 50,
+                      "offset": 0,
+                      "total": 0
+                    }
+                  },
+                  "happy": {
+                    "summary": "Three groups, first page",
+                    "value": {
+                      "items": [
+                        {
+                          "aka": [
+                            "APT38",
+                            "Hidden Cobra"
+                          ],
+                          "codenames": [
+                            "Andariel",
+                            "Bluenoroff"
+                          ],
+                          "description": "DPRK-attributed",
+                          "id": 3,
+                          "mitre_intrusion_set_id": "G0032",
+                          "name": "Lazarus Group"
+                        }
+                      ],
+                      "limit": 50,
+                      "offset": 0,
+                      "total": 3
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ActorListResponse"
+                }
+              }
+            },
+            "description": "One page of actors with offset metadata."
+          },
+          "401": {
+            "description": "Missing or invalid session cookie"
+          },
+          "403": {
+            "description": "Authenticated role is not analyst / researcher / policy / soc / admin"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "detail": [
+                    {
+                      "loc": [
+                        "query",
+                        "limit"
+                      ],
+                      "msg": "Input should be less than or equal to 200",
+                      "type": "less_than_equal"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "Invalid query parameter (limit out of 1..200, offset negative). Plan D12 — no silent ignore of filter values."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": "rate_limit_exceeded",
+                  "message": "60 per 1 minute"
+                }
+              }
+            },
+            "description": "Rate limit exceeded — 60/min/user read bucket (plan D2). `Retry-After`, `X-RateLimit-Limit`, `X-RateLimit-Remaining` headers present. Body is the uniform JSON shape pinned by Group G (`api.rate_limit.rate_limit_exceeded_handler`)."
+          }
+        },
+        "summary": "List threat actors (offset-paginated)",
+        "tags": [
+          "actors"
+        ]
+      }
+    },
+    "/api/v1/alerts": {
+      "get": {
+        "description": "§5.5 Alerts feed (paginated).\n\nStub: returns 501 for consistency with all other protected endpoints.\nThe verify_token dependency would raise 501 before this handler runs\nanyway, so returning a fake 200 body here was misleading.\n\nIntended shape (for future implementation):\n    {\"items\": list[AlertDTO], \"total\": int, \"page\": int, \"limit\": int}",
+        "operationId": "list_alerts_api_v1_alerts_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Alerts",
+        "tags": [
+          "alerts"
+        ]
+      }
+    },
+    "/api/v1/alerts/rules": {
+      "post": {
+        "description": "§5.5 / §9.3 Create a new alert rule. Admin role required.",
+        "operationId": "create_alert_rule_api_v1_alerts_rules_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Create Alert Rule",
+        "tags": [
+          "alerts"
+        ]
+      }
+    },
+    "/api/v1/alerts/{alert_id}/ack": {
+      "post": {
+        "description": "§5.5 Acknowledge an alert and mark it handled.",
+        "operationId": "ack_alert_api_v1_alerts__alert_id__ack_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "alert_id",
+            "required": true,
+            "schema": {
+              "title": "Alert Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Ack Alert",
+        "tags": [
+          "alerts"
+        ]
+      }
+    },
+    "/api/v1/analytics/attack-heatmap": {
+      "get": {
+        "description": "§5.4 ATT&CK heatmap aggregation (tactic x technique matrix).",
+        "operationId": "attack_heatmap_api_v1_analytics_attack_heatmap_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Attack Heatmap",
+        "tags": [
+          "analytics"
+        ]
+      }
+    },
+    "/api/v1/analytics/attribution-graph": {
+      "get": {
+        "description": "§5.4 Threat actor attribution graph (nodes + edges).",
+        "operationId": "attribution_graph_api_v1_analytics_attribution_graph_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Attribution Graph",
+        "tags": [
+          "analytics"
+        ]
+      }
+    },
+    "/api/v1/analytics/forecast": {
+      "get": {
+        "description": "§5.4 Short-term threat forecast (LLM + time-series heuristics).",
+        "operationId": "forecast_api_v1_analytics_forecast_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Forecast",
+        "tags": [
+          "analytics"
+        ]
+      }
+    },
+    "/api/v1/analytics/geopolitical": {
+      "get": {
+        "description": "§5.4 Geopolitical event correlation with DPRK cyber activity.",
+        "operationId": "geopolitical_context_api_v1_analytics_geopolitical_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Geopolitical Context",
+        "tags": [
+          "analytics"
+        ]
+      }
+    },
+    "/api/v1/auth/callback": {
+      "get": {
+        "description": "Handle Keycloak's redirect: validate state, exchange code, build session.",
+        "operationId": "callback_api_v1_auth_callback_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "title": "Code",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "state",
+            "required": true,
+            "schema": {
+              "title": "State",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": "rate_limit_exceeded",
+                  "message": "10 per 1 minute"
+                }
+              }
+            },
+            "description": "Rate limit exceeded — 10/min/IP. Response body stays JSON even on this browser-redirect endpoint (Group G lock — one body shape for all decorated routes)."
+          }
+        },
+        "summary": "Callback",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/login": {
+      "get": {
+        "description": "Begin the OIDC login dance — generate state + PKCE, redirect to Keycloak.",
+        "operationId": "login_api_v1_auth_login_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "redirect",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Redirect"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": "rate_limit_exceeded",
+                  "message": "10 per 1 minute"
+                }
+              }
+            },
+            "description": "Rate limit exceeded — 10/min/IP (plan D2 anti-bruteforce). Response body is the standard `{error, message}` shape; `Retry-After` and `X-RateLimit-Remaining` headers follow."
+          }
+        },
+        "summary": "Login",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/logout": {
+      "post": {
+        "description": "Destroy the session, write an audit row, and clear the cookie.",
+        "operationId": "logout_api_v1_auth_logout_post",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Logout",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/logout-url": {
+      "get": {
+        "description": "Return the Keycloak end-session URL for browser-initiated logout.\n\nUseful when the SPA wants to fully log the user out of Keycloak after\ncalling ``POST /logout``.",
+        "operationId": "logout_url_api_v1_auth_logout_url_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "redirect",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Redirect"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Logout Url Api V1 Auth Logout Url Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Logout Url",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/me": {
+      "get": {
+        "description": "Return the current authenticated user (401 if no/expired session).\n\nThe DTO (``CurrentUser``) is unchanged by Group H — only the\n60/min decorator is added. slowapi's middleware runs BEFORE\nFastAPI resolves ``verify_token``, so:\n\n- Authenticated caller → session-cookie bucket\n- No cookie → client-IP bucket (still rate-limited, then 401)\n- Over limit → 429 without re-running ``verify_token``\n\nBehaviour is consistent with the four read endpoints; same\nbucket policy, same 429 body shape.",
+        "operationId": "me_api_v1_auth_me_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "email": "analyst@dprk.test",
+                  "name": "Jane Analyst",
+                  "roles": [
+                    "analyst"
+                  ],
+                  "sub": "abc-123"
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/CurrentUser"
+                }
+              }
+            },
+            "description": "Current authenticated user identity + roles."
+          },
+          "401": {
+            "description": "Missing or expired session cookie"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": "rate_limit_exceeded",
+                  "message": "60 per 1 minute"
+                }
+              }
+            },
+            "description": "Rate limit exceeded — 60/min/user read bucket (plan D2 / Group H). /auth/me shares the read-bucket policy with the four list endpoints but keeps its own per-route counter. Body stays JSON (not redirect) so the FE session-probe loop can branch on 429 the same way as any other read call."
+          }
+        },
+        "summary": "Me",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/dashboard/summary": {
+      "get": {
+        "description": "Returns scalar totals and three aggregate arrays for the FE KPI card view (design doc §14 Phase 2 W1-W2). Plan D6 locks the shape. Filters: `date_from` / `date_to` apply to reports and incidents; `group_ids` scopes `top_groups` only (incidents have no direct group FK in the schema); `top_n` bounds the `top_groups` array length (default 5, max 20).",
+        "operationId": "dashboard_summary_endpoint_api_v1_dashboard_summary_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "date_from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Date From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "date_to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Date To"
+            }
+          },
+          {
+            "in": "query",
+            "name": "group_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "integer"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Group Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "top_n",
+            "required": false,
+            "schema": {
+              "default": 5,
+              "maximum": 20,
+              "minimum": 1,
+              "title": "Top N",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "empty": {
+                    "summary": "Fresh / empty DB",
+                    "value": {
+                      "incidents_by_motivation": [],
+                      "reports_by_year": [],
+                      "top_groups": [],
+                      "total_actors": 0,
+                      "total_incidents": 0,
+                      "total_reports": 0
+                    }
+                  },
+                  "happy": {
+                    "summary": "Populated DB",
+                    "value": {
+                      "incidents_by_motivation": [
+                        {
+                          "count": 21,
+                          "motivation": "disruption"
+                        },
+                        {
+                          "count": 52,
+                          "motivation": "espionage"
+                        },
+                        {
+                          "count": 81,
+                          "motivation": "financial"
+                        }
+                      ],
+                      "reports_by_year": [
+                        {
+                          "count": 318,
+                          "year": 2024
+                        },
+                        {
+                          "count": 287,
+                          "year": 2023
+                        }
+                      ],
+                      "top_groups": [
+                        {
+                          "group_id": 3,
+                          "name": "Lazarus Group",
+                          "report_count": 412
+                        },
+                        {
+                          "group_id": 5,
+                          "name": "Kimsuky",
+                          "report_count": 287
+                        }
+                      ],
+                      "total_actors": 12,
+                      "total_incidents": 154,
+                      "total_reports": 1204
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardSummary"
+                }
+              }
+            },
+            "description": "Summary with scalar totals and three aggregate arrays."
+          },
+          "401": {
+            "description": "Missing or invalid session cookie"
+          },
+          "403": {
+            "description": "Role not analyst / researcher / policy / soc / admin"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "detail": [
+                    {
+                      "loc": [
+                        "query",
+                        "top_n"
+                      ],
+                      "msg": "Input should be less than or equal to 20",
+                      "type": "less_than_equal"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "Invalid query param — bad ISO date, `top_n` out of 1..20, negative `group_id`. Plan D12 uniform 422 contract."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": "rate_limit_exceeded",
+                  "message": "60 per 1 minute"
+                }
+              }
+            },
+            "description": "Rate limit exceeded — 60/min/user read bucket (plan D2). Per-route bucket; aggregate totals/arrays remain unaffected by the decorator when under limit."
+          }
+        },
+        "summary": "Dashboard KPI summary",
+        "tags": [
+          "dashboard"
+        ]
+      }
+    },
+    "/api/v1/export/csv": {
+      "get": {
+        "description": "§5.6 Export tabular data (IoCs, alerts, reports) as CSV.",
+        "operationId": "export_csv_api_v1_export_csv_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Export Csv",
+        "tags": [
+          "export"
+        ]
+      }
+    },
+    "/api/v1/export/pdf": {
+      "get": {
+        "description": "§5.6 Export a rendered PDF briefing for the selected report(s).",
+        "operationId": "export_pdf_api_v1_export_pdf_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Export Pdf",
+        "tags": [
+          "export"
+        ]
+      }
+    },
+    "/api/v1/export/stix": {
+      "get": {
+        "description": "§5.6 Export indicators and reports as STIX 2.1 bundle.",
+        "operationId": "export_stix_api_v1_export_stix_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Export Stix",
+        "tags": [
+          "export"
+        ]
+      }
+    },
+    "/api/v1/incidents": {
+      "get": {
+        "description": "Returns incidents sorted by `reported DESC, id DESC` (plan D11). Each row carries flattened `motivations`, `sectors`, `countries` arrays aggregated from the three join tables via correlated scalar subqueries — an incident with multiple matching rows surfaces exactly once. Filters: `date_from`, `date_to`, repeatable `motivation` / `sector` / `country`. Repeatable filters are OR inside a group and AND across groups (plan D5). Null-reported incidents are excluded — cursor pagination needs a date value (Phase 3 detail endpoints can expose them).",
+        "operationId": "list_incidents_endpoint_api_v1_incidents_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "date_from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Date From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "date_to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Date To"
+            }
+          },
+          {
+            "in": "query",
+            "name": "motivation",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Motivation"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sector",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Sector"
+            }
+          },
+          {
+            "in": "query",
+            "name": "country",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Country"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "happy": {
+                    "summary": "First page, next page exists",
+                    "value": {
+                      "items": [
+                        {
+                          "attribution_confidence": "HIGH",
+                          "countries": [
+                            "SG",
+                            "VN"
+                          ],
+                          "description": "620M USD compromise",
+                          "est_loss_usd": 620000000,
+                          "id": 18,
+                          "motivations": [
+                            "financial"
+                          ],
+                          "reported": "2024-05-02",
+                          "sectors": [
+                            "crypto"
+                          ],
+                          "title": "Axie Ronin bridge exploit"
+                        }
+                      ],
+                      "next_cursor": "MjAyNC0wNS0wMnwxOA"
+                    }
+                  },
+                  "last_page": {
+                    "summary": "Final page — no next_cursor",
+                    "value": {
+                      "items": []
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/IncidentListResponse"
+                }
+              }
+            },
+            "description": "One page of incidents with next_cursor metadata."
+          },
+          "401": {
+            "description": "Missing or invalid session cookie"
+          },
+          "403": {
+            "description": "Role not analyst / researcher / policy / soc / admin"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "detail": [
+                    {
+                      "loc": [
+                        "query",
+                        "country",
+                        0
+                      ],
+                      "msg": "country must be ISO 3166-1 alpha-2 (two letters)",
+                      "type": "value_error"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "Invalid query param — bad ISO date, non-alpha-2 country, empty filter value, malformed cursor, out-of-range limit. Plan D12 uniform 422 contract."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": "rate_limit_exceeded",
+                  "message": "60 per 1 minute"
+                }
+              }
+            },
+            "description": "Rate limit exceeded — 60/min/user read bucket (plan D2). Per-route bucket, independent of the other three read endpoints (slowapi scopes per decorated route)."
+          }
+        },
+        "summary": "List incidents (keyset-paginated, filterable)",
+        "tags": [
+          "incidents"
+        ]
+      }
+    },
+    "/api/v1/ingest/rss/run": {
+      "post": {
+        "description": "§5.1 / §9.3 Trigger a manual RSS ingest run. Admin role required.",
+        "operationId": "run_rss_ingest_api_v1_ingest_rss_run_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Run Rss Ingest",
+        "tags": [
+          "ingest"
+        ]
+      }
+    },
+    "/api/v1/ingest/status": {
+      "get": {
+        "description": "§5.1 Return the current ingest pipeline status and recent run metadata.",
+        "operationId": "ingest_status_api_v1_ingest_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Ingest Status",
+        "tags": [
+          "ingest"
+        ]
+      }
+    },
+    "/api/v1/meta": {
+      "get": {
+        "description": "Public service metadata endpoint (§7.6).",
+        "operationId": "meta_api_v1_meta_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Meta Api V1 Meta Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Meta",
+        "tags": [
+          "meta"
+        ]
+      }
+    },
+    "/api/v1/reports": {
+      "get": {
+        "description": "Returns reports sorted by `published DESC, id DESC` (plan D11). Pagination is keyset-style — clients pass the opaque `next_cursor` from the previous page to continue (plan D3). Filter params per plan D5 with OR semantics inside a repeatable (`tag=a&tag=b` matches either) and AND semantics across different filters (`tag=a&source=Mandiant` requires both). JOIN uses EXISTS so a report with two matching tags still surfaces as one row.",
+        "operationId": "list_reports_endpoint_api_v1_reports_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tag",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tag"
+            }
+          },
+          {
+            "in": "query",
+            "name": "source",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source"
+            }
+          },
+          {
+            "in": "query",
+            "name": "date_from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Date From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "date_to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Date To"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "happy": {
+                    "summary": "First page, next page exists",
+                    "value": {
+                      "items": [
+                        {
+                          "id": 42,
+                          "lang": "en",
+                          "published": "2026-03-15",
+                          "source_id": 7,
+                          "source_name": "Mandiant",
+                          "title": "Lazarus targets South Korean crypto exchanges",
+                          "tlp": "WHITE",
+                          "url": "https://mandiant.com/blog/lazarus-2026q1",
+                          "url_canonical": "https://mandiant.com/blog/lazarus-2026q1"
+                        }
+                      ],
+                      "next_cursor": "MjAyNi0wMy0xNXw0Mg"
+                    }
+                  },
+                  "last_page": {
+                    "summary": "Final page — no next_cursor",
+                    "value": {
+                      "items": []
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ReportListResponse"
+                }
+              }
+            },
+            "description": "One page of reports with next_cursor metadata."
+          },
+          "401": {
+            "description": "Missing or invalid session cookie"
+          },
+          "403": {
+            "description": "Role not analyst / researcher / policy / soc / admin"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "detail": [
+                    {
+                      "loc": [
+                        "query",
+                        "cursor"
+                      ],
+                      "msg": "malformed cursor",
+                      "type": "value_error.malformed_cursor"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "Invalid query param — malformed cursor, empty filter value, invalid ISO date, out-of-range limit, etc. Plan D12 locks uniform 422 with no silent ignore."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": "rate_limit_exceeded",
+                  "message": "60 per 1 minute"
+                }
+              }
+            },
+            "description": "Rate limit exceeded — 60/min/user read bucket (plan D2). Per-route bucket: draining this does NOT consume the /reports POST-review 30/min mutation bucket."
+          }
+        },
+        "summary": "List reports (keyset-paginated, filterable)",
+        "tags": [
+          "reports"
+        ]
+      }
+    },
+    "/api/v1/reports/review/{staging_id}": {
+      "post": {
+        "description": "§5.3 / §9.3 Approve or reject a staging row.\n\nCaller owns the transaction: the handler wraps the entire\ndecision (service call + any side effects) in a single\n``async with session.begin():``. Plan §2.2 A locks this boundary\nto the handler so the rollback path on service exceptions is\nuniform regardless of which error surfaces.\n\nException → HTTP mapping (plan §2.2 B response enum lock +\nGroup D service-level split):\n- ``StagingNotFoundError``           → 404\n- ``StagingAlreadyDecidedError``     → 409 with ``AlreadyDecidedError``\n                                     body (current_status narrowed\n                                     to promoted|rejected)\n- ``StagingInvalidStateError``       → 422 (current_status includes\n                                     approved|error — not exposed\n                                     via the 409 DTO narrowing)\n- ``PromoteValidationError``         → 422 with reason surface\n\nThe error bodies return via ``JSONResponse`` directly (not via\n``HTTPException``) so we can match the ``AlreadyDecidedError`` DTO\nshape exactly, without FastAPI's default ``{\"detail\": ...}``\nwrapper obscuring the contract.",
+        "operationId": "review_staging_api_v1_reports_review__staging_id__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "staging_id",
+            "required": true,
+            "schema": {
+              "title": "Staging Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/ApproveRequest"
+                  },
+                  {
+                    "$ref": "#/components/schemas/RejectRequest"
+                  }
+                ],
+                "title": "Payload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewDecisionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Missing or invalid session cookie"
+          },
+          "403": {
+            "description": "Authenticated role is not analyst / researcher / admin"
+          },
+          "404": {
+            "description": "Staging row not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlreadyDecidedError"
+                }
+              }
+            },
+            "description": "Row already promoted or rejected"
+          },
+          "422": {
+            "description": "Validation error — staging row is in an unhandleable state (approved / error) or is missing NOT NULL fields"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": "rate_limit_exceeded",
+                  "message": "30 per 1 minute"
+                }
+              }
+            },
+            "description": "Rate limit exceeded — 30/min/user (plan D2 mutation bucket)."
+          }
+        },
+        "summary": "Review Staging",
+        "tags": [
+          "reports"
+        ]
+      }
+    },
+    "/api/v1/reports/{report_id}/similar": {
+      "get": {
+        "description": "§5.2 pgvector similarity search for related reports.\n\nStub: returns 501 until Phase 3 analytics work.",
+        "operationId": "similar_reports_api_v1_reports__report_id__similar_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "report_id",
+            "required": true,
+            "schema": {
+              "title": "Report Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "k",
+            "required": false,
+            "schema": {
+              "default": 10,
+              "title": "K",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Similar Reports",
+        "tags": [
+          "reports"
+        ]
+      }
+    },
+    "/api/v1/search": {
+      "get": {
+        "description": "§5.2 Global full-text + semantic search across reports/alerts/actors.",
+        "operationId": "search_api_v1_search_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Q",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Search",
+        "tags": [
+          "search"
+        ]
+      }
+    },
+    "/api/v1/staging/review": {
+      "get": {
+        "description": "List staging rows in FIFO order.\n\nDefault ``status=pending`` surfaces the review queue. Operational\nviews (``rejected`` / ``promoted``) accept the same cursor\npagination but the cursor is only valid within the same status\nquery — switching mid-page may skip or re-show rows.\n\nFIFO contract (plan §2.1 D1): ``ORDER BY created_at ASC, id ASC``.\nCursor is keyset-style ``(created_at, id) > (ca, id)`` so\npagination is stable against inserts that land after the client\nfetched page 1.",
+        "operationId": "list_pending_review_api_v1_staging_review_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "default": "pending",
+              "enum": [
+                "pending",
+                "approved",
+                "rejected",
+                "promoted",
+                "error"
+              ],
+              "title": "Status",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StagingReviewListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "Malformed cursor"
+          },
+          "401": {
+            "description": "Missing or invalid session cookie"
+          },
+          "403": {
+            "description": "Authenticated role not analyst/researcher/admin"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": "rate_limit_exceeded",
+                  "message": "30 per 1 minute"
+                }
+              }
+            },
+            "description": "Rate limit exceeded — 30/min/user (plan D2 mutation bucket)."
+          }
+        },
+        "summary": "List Pending Review",
+        "tags": [
+          "staging"
+        ]
+      }
+    },
+    "/api/v1/staging/{staging_id}": {
+      "get": {
+        "description": "Return one staging row plus duplicate-match hints.\n\nThe DTO carries ONLY the staging row's columns (plus\nsource_name by join and duplicate_matches by query). Audit-log\nprovenance — including reviewer ``notes`` — is deliberately\nexcluded. ``notes`` is not a staging column (migration 0008\nlocked the schema to ``decision_reason`` only) and surfacing\naudit rows through the row DTO would blur the row-vs-event\ncontract enforced by plan §2.1 D1 / §2.2 C.",
+        "operationId": "get_staging_detail_api_v1_staging__staging_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "staging_id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "title": "Staging Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StagingDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Missing or invalid session cookie"
+          },
+          "403": {
+            "description": "Authenticated role not analyst/researcher/admin"
+          },
+          "404": {
+            "description": "Staging row not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": "rate_limit_exceeded",
+                  "message": "30 per 1 minute"
+                }
+              }
+            },
+            "description": "Rate limit exceeded — 30/min/user (plan D2 mutation bucket)."
+          }
+        },
+        "summary": "Get Staging Detail",
+        "tags": [
+          "staging"
+        ]
+      }
+    },
+    "/healthz": {
+      "get": {
+        "operationId": "healthcheck_healthz_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Healthcheck Healthz Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Healthcheck",
+        "tags": [
+          "ops"
+        ]
+      }
+    }
+  }
+}

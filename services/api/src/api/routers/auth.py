@@ -54,10 +54,17 @@ from ..auth.session import (
 from ..config import get_settings
 from ..db import get_db
 from ..deps import verify_token
+from ..rate_limit import get_limiter
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# PR #11 Group G — anti-bruteforce rate limit on OIDC endpoints.
+# Plan D2: 10/min/IP for anonymous endpoints. Key function falls
+# back to client IP because no session cookie exists yet at this
+# point in the OIDC flow. See api.rate_limit.session_or_ip_key.
+_limiter = get_limiter()
 
 
 # ---------------------------------------------------------------------------
@@ -111,8 +118,31 @@ def _callback_url() -> str:
     return f"{settings.oidc_redirect_base_url.rstrip('/')}/api/v1/auth/callback"
 
 
-@router.get("/login")
-async def login(redirect: str | None = Query(default=None)) -> RedirectResponse:
+@router.get(
+    "/login",
+    responses={
+        429: {
+            "description": (
+                "Rate limit exceeded — 10/min/IP (plan D2 anti-bruteforce). "
+                "Response body is the standard `{error, message}` shape; "
+                "`Retry-After` and `X-RateLimit-Remaining` headers follow."
+            ),
+            "content": {
+                "application/json": {
+                    "example": {
+                        "error": "rate_limit_exceeded",
+                        "message": "10 per 1 minute",
+                    }
+                }
+            },
+        }
+    },
+)
+@_limiter.limit("10/minute")
+async def login(
+    request: Request,
+    redirect: str | None = Query(default=None),
+) -> RedirectResponse:
     """Begin the OIDC login dance — generate state + PKCE, redirect to Keycloak."""
     state = secrets.token_urlsafe(32)
     # PKCE: use Authlib's helper so the verifier conforms to RFC 7636.
@@ -133,7 +163,27 @@ async def login(redirect: str | None = Query(default=None)) -> RedirectResponse:
     return RedirectResponse(url=url, status_code=302)
 
 
-@router.get("/callback")
+@router.get(
+    "/callback",
+    responses={
+        429: {
+            "description": (
+                "Rate limit exceeded — 10/min/IP. Response body stays JSON "
+                "even on this browser-redirect endpoint (Group G lock — "
+                "one body shape for all decorated routes)."
+            ),
+            "content": {
+                "application/json": {
+                    "example": {
+                        "error": "rate_limit_exceeded",
+                        "message": "10 per 1 minute",
+                    }
+                }
+            },
+        }
+    },
+)
+@_limiter.limit("10/minute")
 async def callback(
     request: Request,
     code: str = Query(...),
@@ -242,9 +292,62 @@ async def callback(
     return response
 
 
-@router.get("/me", response_model=CurrentUser)
-async def me(user: CurrentUser = Depends(verify_token)) -> CurrentUser:
-    """Return the current authenticated user (401 if no/expired session)."""
+@router.get(
+    "/me",
+    response_model=CurrentUser,
+    responses={
+        200: {
+            "description": "Current authenticated user identity + roles.",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "sub": "abc-123",
+                        "email": "analyst@dprk.test",
+                        "name": "Jane Analyst",
+                        "roles": ["analyst"],
+                    }
+                }
+            },
+        },
+        401: {"description": "Missing or expired session cookie"},
+        429: {
+            "description": (
+                "Rate limit exceeded — 60/min/user read bucket (plan D2 / "
+                "Group H). /auth/me shares the read-bucket policy with "
+                "the four list endpoints but keeps its own per-route "
+                "counter. Body stays JSON (not redirect) so the FE "
+                "session-probe loop can branch on 429 the same way as "
+                "any other read call."
+            ),
+            "content": {
+                "application/json": {
+                    "example": {
+                        "error": "rate_limit_exceeded",
+                        "message": "60 per 1 minute",
+                    }
+                }
+            },
+        },
+    },
+)
+@_limiter.limit("60/minute")
+async def me(
+    request: Request,
+    user: CurrentUser = Depends(verify_token),
+) -> CurrentUser:
+    """Return the current authenticated user (401 if no/expired session).
+
+    The DTO (``CurrentUser``) is unchanged by Group H — only the
+    60/min decorator is added. slowapi's middleware runs BEFORE
+    FastAPI resolves ``verify_token``, so:
+
+    - Authenticated caller → session-cookie bucket
+    - No cookie → client-IP bucket (still rate-limited, then 401)
+    - Over limit → 429 without re-running ``verify_token``
+
+    Behaviour is consistent with the four read endpoints; same
+    bucket policy, same 429 body shape.
+    """
     return user
 
 
