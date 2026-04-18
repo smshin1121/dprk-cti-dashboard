@@ -60,6 +60,31 @@
     "yearBar": {
       "title": "Reports by Year",
       "empty": "No yearly data to chart."
+    },
+    "trendChart": {
+      "title": "Monthly Report Trend",
+      "empty": "No trend data to chart."
+    },
+    "groupsMiniList": {
+      "title": "Top Groups",
+      "empty": "No groups for current filters.",
+      "reportsSuffix": "reports"
+    },
+    "reportFeed": {
+      "title": "Latest Reports",
+      "empty": "No reports for current filters."
+    },
+    "similarReports": {
+      "title": "Similar Reports",
+      "placeholder": "Available after report detail views land.",
+      "phaseNote": "Phase 3 preview — requires detail endpoints."
+    },
+    "alerts": {
+      "trigger": "Alerts",
+      "title": "Alerts",
+      "empty": "No alerts right now.",
+      "phaseNote": "Phase 4 preview — requires real-time wiring.",
+      "close": "Close"
     }
   }
 }

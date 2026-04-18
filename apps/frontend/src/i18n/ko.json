@@ -60,6 +60,31 @@
     "yearBar": {
       "title": "연도별 보고서",
       "empty": "분석할 연도 데이터가 없습니다."
+    },
+    "trendChart": {
+      "title": "월별 보고서 추이",
+      "empty": "분석할 추이 데이터가 없습니다."
+    },
+    "groupsMiniList": {
+      "title": "상위 조직",
+      "empty": "현재 필터에 해당하는 조직이 없습니다.",
+      "reportsSuffix": "건"
+    },
+    "reportFeed": {
+      "title": "최신 보고서",
+      "empty": "현재 필터에 해당하는 보고서가 없습니다."
+    },
+    "similarReports": {
+      "title": "유사 보고서",
+      "placeholder": "보고서 상세 보기가 활성화되면 표시됩니다.",
+      "phaseNote": "Phase 3 예정 — 상세 뷰 연동 후 제공됩니다."
+    },
+    "alerts": {
+      "trigger": "알림",
+      "title": "알림",
+      "empty": "현재 알림이 없습니다.",
+      "phaseNote": "Phase 4 예정 — 실시간 알림 연동 후 제공됩니다.",
+      "close": "닫기"
     }
   }
 }
