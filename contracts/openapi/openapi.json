@@ -199,6 +199,131 @@
         "title": "ApproveRequest",
         "type": "object"
       },
+      "AttackMatrixResponse": {
+        "description": "Response for ``GET /api/v1/analytics/attack_matrix``.\n\nRow-based shape (plan D2 lock). ``tactics`` is the distinct set of\ntactics appearing in ``rows`` — FE uses it for axis / legend\nordering without re-scanning rows. ``rows`` is sorted by total\ntechnique count per tactic (desc) then by ``tactic_id`` asc for\nstable tie-breaking; within a row, techniques are sorted by count\ndesc then ``technique_id`` asc.\n\nThe default query-side ``top_n`` bound (30, max 200) is enforced at\nthe router layer; the DTO only guarantees that every\n``AttackTechniqueCount`` row has ``count >= 0`` (never a negative\ninflation artifact).",
+        "examples": [
+          {
+            "rows": [
+              {
+                "tactic_id": "TA0001",
+                "techniques": [
+                  {
+                    "count": 18,
+                    "technique_id": "T1566"
+                  },
+                  {
+                    "count": 7,
+                    "technique_id": "T1190"
+                  }
+                ]
+              },
+              {
+                "tactic_id": "TA0002",
+                "techniques": [
+                  {
+                    "count": 12,
+                    "technique_id": "T1059"
+                  }
+                ]
+              }
+            ],
+            "tactics": [
+              {
+                "id": "TA0001",
+                "name": "TA0001"
+              },
+              {
+                "id": "TA0002",
+                "name": "TA0002"
+              }
+            ]
+          },
+          {
+            "rows": [],
+            "tactics": []
+          }
+        ],
+        "properties": {
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/AttackTacticRow"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "tactics": {
+            "items": {
+              "$ref": "#/components/schemas/TacticRef"
+            },
+            "title": "Tactics",
+            "type": "array"
+          }
+        },
+        "title": "AttackMatrixResponse",
+        "type": "object"
+      },
+      "AttackTacticRow": {
+        "description": "Group of technique counts under a single tactic.",
+        "examples": [
+          {
+            "tactic_id": "TA0001",
+            "techniques": [
+              {
+                "count": 18,
+                "technique_id": "T1566"
+              },
+              {
+                "count": 7,
+                "technique_id": "T1190"
+              }
+            ]
+          }
+        ],
+        "properties": {
+          "tactic_id": {
+            "title": "Tactic Id",
+            "type": "string"
+          },
+          "techniques": {
+            "items": {
+              "$ref": "#/components/schemas/AttackTechniqueCount"
+            },
+            "title": "Techniques",
+            "type": "array"
+          }
+        },
+        "required": [
+          "tactic_id"
+        ],
+        "title": "AttackTacticRow",
+        "type": "object"
+      },
+      "AttackTechniqueCount": {
+        "description": "One technique entry inside a tactic row.\n\n``technique_id`` is the MITRE public id (``techniques.mitre_id``,\ne.g. ``\"T1566\"``), not the internal DB id, so the FE does not\nneed the DB table to resolve a display label.",
+        "examples": [
+          {
+            "count": 18,
+            "technique_id": "T1566"
+          }
+        ],
+        "properties": {
+          "count": {
+            "minimum": 0.0,
+            "title": "Count",
+            "type": "integer"
+          },
+          "technique_id": {
+            "title": "Technique Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "technique_id",
+          "count"
+        ],
+        "title": "AttackTechniqueCount",
+        "type": "object"
+      },
       "CurrentUser": {
         "description": "Identity surfaced to route handlers via Depends(verify_token).",
         "properties": {
@@ -450,6 +575,69 @@
           "report_published"
         ],
         "title": "DuplicateMatchHint",
+        "type": "object"
+      },
+      "GeoCountry": {
+        "description": "One country aggregate in ``GeoResponse.countries``.",
+        "examples": [
+          {
+            "count": 9,
+            "iso2": "KP"
+          }
+        ],
+        "properties": {
+          "count": {
+            "minimum": 0.0,
+            "title": "Count",
+            "type": "integer"
+          },
+          "iso2": {
+            "maxLength": 2,
+            "minLength": 2,
+            "title": "Iso2",
+            "type": "string"
+          }
+        },
+        "required": [
+          "iso2",
+          "count"
+        ],
+        "title": "GeoCountry",
+        "type": "object"
+      },
+      "GeoResponse": {
+        "description": "Response for ``GET /api/v1/analytics/geo``.\n\nCountry-aggregated incident counts. Plan D2 lock: no DPRK special-\ncase field — ``KP`` is a plain row when present; plan D7 says the\nFE owns the highlight. ``countries`` is sorted by ``count`` desc\nthen ``iso2`` asc for stable tie-breaking.\n\nScope caveat (same as ``incidents_by_motivation`` on the dashboard\nsummary): the ``group_id[]`` filter is a no-op for this response\nbecause the schema has no path from ``incidents`` to ``groups``.\nDate filter (``incidents.reported``) does apply.",
+        "examples": [
+          {
+            "countries": [
+              {
+                "count": 18,
+                "iso2": "KR"
+              },
+              {
+                "count": 9,
+                "iso2": "US"
+              },
+              {
+                "count": 2,
+                "iso2": "KP"
+              }
+            ]
+          },
+          {
+            "countries": []
+          }
+        ],
+        "properties": {
+          "countries": {
+            "items": {
+              "$ref": "#/components/schemas/GeoCountry"
+            },
+            "title": "Countries",
+            "type": "array"
+          }
+        },
+        "title": "GeoResponse",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -1214,6 +1402,93 @@
         "title": "StagingReviewListResponse",
         "type": "object"
       },
+      "TacticRef": {
+        "description": "MITRE ATT&CK tactic identifier.\n\n``id`` is the raw ``techniques.tactic`` string (e.g. ``\"TA0001\"``,\n``\"initial-access\"``, or a human form — the column is free-form in\nmigration 0001). ``name`` mirrors it; callers that want a canonical\nlabel do the lookup client-side.",
+        "examples": [
+          {
+            "id": "TA0001",
+            "name": "TA0001"
+          }
+        ],
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "TacticRef",
+        "type": "object"
+      },
+      "TrendBucket": {
+        "description": "One monthly bucket in ``TrendResponse.buckets``.\n\n``month`` is strict ``YYYY-MM`` (zero-padded). The upstream column\n(``reports.published``) is a date, not a timestamp, so there is no\nUTC-vs-local ambiguity — the bucket is the calendar month of the\ndate stored.",
+        "examples": [
+          {
+            "count": 47,
+            "month": "2026-03"
+          }
+        ],
+        "properties": {
+          "count": {
+            "minimum": 0.0,
+            "title": "Count",
+            "type": "integer"
+          },
+          "month": {
+            "pattern": "^\\d{4}-\\d{2}$",
+            "title": "Month",
+            "type": "string"
+          }
+        },
+        "required": [
+          "month",
+          "count"
+        ],
+        "title": "TrendBucket",
+        "type": "object"
+      },
+      "TrendResponse": {
+        "description": "Response for ``GET /api/v1/analytics/trend``.\n\nReport-volume time series grouped by calendar month of\n``reports.published``. Plan D2 lock. ``count`` is distinct report\ncount per bucket. ``buckets`` is sorted by ``month`` ascending.\n\nZero-count months are **omitted**, not zero-filled. The FE chooses\nwhether to fill gaps for its chart axis — the BE has no opinion on\nthe visualization cadence.",
+        "examples": [
+          {
+            "buckets": [
+              {
+                "count": 41,
+                "month": "2026-01"
+              },
+              {
+                "count": 38,
+                "month": "2026-02"
+              },
+              {
+                "count": 47,
+                "month": "2026-03"
+              }
+            ]
+          },
+          {
+            "buckets": []
+          }
+        ],
+        "properties": {
+          "buckets": {
+            "items": {
+              "$ref": "#/components/schemas/TrendBucket"
+            },
+            "title": "Buckets",
+            "type": "array"
+          }
+        },
+        "title": "TrendResponse",
+        "type": "object"
+      },
       "ValidationError": {
         "properties": {
           "ctx": {
@@ -1462,81 +1737,454 @@
         ]
       }
     },
-    "/api/v1/analytics/attack-heatmap": {
+    "/api/v1/analytics/attack_matrix": {
       "get": {
-        "description": "§5.4 ATT&CK heatmap aggregation (tactic x technique matrix).",
-        "operationId": "attack_heatmap_api_v1_analytics_attack_heatmap_get",
+        "description": "Returns a row-based tactic × technique count matrix over the filter window. Response shape: ``{tactics: [], rows: [{tactic_id, techniques: [{technique_id, count}]}]}``. ``count`` is distinct report count per technique. ``top_n`` (default 30, max 200) caps the number of techniques returned across the whole matrix, ordered by count desc. Techniques with a null tactic are filtered out. Plan D2 + D8.",
+        "operationId": "attack_matrix_endpoint_api_v1_analytics_attack_matrix_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "date_from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Date From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "date_to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Date To"
+            }
+          },
+          {
+            "in": "query",
+            "name": "group_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "integer"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Group Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "top_n",
+            "required": false,
+            "schema": {
+              "default": 30,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Top N",
+              "type": "integer"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "examples": {
+                  "empty": {
+                    "summary": "No matching techniques",
+                    "value": {
+                      "rows": [],
+                      "tactics": []
+                    }
+                  },
+                  "happy": {
+                    "summary": "Populated matrix",
+                    "value": {
+                      "rows": [
+                        {
+                          "tactic_id": "TA0001",
+                          "techniques": [
+                            {
+                              "count": 18,
+                              "technique_id": "T1566"
+                            },
+                            {
+                              "count": 7,
+                              "technique_id": "T1190"
+                            }
+                          ]
+                        },
+                        {
+                          "tactic_id": "TA0002",
+                          "techniques": [
+                            {
+                              "count": 12,
+                              "technique_id": "T1059"
+                            }
+                          ]
+                        }
+                      ],
+                      "tactics": [
+                        {
+                          "id": "TA0001",
+                          "name": "TA0001"
+                        },
+                        {
+                          "id": "TA0002",
+                          "name": "TA0002"
+                        }
+                      ]
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/AttackMatrixResponse"
+                }
               }
             },
-            "description": "Successful Response"
+            "description": "Tactic × technique matrix payload."
+          },
+          "401": {
+            "description": "Missing or invalid session cookie"
+          },
+          "403": {
+            "description": "Role not analyst / researcher / policy / soc / admin"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "detail": [
+                    {
+                      "loc": [
+                        "query",
+                        "group_id"
+                      ],
+                      "msg": "group_id must be >= 1",
+                      "type": "value_error"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "Invalid query param — bad ISO date, negative ``group_id``, or ``top_n`` out of ``1..200`` (attack_matrix only). Plan D12 uniform 422 contract."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": "rate_limit_exceeded",
+                  "message": "60 per 1 minute"
+                }
+              }
+            },
+            "description": "Rate limit exceeded — 60/min/user read bucket (plan D2). Shared bucket with other read endpoints (reports, incidents, actors, dashboard)."
           }
         },
-        "summary": "Attack Heatmap",
+        "summary": "ATT&CK tactic × technique matrix",
         "tags": [
           "analytics"
         ]
       }
     },
-    "/api/v1/analytics/attribution-graph": {
+    "/api/v1/analytics/geo": {
       "get": {
-        "description": "§5.4 Threat actor attribution graph (nodes + edges).",
-        "operationId": "attribution_graph_api_v1_analytics_attribution_graph_get",
+        "description": "Distinct incident count per ``country_iso2`` within the filter window (filter applies to ``incidents.reported``). ``group_id[]`` is accepted for API uniformity but is a no-op for this endpoint — the schema has no path from incidents to groups. DPRK (``KP``) is a plain country row when present; no special-case field (plan D2 + D7 lock; the FE owns the map highlight).",
+        "operationId": "geo_endpoint_api_v1_analytics_geo_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "date_from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Date From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "date_to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Date To"
+            }
+          },
+          {
+            "in": "query",
+            "name": "group_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "integer"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Group Id"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "examples": {
+                  "empty": {
+                    "summary": "No incidents in window",
+                    "value": {
+                      "countries": []
+                    }
+                  },
+                  "happy": {
+                    "summary": "Three countries",
+                    "value": {
+                      "countries": [
+                        {
+                          "count": 18,
+                          "iso2": "KR"
+                        },
+                        {
+                          "count": 9,
+                          "iso2": "US"
+                        },
+                        {
+                          "count": 2,
+                          "iso2": "KP"
+                        }
+                      ]
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/GeoResponse"
+                }
               }
             },
-            "description": "Successful Response"
+            "description": "Country-aggregated incident payload."
+          },
+          "401": {
+            "description": "Missing or invalid session cookie"
+          },
+          "403": {
+            "description": "Role not analyst / researcher / policy / soc / admin"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "detail": [
+                    {
+                      "loc": [
+                        "query",
+                        "group_id"
+                      ],
+                      "msg": "group_id must be >= 1",
+                      "type": "value_error"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "Invalid query param — bad ISO date, negative ``group_id``, or ``top_n`` out of ``1..200`` (attack_matrix only). Plan D12 uniform 422 contract."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": "rate_limit_exceeded",
+                  "message": "60 per 1 minute"
+                }
+              }
+            },
+            "description": "Rate limit exceeded — 60/min/user read bucket (plan D2). Shared bucket with other read endpoints (reports, incidents, actors, dashboard)."
           }
         },
-        "summary": "Attribution Graph",
+        "summary": "Country-aggregated incident count",
         "tags": [
           "analytics"
         ]
       }
     },
-    "/api/v1/analytics/forecast": {
+    "/api/v1/analytics/trend": {
       "get": {
-        "description": "§5.4 Short-term threat forecast (LLM + time-series heuristics).",
-        "operationId": "forecast_api_v1_analytics_forecast_get",
+        "description": "Distinct report count per calendar month of ``reports.published`` within the filter window. Bucket format is ``YYYY-MM``. Zero-count months are omitted, not zero-filled — the FE owns gap handling. Plan D2.",
+        "operationId": "trend_endpoint_api_v1_analytics_trend_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "date_from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Date From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "date_to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Date To"
+            }
+          },
+          {
+            "in": "query",
+            "name": "group_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "integer"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Group Id"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "examples": {
+                  "empty": {
+                    "summary": "No reports in window",
+                    "value": {
+                      "buckets": []
+                    }
+                  },
+                  "happy": {
+                    "summary": "Three months of data",
+                    "value": {
+                      "buckets": [
+                        {
+                          "count": 41,
+                          "month": "2026-01"
+                        },
+                        {
+                          "count": 38,
+                          "month": "2026-02"
+                        },
+                        {
+                          "count": 47,
+                          "month": "2026-03"
+                        }
+                      ]
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/TrendResponse"
+                }
               }
             },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Forecast",
-        "tags": [
-          "analytics"
-        ]
-      }
-    },
-    "/api/v1/analytics/geopolitical": {
-      "get": {
-        "description": "§5.4 Geopolitical event correlation with DPRK cyber activity.",
-        "operationId": "geopolitical_context_api_v1_analytics_geopolitical_get",
-        "responses": {
-          "200": {
+            "description": "Monthly trend payload."
+          },
+          "401": {
+            "description": "Missing or invalid session cookie"
+          },
+          "403": {
+            "description": "Role not analyst / researcher / policy / soc / admin"
+          },
+          "422": {
             "content": {
               "application/json": {
-                "schema": {}
+                "example": {
+                  "detail": [
+                    {
+                      "loc": [
+                        "query",
+                        "group_id"
+                      ],
+                      "msg": "group_id must be >= 1",
+                      "type": "value_error"
+                    }
+                  ]
+                }
               }
             },
-            "description": "Successful Response"
+            "description": "Invalid query param — bad ISO date, negative ``group_id``, or ``top_n`` out of ``1..200`` (attack_matrix only). Plan D12 uniform 422 contract."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": "rate_limit_exceeded",
+                  "message": "60 per 1 minute"
+                }
+              }
+            },
+            "description": "Rate limit exceeded — 60/min/user read bucket (plan D2). Shared bucket with other read endpoints (reports, incidents, actors, dashboard)."
           }
         },
-        "summary": "Geopolitical Context",
+        "summary": "Monthly report volume trend",
         "tags": [
           "analytics"
         ]

@@ -213,6 +213,44 @@ report_codenames_table = sa.Table(
 
 
 # ---------------------------------------------------------------------------
+# techniques + report_techniques (migration 0001 lines 42-49, 120-125)
+# ---------------------------------------------------------------------------
+#
+# Added for PR #13 Group A (GET /analytics/attack_matrix). ``tactic`` is a
+# free-form string on the migration (nullable); the API treats rows with
+# null tactic as a distinct "unclassified" bucket rather than dropping
+# them. Mirror stays 1:1 with migration 0001.
+
+techniques_table = sa.Table(
+    "techniques",
+    metadata,
+    sa.Column("id", _BIGINT, primary_key=True, autoincrement=True),
+    sa.Column("mitre_id", sa.String(length=32), nullable=False, unique=True),
+    sa.Column("name", sa.String(length=255), nullable=False),
+    sa.Column("tactic", sa.String(length=128), nullable=True),
+    sa.Column("description", sa.Text(), nullable=True),
+)
+
+report_techniques_table = sa.Table(
+    "report_techniques",
+    metadata,
+    sa.Column(
+        "report_id",
+        _BIGINT,
+        sa.ForeignKey("reports.id"),
+        primary_key=True,
+    ),
+    sa.Column(
+        "technique_id",
+        _BIGINT,
+        sa.ForeignKey("techniques.id"),
+        primary_key=True,
+    ),
+    sa.Column("confidence", sa.Float(), nullable=True),
+)
+
+
+# ---------------------------------------------------------------------------
 # incidents + 3 join tables (migration 0001 lines 134-166)
 # ---------------------------------------------------------------------------
 #
@@ -369,8 +407,10 @@ __all__ = [
     "metadata",
     "report_codenames_table",
     "report_tags_table",
+    "report_techniques_table",
     "reports_table",
     "sources_table",
     "staging_table",
     "tags_table",
+    "techniques_table",
 ]
