@@ -98,11 +98,28 @@ async def test_dashboard_fixture_satisfies_each_pact_matcher(
 ) -> None:
     """``seeded reports/incidents/actors and an authenticated analyst
     session`` must produce non-empty arrays for every
-    ``eachLike(...)`` field on /dashboard/summary."""
+    ``eachLike(...)`` field on /dashboard/summary UNDER THE EXACT
+    FILTER the pact request sends.
+
+    The pact interaction is
+    ``GET /api/v1/dashboard/summary?date_from=2026-01-01&date_to=2026-04-18&group_id=1&group_id=3``.
+    A fixture that seeds dates outside that window passes a
+    no-filter aggregator call but empties the arrays at verify time
+    (caught as the Group I CI red). This test invokes the aggregator
+    with the same filter so the fixture stays in lockstep with the
+    pact's request shape.
+    """
+    from datetime import date
+
     await _ensure_dashboard_fixture(pg_session)
     await pg_session.commit()
 
-    summary = await compute_dashboard_summary(pg_session)
+    summary = await compute_dashboard_summary(
+        pg_session,
+        date_from=date(2026, 1, 1),
+        date_to=date(2026, 4, 18),
+        group_ids=[1, 3],
+    )
 
     # Pact: reports_by_year = eachLike({year, count}) — ≥1 entry.
     assert summary["reports_by_year"], (

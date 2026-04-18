@@ -278,7 +278,9 @@ async def _ensure_incident_with_motivation(
                 "RETURNING id"
             ),
             {
-                "r": date(2024, 5, 2),
+                # Inside the pact dashboard filter window
+                # (date_from=2026-01-01, date_to=2026-04-18).
+                "r": date(2026, 2, 20),
                 "t": title,
                 "d": "Pact fixture incident",
             },
@@ -372,13 +374,18 @@ async def _ensure_dashboard_fixture(session: AsyncSession) -> None:
     ).scalar_one()
     # Dodge an unused-var warning while still documenting the join.
     _ = lazarus_id
+    # Dates land inside the pact's date_from/date_to filter
+    # (2026-01-01 to 2026-04-18). Earlier dates would pass the DB
+    # seed check but produce empty reports_by_year /
+    # incidents_by_motivation arrays under that filter, which would
+    # fail the pact's eachLike matcher at verification time.
     await _ensure_report_with_codename_link(
         session,
         source_id=source_id,
         codename_id=int(andariel_id),
         url_canonical="https://pact.test/reports/lazarus-q1",
         title="Pact fixture — Lazarus Group Q1 report",
-        published=date(2024, 3, 15),
+        published=date(2026, 3, 15),
     )
     await _ensure_incident_with_motivation(
         session,
