@@ -28,6 +28,15 @@ coverage.xml
 .idea/
 .vscode/
 
+# Playwright (FE E2E — PR #12 Group I)
+apps/frontend/playwright-report/
+apps/frontend/test-results/
+# Runtime logs the E2E CI job writes into the repo root
+uvicorn.log
+preview.log
+uvicorn.pid
+preview.pid
+
 # Secrets / credentials
 *.pem
 *.key

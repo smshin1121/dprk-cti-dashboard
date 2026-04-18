@@ -19,7 +19,158 @@ jobs:
           node-version: "22"
           cache: "pnpm"
       - run: pnpm install
+      # PR #12 Group I: run unit + contract tests alongside the build
+      # so a regression in vitest OR pact consumer flips the job red
+      # before it reaches reviewer CI tabs.
+      - run: pnpm --dir apps/frontend test
+      - run: pnpm --dir apps/frontend test:contract
       - run: pnpm --dir apps/frontend build
+
+  # -------------------------------------------------------------------------
+  # frontend-e2e — PR #12 Phase 2.3 Group I / D9
+  #
+  # Single Playwright journey: login-seeded shell → /dashboard KPI
+  # strip renders → navigate /actors list renders ≥1 row.
+  #
+  # Uses the same dev-only POST /_pact/provider_states endpoint that
+  # contract-verify uses, so FE fixture seeding stays drift-free with
+  # the BE harness. Keycloak is bypassed entirely (dev realm has
+  # directAccessGrantsEnabled=false — memory
+  # `pattern_forged_cookie_verification.md`).
+  # -------------------------------------------------------------------------
+  frontend-e2e:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: dprk_cti_e2e
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      ALEMBIC_DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/dprk_cti_e2e
+      DATABASE_URL: postgresql+psycopg_async://postgres:postgres@localhost:5432/dprk_cti_e2e
+      REDIS_URL: redis://localhost:6379/0
+      RATE_LIMIT_STORAGE_URL: redis://localhost:6379/1
+      APP_ENV: dev
+      JWT_SECRET: e2e-secret-at-least-32-chars-long-abc
+      OIDC_CLIENT_ID: dprk-cti
+      OIDC_CLIENT_SECRET: e2e-oidc-secret
+      OIDC_ISSUER_URL: http://keycloak.test/realms/dprk
+      OIDC_REDIRECT_BASE_URL: http://localhost:8000
+      SESSION_SIGNING_KEY: e2e-signing-key-at-least-32-chars-long
+      SESSION_COOKIE_NAME: dprk_cti_session
+      SESSION_COOKIE_SECURE: "false"
+      SESSION_COOKIE_SAMESITE: lax
+      CORS_ORIGINS: http://127.0.0.1:4173
+      E2E_BASE_URL: http://127.0.0.1:4173
+      E2E_API_BASE_URL: http://127.0.0.1:8000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+      - uses: astral-sh/setup-uv@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pnpm install
+      - name: Sync api dev dependencies
+        working-directory: services/api
+        run: uv sync
+      - name: Alembic upgrade
+        run: uv run --project services/api alembic -c db/alembic.ini upgrade head
+      - name: Build FE for preview
+        working-directory: apps/frontend
+        env:
+          # FE calls BE at the same origin under nginx in prod; for
+          # E2E we set the VITE build-time API base so the preview
+          # bundle talks to the uvicorn we're about to boot.
+          VITE_API_URL: http://127.0.0.1:8000
+        run: pnpm build
+      - name: Install Playwright browsers
+        working-directory: apps/frontend
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Start uvicorn
+        working-directory: services/api
+        run: |
+          uv run uvicorn api.main:app --host 127.0.0.1 --port 8000 \
+            --log-level warning > ../../uvicorn.log 2>&1 &
+          echo $! > ../../uvicorn.pid
+      - name: Start FE preview server
+        working-directory: apps/frontend
+        run: |
+          pnpm preview --host 127.0.0.1 --port 4173 > ../../preview.log 2>&1 &
+          echo $! > ../../preview.pid
+      - name: Wait for BE /healthz
+        run: |
+          for i in $(seq 1 40); do
+            if curl -sf http://127.0.0.1:8000/healthz >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 0.5
+          done
+          echo "uvicorn did not come up"
+          cat uvicorn.log || true
+          exit 1
+      - name: Wait for FE preview
+        run: |
+          for i in $(seq 1 40); do
+            if curl -sf http://127.0.0.1:4173/ >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 0.5
+          done
+          echo "FE preview did not come up"
+          cat preview.log || true
+          exit 1
+      - name: Run Playwright journey
+        working-directory: apps/frontend
+        run: pnpm test:e2e
+      - name: Upload Playwright artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            apps/frontend/playwright-report
+            apps/frontend/test-results
+          if-no-files-found: warn
+      - name: Surface server logs on failure
+        if: failure()
+        run: |
+          echo "=== uvicorn.log ==="
+          cat uvicorn.log || echo "(no log)"
+          echo "=== preview.log ==="
+          cat preview.log || echo "(no log)"
+      - name: Stop background processes
+        if: always()
+        run: |
+          for f in uvicorn.pid preview.pid; do
+            if [ -f "$f" ]; then
+              kill "$(cat "$f")" 2>/dev/null || true
+            fi
+          done
 
   python-services:
     runs-on: ubuntu-latest
