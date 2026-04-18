@@ -41,6 +41,16 @@ dev = [
     "freezegun>=1.5",
     "cryptography>=42",
     "aiosqlite>=0.20",
+    # PR #11 Group I — Pact producer verifier harness. Only the
+    # ``Verifier`` class is used and only when a consumer pact file
+    # is present under ``contracts/pacts/`` (see
+    # ``tests/contract/test_pact_producer.py``). Pinned to the 2.x
+    # line: 2.3.x has the stable ``pact.Verifier`` surface; 3.x
+    # rewired around ``pact_ffi`` whose Windows wheels are known to
+    # fail DLL init under some locales. When the FE consumer lands
+    # we can re-evaluate, but for baseline skip-with-ok the 2.x
+    # Verifier shape is what the harness targets.
+    "pact-python>=2.3,<3",
 ]
 
 [tool.pytest.ini_options]
