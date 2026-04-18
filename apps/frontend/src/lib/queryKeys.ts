@@ -17,6 +17,10 @@
  * type boundary + pinned by `queryKeys.test.ts`.
  */
 
+import type {
+  AnalyticsFilters,
+  AttackMatrixOptions,
+} from './analyticsFilters'
 import type { DashboardSummaryFilters } from './dashboardFilters'
 import type {
   ActorListPagination,
@@ -51,4 +55,22 @@ export const queryKeys = {
     filters: IncidentListFilters,
     pagination: { cursor?: string; limit?: number } = {},
   ) => ['incidents', filters, pagination] as const,
+
+  /**
+   * `/api/v1/analytics/*` — plan D2 + D9 (PR #13). Same D5 TLP-
+   * isolation invariant as `dashboardSummary`: `AnalyticsFilters`
+   * carries no tlp field, so a TLP toggle can NEVER invalidate these
+   * caches. Per-endpoint keys keep fetch errors local (one failing
+   * viz degrades one panel, not the whole dashboard).
+   */
+  analyticsAttackMatrix: (
+    filters: AnalyticsFilters,
+    options: AttackMatrixOptions = {},
+  ) => ['analytics', 'attack_matrix', filters, options] as const,
+
+  analyticsTrend: (filters: AnalyticsFilters) =>
+    ['analytics', 'trend', filters] as const,
+
+  analyticsGeo: (filters: AnalyticsFilters) =>
+    ['analytics', 'geo', filters] as const,
 } as const

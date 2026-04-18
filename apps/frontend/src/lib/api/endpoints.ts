@@ -10,6 +10,13 @@
 
 import { apiGet, apiPost, apiRawGet } from '../api'
 import {
+  type AnalyticsFilters,
+  type AttackMatrixOptions,
+  toAttackMatrixQueryParams,
+  toGeoQueryParams,
+  toTrendQueryParams,
+} from '../analyticsFilters'
+import {
   type DashboardSummaryFilters,
   toDashboardSummaryQueryParams,
 } from '../dashboardFilters'
@@ -23,13 +30,19 @@ import {
 } from '../listFilters'
 import {
   actorListResponseSchema,
+  attackMatrixResponseSchema,
   currentUserSchema,
   dashboardSummarySchema,
+  geoResponseSchema,
+  trendResponseSchema,
   type ActorListResponse,
+  type AttackMatrixResponse,
   type CurrentUser,
   type DashboardSummary,
+  type GeoResponse,
   type IncidentListResponse,
   type ReportListResponse,
+  type TrendResponse,
 } from './schemas'
 
 /** `GET /api/v1/auth/me` — returns the current authenticated user. */
@@ -114,6 +127,59 @@ export async function listIncidents(
     ? `/api/v1/incidents?${qs}`
     : '/api/v1/incidents'
   return apiRawGet<IncidentListResponse>(path, signal)
+}
+
+/**
+ * `GET /api/v1/analytics/attack_matrix` — plan D2 row-based matrix.
+ *
+ * Shared filter contract with /dashboard/summary (date_from/date_to/
+ * group_id[]). `top_n` is attack-matrix-only; BE bounds `[1, 200]`
+ * with default 30 when omitted. `AnalyticsFilters` type has no tlp
+ * field by construction — a future edit cannot leak TLP to this wire.
+ */
+export function getAttackMatrix(
+  filters: AnalyticsFilters,
+  options: AttackMatrixOptions = {},
+  signal?: AbortSignal,
+): Promise<AttackMatrixResponse> {
+  const qs = toAttackMatrixQueryParams(filters, options).toString()
+  const path = qs.length > 0
+    ? `/api/v1/analytics/attack_matrix?${qs}`
+    : '/api/v1/analytics/attack_matrix'
+  return apiGet(path, attackMatrixResponseSchema, signal)
+}
+
+/**
+ * `GET /api/v1/analytics/trend` — monthly report-volume buckets.
+ * Zero-count months are omitted by the BE; the FE viz owns gap-fill.
+ */
+export function getTrend(
+  filters: AnalyticsFilters,
+  signal?: AbortSignal,
+): Promise<TrendResponse> {
+  const qs = toTrendQueryParams(filters).toString()
+  const path = qs.length > 0
+    ? `/api/v1/analytics/trend?${qs}`
+    : '/api/v1/analytics/trend'
+  return apiGet(path, trendResponseSchema, signal)
+}
+
+/**
+ * `GET /api/v1/analytics/geo` — country-aggregated incident count.
+ *
+ * BE accepts `group_id[]` but treats it as a no-op (schema has no
+ * incident→group path). We still serialize it so a future BE lock
+ * wiring the filter would not require a FE change.
+ */
+export function getGeo(
+  filters: AnalyticsFilters,
+  signal?: AbortSignal,
+): Promise<GeoResponse> {
+  const qs = toGeoQueryParams(filters).toString()
+  const path = qs.length > 0
+    ? `/api/v1/analytics/geo?${qs}`
+    : '/api/v1/analytics/geo'
+  return apiGet(path, geoResponseSchema, signal)
 }
 
 /**
