@@ -1,0 +1,6 @@
+# Per-run Lighthouse JSON reports + SUMMARY.md are regenerated on
+# every audit. Keeping them out of git prevents noise from repeated
+# local runs; the reviewer attaches the relevant artifacts directly
+# to the PR body via GitHub's file upload when acceptance review
+# happens (plan D6 — manual artifact, not CI hard gate).
+reports/

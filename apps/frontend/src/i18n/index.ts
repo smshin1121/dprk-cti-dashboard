@@ -12,8 +12,9 @@
  * Synchronous init:
  * Resources are imported inline (not fetched asynchronously) so the
  * first React render already has translations available — no FOUC
- * on i18n. `initImmediate: false` tells i18next not to defer
- * initialization to a microtask.
+ * on i18n. i18next init resolves synchronously when no backend is
+ * registered, which is the case here (no `.use(Backend)` on the
+ * chain).
  *
  * Detector order (localStorage → navigator):
  * The user's explicit choice (persisted in localStorage under the
@@ -39,7 +40,7 @@
  * key handler (logs warning in dev).
  */
 
-import i18n from 'i18next'
+import i18n, { type InitOptions } from 'i18next'
 import LanguageDetector from 'i18next-browser-languagedetector'
 import { initReactI18next } from 'react-i18next'
 
@@ -102,35 +103,41 @@ export interface Resources {
 
 // Guarded init so HMR / test resets don't re-initialize and wipe
 // language state. `i18n.isInitialized` is the canonical signal.
+//
+// Why the options object is an explicit `InitOptions` constant:
+// `i18n.use(...).use(...).init({...})` narrows `init`'s signature
+// on i18next v26 such that passing an object literal inline fails
+// `tsc -b` overload resolution. Typing the constant explicitly
+// restores the correct overload path. `initImmediate` (i18next
+// runtime flag) is no longer in `InitOptions` in v26, so we
+// rely on the implicit sync-init behaviour that kicks in when no
+// `.use(Backend)` is on the chain.
+const initOptions: InitOptions = {
+  resources: {
+    ko: { translation: ko as Resources },
+    en: { translation: en as Resources },
+  },
+  fallbackLng: DEFAULT_LOCALE,
+  supportedLngs: SUPPORTED_LOCALES as unknown as string[],
+  // Only run detection order: localStorage first (user choice),
+  // then navigator (OS / browser default). Do NOT sniff cookie
+  // — we have no server-side cookie for locale; adding that
+  // here would be tempting but adds a BE round-trip on no
+  // value.
+  detection: {
+    order: ['localStorage', 'navigator'],
+    caches: ['localStorage'],
+    lookupLocalStorage: 'i18nextLng',
+  },
+  interpolation: {
+    // React already escapes; i18next's built-in escaper would
+    // double-escape user input.
+    escapeValue: false,
+  },
+}
+
 if (!i18n.isInitialized) {
-  i18n
-    .use(LanguageDetector)
-    .use(initReactI18next)
-    .init({
-      resources: {
-        ko: { translation: ko as Resources },
-        en: { translation: en as Resources },
-      },
-      fallbackLng: DEFAULT_LOCALE,
-      supportedLngs: SUPPORTED_LOCALES as unknown as string[],
-      // Only run detection order: localStorage first (user choice),
-      // then navigator (OS / browser default). Do NOT sniff cookie
-      // — we have no server-side cookie for locale; adding that
-      // here would be tempting but adds a BE round-trip on no
-      // value.
-      detection: {
-        order: ['localStorage', 'navigator'],
-        caches: ['localStorage'],
-        lookupLocalStorage: 'i18nextLng',
-      },
-      interpolation: {
-        // React already escapes; i18next's built-in escaper would
-        // double-escape user input.
-        escapeValue: false,
-      },
-      // Synchronous init — resources already in memory.
-      initImmediate: false,
-    })
+  i18n.use(LanguageDetector).use(initReactI18next).init(initOptions)
 }
 
 export default i18n
