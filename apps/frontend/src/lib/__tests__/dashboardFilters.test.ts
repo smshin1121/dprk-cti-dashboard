@@ -52,6 +52,32 @@ describe('toDashboardSummaryFilters', () => {
     expect(filters.group_id).toEqual([3, 5])
   })
 
+  // Set-semantic canonicalization at the wire boundary. UI toggle
+  // order is preserved in the store (so the FE can reason about it
+  // for things like "most recently toggled"), but the BE doesn't
+  // care about order — `group_id IN (1,3)` matches `IN (3,1)`. Two
+  // different orderings would otherwise produce two distinct cache
+  // keys for the same logical filter (cache miss + redundant
+  // network round-trip every time the analyst rearranges checkboxes).
+  describe('groupIds canonicalization', () => {
+    it('sorts group_id ascending so equivalent sets share output', () => {
+      const sorted = toDashboardSummaryFilters(makeState({ groupIds: [3, 1, 5] }))
+      expect(sorted.group_id).toEqual([1, 3, 5])
+    })
+
+    it('identical sets toggled in different orders produce identical filters', () => {
+      const a = toDashboardSummaryFilters(makeState({ groupIds: [1, 3] }))
+      const b = toDashboardSummaryFilters(makeState({ groupIds: [3, 1] }))
+      expect(a).toEqual(b)
+    })
+
+    it('does not mutate the caller-owned groupIds array', () => {
+      const original = [3, 1, 5]
+      toDashboardSummaryFilters(makeState({ groupIds: original }))
+      expect(original).toEqual([3, 1, 5])
+    })
+  })
+
   // D5 contract: TLP is UI-only. The transform's job is to make
   // it impossible for TLP to leak into a BE call. Three layers of
   // defense — type system (no tlp field on DashboardSummaryFilters),
@@ -101,6 +127,16 @@ describe('toDashboardSummaryQueryParams', () => {
   it('emits one group_id entry per id (BE-repeatable param)', () => {
     const params = toDashboardSummaryQueryParams({ group_id: [3, 5, 7] })
     expect(params.getAll('group_id')).toEqual(['3', '5', '7'])
+  })
+
+  it('produces identical query strings for equivalent group sets', () => {
+    const a = toDashboardSummaryQueryParams(
+      toDashboardSummaryFilters(makeState({ groupIds: [1, 3] })),
+    )
+    const b = toDashboardSummaryQueryParams(
+      toDashboardSummaryFilters(makeState({ groupIds: [3, 1] })),
+    )
+    expect(a.toString()).toBe(b.toString())
   })
 
   // Critical D5 contract at the URL boundary — no possible TLP leak

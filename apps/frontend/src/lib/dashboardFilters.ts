@@ -18,6 +18,16 @@
  * single chokepoint where TLP can be excluded; the type system makes
  * future drift a compile error rather than a runtime regression.
  * Tests in `dashboardFilters.test.ts` pin the equivalence at runtime.
+ *
+ * Group set canonicalization:
+ * `groupIds` is set-semantic on the BE (the `IN (...)` predicate is
+ * order-insensitive), so the transform sorts numerically before
+ * emitting. Without this, picking groups [1,3] vs [3,1] in the UI
+ * would produce two distinct React Query cache keys + two distinct
+ * URL strings for the same logical filter — silent cache miss + URL
+ * churn. The store keeps insertion order (UI render uses it for
+ * "selected since" reasoning); canonicalization happens only at the
+ * server-state boundary.
  */
 
 import type { FilterState } from '../stores/filters'
@@ -40,7 +50,11 @@ export function toDashboardSummaryFilters(
   const filters: DashboardSummaryFilters = {}
   if (state.dateFrom != null) filters.date_from = state.dateFrom
   if (state.dateTo != null) filters.date_to = state.dateTo
-  if (state.groupIds.length > 0) filters.group_id = [...state.groupIds]
+  if (state.groupIds.length > 0) {
+    // Sort numerically so identical sets toggled in different orders
+    // produce equal cache keys + URLs (BE `group_id` is set-semantic).
+    filters.group_id = [...state.groupIds].sort((a, b) => a - b)
+  }
   return filters
 }
 

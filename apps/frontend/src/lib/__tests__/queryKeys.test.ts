@@ -46,6 +46,21 @@ describe('queryKeys.dashboardSummary', () => {
     expect(a).not.toEqual(b)
   })
 
+  // Codex P2 regression — group_id sets are unordered on the BE, so
+  // the cache key MUST be the same regardless of UI toggle order.
+  // Without canonicalization in toDashboardSummaryFilters, picking
+  // groups [1,3] vs [3,1] in the UI produced two distinct cache
+  // entries for the same logical filter.
+  it('same group set toggled in different order produces equal cache keys', () => {
+    const a = queryKeys.dashboardSummary(
+      toDashboardSummaryFilters(makeState({ groupIds: [1, 3] })),
+    )
+    const b = queryKeys.dashboardSummary(
+      toDashboardSummaryFilters(makeState({ groupIds: [3, 1] })),
+    )
+    expect(a).toEqual(b)
+  })
+
   // D5 contract at the cache layer — if TLP ever reaches the cache
   // key, toggling a TLP checkbox would re-fetch the same data under
   // a different key, breaking cache economy AND leaking the UI-only
