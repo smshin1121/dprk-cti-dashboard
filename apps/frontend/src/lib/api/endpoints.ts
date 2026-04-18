@@ -8,16 +8,28 @@
  * it lands.
  */
 
-import { apiGet, apiPost } from '../api'
+import { apiGet, apiPost, apiRawGet } from '../api'
 import {
   type DashboardSummaryFilters,
   toDashboardSummaryQueryParams,
 } from '../dashboardFilters'
 import {
+  type ActorListPagination,
+  type IncidentListFilters,
+  type ReportListFilters,
+  toActorListQueryParams,
+  toIncidentListQueryParams,
+  toReportListQueryParams,
+} from '../listFilters'
+import {
+  actorListResponseSchema,
   currentUserSchema,
   dashboardSummarySchema,
+  type ActorListResponse,
   type CurrentUser,
   type DashboardSummary,
+  type IncidentListResponse,
+  type ReportListResponse,
 } from './schemas'
 
 /** `GET /api/v1/auth/me` — returns the current authenticated user. */
@@ -44,6 +56,64 @@ export function getDashboardSummary(
     ? `/api/v1/dashboard/summary?${qs}`
     : '/api/v1/dashboard/summary'
   return apiGet(path, dashboardSummarySchema, signal)
+}
+
+/**
+ * `GET /api/v1/actors` — offset-paginated. Plan D7 Zod-validated.
+ *
+ * No filter contract — actors endpoint ignores dateFrom/dateTo/
+ * groupIds/tlp entirely. The `ActorListPagination` argument shape is
+ * narrow (`limit` + `offset` only) so a future edit trying to pass
+ * FilterBar state is a compile error, not a silently-ignored query
+ * param.
+ */
+export function listActors(
+  pagination: ActorListPagination = {},
+  signal?: AbortSignal,
+): Promise<ActorListResponse> {
+  const qs = toActorListQueryParams(pagination).toString()
+  const path = qs.length > 0
+    ? `/api/v1/actors?${qs}`
+    : '/api/v1/actors'
+  return apiGet(path, actorListResponseSchema, signal)
+}
+
+/**
+ * `GET /api/v1/reports` — keyset-paginated. Plan D7 types-only (no
+ * runtime Zod). See `ReportListResponse` / `ReportItem` docstrings.
+ *
+ * Filter input type `ReportListFilters` has no group/tlp fields so
+ * the FilterBar's group+TLP state cannot reach the wire; tests
+ * `listFilters.test.ts` pin the runtime equivalence as a belt.
+ */
+export async function listReports(
+  filters: ReportListFilters,
+  pagination: { cursor?: string; limit?: number } = {},
+  signal?: AbortSignal,
+): Promise<ReportListResponse> {
+  const qs = toReportListQueryParams(filters, pagination).toString()
+  const path = qs.length > 0
+    ? `/api/v1/reports?${qs}`
+    : '/api/v1/reports'
+  // Types-only — apiRawGet skips the Zod parse step. Safe within
+  // PR #12 scope: shell-level table renders only the documented
+  // fields; unexpected extras are ignored.
+  return apiRawGet<ReportListResponse>(path, signal)
+}
+
+/**
+ * `GET /api/v1/incidents` — keyset-paginated. Plan D7 types-only.
+ */
+export async function listIncidents(
+  filters: IncidentListFilters,
+  pagination: { cursor?: string; limit?: number } = {},
+  signal?: AbortSignal,
+): Promise<IncidentListResponse> {
+  const qs = toIncidentListQueryParams(filters, pagination).toString()
+  const path = qs.length > 0
+    ? `/api/v1/incidents?${qs}`
+    : '/api/v1/incidents'
+  return apiRawGet<IncidentListResponse>(path, signal)
 }
 
 /**

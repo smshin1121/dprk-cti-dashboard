@@ -94,3 +94,90 @@ export type DashboardYearCount = z.infer<typeof dashboardYearCountSchema>
 export type DashboardMotivationCount = z.infer<typeof dashboardMotivationCountSchema>
 export type DashboardTopGroup = z.infer<typeof dashboardTopGroupSchema>
 export type DashboardSummary = z.infer<typeof dashboardSummarySchema>
+
+/**
+ * `/api/v1/actors` — plan D3 offset pagination + D7 Zod-validated.
+ *
+ * Mirrors BE `ActorItem` + `ActorListResponse` in
+ * `services/api/src/api/schemas/read.py`. `aka` / `codenames` arrive
+ * as arrays (N:M joins flattened on the BE). Most scalar fields are
+ * optional because the BE model uses `| None = None` defaults — see
+ * the Pydantic DTO for the source of truth.
+ */
+export const actorItemSchema = z.object({
+  id: z.number().int(),
+  name: z.string(),
+  mitre_intrusion_set_id: z.string().nullish(),
+  aka: z.array(z.string()),
+  description: z.string().nullish(),
+  codenames: z.array(z.string()),
+})
+
+export const actorListResponseSchema = z.object({
+  items: z.array(actorItemSchema),
+  limit: z.number().int().gte(1).lte(200),
+  offset: z.number().int().gte(0),
+  total: z.number().int().gte(0),
+})
+
+export type ActorItem = z.infer<typeof actorItemSchema>
+export type ActorListResponse = z.infer<typeof actorListResponseSchema>
+
+/**
+ * `/api/v1/reports` — plan D7 types-only (no runtime Zod).
+ *
+ * PR #12 shell-level only — no detail view, no advanced filter
+ * surface. `/reports` + `/incidents` defer Zod to PR #13 when the
+ * list DTOs grow detail-view fields; for now the FE trusts the BE
+ * OpenAPI contract at the type layer. The cost of being wrong is a
+ * rendering crash in the list table, not a silent data-integrity
+ * failure, so types-only is an acceptable runtime risk in shell
+ * scope.
+ */
+export interface ReportItem {
+  id: number
+  title: string
+  url: string
+  url_canonical: string
+  published: string // ISO yyyy-mm-dd — BE `date` serializes as string
+  source_id?: number | null
+  source_name?: string | null
+  lang?: string | null
+  /**
+   * TLP classification on the BE side. Present but NOT used by this
+   * list table in PR #12 — D4 RLS filtering is deferred. When RLS
+   * lands, the BE restricts which rows arrive here; the FE simply
+   * renders what it gets.
+   */
+  tlp?: string | null
+}
+
+export interface ReportListResponse {
+  items: ReportItem[]
+  next_cursor: string | null
+}
+
+/**
+ * `/api/v1/incidents` — plan D7 types-only.
+ *
+ * Incidents have the richest N:M surface (motivations × sectors ×
+ * countries). Types-only keeps the list shell responsive without
+ * committing to a runtime schema we'd edit every time a new field
+ * lands in PR #13.
+ */
+export interface IncidentItem {
+  id: number
+  reported?: string | null
+  title: string
+  description?: string | null
+  est_loss_usd?: number | null
+  attribution_confidence?: string | null
+  motivations: string[]
+  sectors: string[]
+  countries: string[]
+}
+
+export interface IncidentListResponse {
+  items: IncidentItem[]
+  next_cursor: string | null
+}

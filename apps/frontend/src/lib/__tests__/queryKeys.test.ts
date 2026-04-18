@@ -90,3 +90,39 @@ describe('queryKeys.dashboardSummary', () => {
     expect(json).not.toContain('amber')
   })
 })
+
+describe('queryKeys.actors', () => {
+  it('uses pagination shape for the key', () => {
+    const key = queryKeys.actors({ limit: 50, offset: 0 })
+    expect(key[0]).toBe('actors')
+    expect(key[1]).toEqual({ limit: 50, offset: 0 })
+  })
+
+  it('keys for different offsets differ', () => {
+    expect(queryKeys.actors({ offset: 0 })).not.toEqual(
+      queryKeys.actors({ offset: 50 }),
+    )
+  })
+})
+
+describe('queryKeys.reports', () => {
+  it('shape is [reports, filters, pagination]', () => {
+    const key = queryKeys.reports({ date_from: '2026-01-01' }, { cursor: 'c' })
+    expect(key[0]).toBe('reports')
+    expect(key[1]).toEqual({ date_from: '2026-01-01' })
+    expect(key[2]).toEqual({ cursor: 'c' })
+  })
+
+  it('filters + cursor change produces different keys', () => {
+    const a = queryKeys.reports({ date_from: '2026-01-01' }, { cursor: 'a' })
+    const b = queryKeys.reports({ date_from: '2026-01-01' }, { cursor: 'b' })
+    expect(a).not.toEqual(b)
+  })
+})
+
+describe('queryKeys.incidents', () => {
+  it('shape is [incidents, filters, pagination]', () => {
+    const key = queryKeys.incidents({ date_from: '2026-01-01' })
+    expect(key[0]).toBe('incidents')
+  })
+})

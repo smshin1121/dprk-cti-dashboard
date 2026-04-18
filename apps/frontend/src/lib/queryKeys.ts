@@ -18,9 +18,37 @@
  */
 
 import type { DashboardSummaryFilters } from './dashboardFilters'
+import type {
+  ActorListPagination,
+  IncidentListFilters,
+  ReportListFilters,
+} from './listFilters'
 
 export const queryKeys = {
   me: () => ['me'] as const,
   dashboardSummary: (filters: DashboardSummaryFilters) =>
     ['dashboard', 'summary', filters] as const,
+
+  /**
+   * `/api/v1/actors` — pagination-only. No FilterBar input reaches
+   * this key: the `ActorListPagination` type has no filter fields.
+   */
+  actors: (pagination: ActorListPagination) =>
+    ['actors', pagination] as const,
+
+  /**
+   * `/api/v1/reports` + `/api/v1/incidents` — date-range filters +
+   * cursor. `ReportListFilters` / `IncidentListFilters` have no
+   * group/tlp fields, so TLP + group changes can NEVER invalidate
+   * these caches. Pinned in `listFilters.test.ts`.
+   */
+  reports: (
+    filters: ReportListFilters,
+    pagination: { cursor?: string; limit?: number } = {},
+  ) => ['reports', filters, pagination] as const,
+
+  incidents: (
+    filters: IncidentListFilters,
+    pagination: { cursor?: string; limit?: number } = {},
+  ) => ['incidents', filters, pagination] as const,
 } as const

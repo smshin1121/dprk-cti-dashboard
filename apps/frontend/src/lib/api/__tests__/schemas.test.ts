@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
-import { currentUserSchema, dashboardSummarySchema } from '../schemas'
+import {
+  actorListResponseSchema,
+  currentUserSchema,
+  dashboardSummarySchema,
+} from '../schemas'
 
 describe('currentUserSchema', () => {
   // Lifted verbatim from contracts/openapi/openapi.json (PR #11 Group
@@ -119,6 +123,75 @@ describe('dashboardSummarySchema', () => {
         ...beEmptyExample,
         reports_by_year: [{ year: 1800, count: 1 }],
       }),
+    ).toThrow()
+  })
+})
+
+describe('actorListResponseSchema', () => {
+  // Lifted verbatim from contracts/openapi/openapi.json
+  // components.schemas.ActorListResponse.examples[0].
+  const beHappyExample = {
+    items: [
+      {
+        id: 3,
+        name: 'Lazarus Group',
+        mitre_intrusion_set_id: 'G0032',
+        aka: ['APT38', 'Hidden Cobra'],
+        description: 'DPRK-attributed cyber espionage and financially motivated group',
+        codenames: ['Andariel', 'Bluenoroff'],
+      },
+    ],
+    limit: 50,
+    offset: 0,
+    total: 12,
+  }
+
+  const beEmptyExample = { items: [], limit: 50, offset: 0, total: 0 }
+
+  it('parses the BE happy example verbatim', () => {
+    expect(actorListResponseSchema.parse(beHappyExample)).toEqual(beHappyExample)
+  })
+
+  it('parses the BE empty-page example verbatim', () => {
+    expect(actorListResponseSchema.parse(beEmptyExample)).toEqual(beEmptyExample)
+  })
+
+  it('accepts null mitre_intrusion_set_id + description (BE Optional[str])', () => {
+    const row = {
+      ...beHappyExample.items[0],
+      mitre_intrusion_set_id: null,
+      description: null,
+    }
+    expect(() =>
+      actorListResponseSchema.parse({ ...beHappyExample, items: [row] }),
+    ).not.toThrow()
+  })
+
+  it('accepts missing aka/codenames because BE Pydantic has default_factory=list', () => {
+    // Pydantic dumps the defaulted lists as `[]` on the wire, but the
+    // FE schema must tolerate a BE that optimizes empty arrays away
+    // (not current behavior but worth confirming since Zod `array()`
+    // is strict by default without z.array(...).default([])).
+    const row = {
+      id: 4,
+      name: 'APT37',
+      aka: [],
+      codenames: [],
+    }
+    expect(() =>
+      actorListResponseSchema.parse({ ...beHappyExample, items: [row] }),
+    ).not.toThrow()
+  })
+
+  it('rejects out-of-bound limit (BE `ge=1, le=200`)', () => {
+    expect(() =>
+      actorListResponseSchema.parse({ ...beEmptyExample, limit: 500 }),
+    ).toThrow()
+  })
+
+  it('rejects negative total (BE `ge=0`)', () => {
+    expect(() =>
+      actorListResponseSchema.parse({ ...beEmptyExample, total: -1 }),
     ).toThrow()
   })
 })

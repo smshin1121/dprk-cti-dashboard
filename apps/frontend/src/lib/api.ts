@@ -106,6 +106,21 @@ export async function apiGet<T>(
 }
 
 /**
+ * GET + typed-cast response (no runtime validation). Plan D7
+ * escape-hatch for `/reports` + `/incidents` list endpoints in PR
+ * #12 — Zod coverage is deferred to PR #13. Non-2xx still surfaces
+ * as `ApiError`; the only missing piece vs `apiGet` is the schema
+ * parse step.
+ */
+export async function apiRawGet<T>(
+  path: string,
+  signal?: AbortSignal,
+): Promise<T> {
+  const res = await apiFetch(path, { signal })
+  return (await res.json()) as T
+}
+
+/**
  * POST JSON body. `schema=null` explicitly signals a no-response
  * endpoint (204). `schema=undefined` is a programming error — use
  * `null` to be explicit, otherwise supply a Zod schema.

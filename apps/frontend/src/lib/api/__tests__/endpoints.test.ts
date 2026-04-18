@@ -1,6 +1,13 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { getDashboardSummary, getMe, logout } from '../endpoints'
+import {
+  getDashboardSummary,
+  getMe,
+  listActors,
+  listIncidents,
+  listReports,
+  logout,
+} from '../endpoints'
 
 describe('getMe', () => {
   it('GETs /api/v1/auth/me and parses the response', async () => {
@@ -94,5 +101,129 @@ describe('getDashboardSummary', () => {
     for (const key of parsed.searchParams.keys()) {
       expect(key.toLowerCase()).not.toContain('tlp')
     }
+  })
+})
+
+describe('listActors', () => {
+  const actorsResp = {
+    items: [
+      {
+        id: 3,
+        name: 'Lazarus Group',
+        mitre_intrusion_set_id: 'G0032',
+        aka: ['APT38'],
+        description: null,
+        codenames: [],
+      },
+    ],
+    limit: 50,
+    offset: 0,
+    total: 1,
+  }
+
+  it('GETs /api/v1/actors with no querystring when pagination empty', async () => {
+    const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify(actorsResp), { status: 200 }),
+    )
+    const r = await listActors()
+    expect(r.items[0].name).toBe('Lazarus Group')
+    const asString = String(fetchSpy.mock.calls[0][0])
+    expect(asString).toContain('/api/v1/actors')
+    expect(asString).not.toContain('?')
+  })
+
+  it('passes limit + offset on the wire', async () => {
+    const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify(actorsResp), { status: 200 }),
+    )
+    await listActors({ limit: 20, offset: 40 })
+    const parsed = new URL(String(fetchSpy.mock.calls[0][0]))
+    expect(parsed.searchParams.get('limit')).toBe('20')
+    expect(parsed.searchParams.get('offset')).toBe('40')
+  })
+
+  it('surfaces 429 as ApiError.status=429', async () => {
+    vi.spyOn(global, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({ error: 'rate_limit_exceeded', message: '60 per 1 minute' }),
+        { status: 429 },
+      ),
+    )
+    try {
+      await listActors()
+      expect.fail('expected listActors() to throw on 429')
+    } catch (err) {
+      // Imported from the api module to keep the test typed.
+      const { ApiError } = await import('../../api')
+      expect(err).toBeInstanceOf(ApiError)
+      expect((err as InstanceType<typeof ApiError>).status).toBe(429)
+    }
+  })
+})
+
+describe('listReports', () => {
+  const reportsResp = {
+    items: [
+      {
+        id: 42,
+        title: 'Report',
+        url: 'https://example.test',
+        url_canonical: 'https://example.test',
+        published: '2026-03-15',
+      },
+    ],
+    next_cursor: null,
+  }
+
+  it('GETs /api/v1/reports with date_from/date_to/cursor/limit', async () => {
+    const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify(reportsResp), { status: 200 }),
+    )
+    await listReports(
+      { date_from: '2026-01-01', date_to: '2026-04-18' },
+      { cursor: 'abc', limit: 50 },
+    )
+    const parsed = new URL(String(fetchSpy.mock.calls[0][0]))
+    expect(parsed.searchParams.get('date_from')).toBe('2026-01-01')
+    expect(parsed.searchParams.get('date_to')).toBe('2026-04-18')
+    expect(parsed.searchParams.get('cursor')).toBe('abc')
+    expect(parsed.searchParams.get('limit')).toBe('50')
+  })
+
+  it('never sends group_id (endpoint contract audit pin)', async () => {
+    const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify(reportsResp), { status: 200 }),
+    )
+    // Even if a future caller tries to smuggle group_id via a cast,
+    // the transform has no code path that emits it. Belt + type.
+    // @ts-expect-error — intentionally malformed input
+    await listReports({ date_from: '2026-01-01', group_id: [1] }, {})
+    const parsed = new URL(String(fetchSpy.mock.calls[0][0]))
+    expect(parsed.searchParams.has('group_id')).toBe(false)
+  })
+})
+
+describe('listIncidents', () => {
+  const incidentsResp = {
+    items: [
+      {
+        id: 18,
+        title: 'Ronin bridge',
+        motivations: ['financial'],
+        sectors: ['crypto'],
+        countries: ['VN'],
+      },
+    ],
+    next_cursor: null,
+  }
+
+  it('GETs /api/v1/incidents with date_from/date_to/cursor', async () => {
+    const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify(incidentsResp), { status: 200 }),
+    )
+    await listIncidents({ date_from: '2026-01-01' }, { cursor: 'xyz' })
+    const parsed = new URL(String(fetchSpy.mock.calls[0][0]))
+    expect(parsed.searchParams.get('date_from')).toBe('2026-01-01')
+    expect(parsed.searchParams.get('cursor')).toBe('xyz')
   })
 })
