@@ -19,8 +19,8 @@ pnpm test:contract     # apps/frontend
 | `GET  /api/v1/dashboard/summary`       | happy with date+group filters         | PR #12   |
 | `GET  /api/v1/actors`                  | first page + offset pagination        | PR #12   |
 | `POST /api/v1/auth/logout`             | 204                                   | PR #12   |
-| `GET  /api/v1/analytics/attack_matrix` | happy with date+group+top_n (D2 row-based shape) | PR #13 Group J |
-| `GET  /api/v1/analytics/trend`         | happy with date+group (D2 monthly YYYY-MM buckets) | PR #13 Group J |
+| `GET  /api/v1/analytics/attack_matrix` | happy with date + top_n (D2 row-based shape; unfiltered by group — see Codex R1 P2 note in the test file) | PR #13 Group J |
+| `GET  /api/v1/analytics/trend`         | happy with date (D2 monthly YYYY-MM buckets; unfiltered by group) | PR #13 Group J |
 | `GET  /api/v1/analytics/geo`           | happy with date filters (D2/D7 plain `{iso2, count}` rows; KP is a plain row) | PR #13 Group J |
 
 Total: **8 interactions** across **7 endpoints**.

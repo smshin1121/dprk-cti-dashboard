@@ -28,6 +28,12 @@
  *   trend:         { buckets: [{month: "YYYY-MM", count}] }
  *   geo:           { countries: [{iso2: string(len=2), count}] }
  *
+ * The analytics interactions deliberately omit `group_id` from the
+ * wire — the FE runtime does send it, but encoding a specific id
+ * into the contract couples the pact to a DB-assigned row id the
+ * provider-state handler does not guarantee. See the per-describe
+ * block docstrings (Codex R1 P2 note) for detail.
+ *
  * `/reports` + `/incidents` interactions remain FE-types-only by
  * plan D7 carry-forward; live verify still covers them via the
  * `contract-verify` CI job indirectly through the shared session.
@@ -266,12 +272,25 @@ describe('GET /api/v1/analytics/attack_matrix', () => {
     // BE state handler: `_ensure_attack_matrix_fixture` in
     // `services/api/src/api/routers/pact_states.py`. Seeds
     // TA0001: {T1566: 2, T1190: 1} and TA0002: {T1059: 1} linked
-    // through Lazarus (group_id=1). FE AttackHeatmap sends
+    // through the Lazarus codename row. FE AttackHeatmap sends
     // `top_n=30` by default (DEFAULT_TOP_N locked in Group H).
+    //
+    // WHY NO group_id on this interaction (Codex R1 P2, PR #13):
+    //   The pact was initially written with `group_id=['1']` to
+    //   mirror the FE AttackHeatmap runtime call. BUT the provider-
+    //   state handler only guarantees that Lazarus is SEEDED — it
+    //   does NOT guarantee the DB-assigned group id is 1. On a
+    //   fresh DB with this as the first interaction the id happens
+    //   to be 1, but a reordering (or a future fixture that inserts
+    //   another group first) would produce an empty payload under
+    //   `group_id=1` while the BE + seed would both still be
+    //   correct. Dropping `group_id` decouples the contract from
+    //   provider-side row-id assignment; the D2 row-based shape is
+    //   still fully exercised via the unfiltered aggregator output.
     provider
       .given('seeded attack_matrix dataset and an authenticated analyst session')
       .uponReceiving(
-        'a request for the ATT&CK matrix with date + group filters and top_n',
+        'a request for the ATT&CK matrix with date filter and top_n',
       )
       .withRequest({
         method: 'GET',
@@ -279,7 +298,6 @@ describe('GET /api/v1/analytics/attack_matrix', () => {
         query: {
           date_from: '2026-01-01',
           date_to: '2026-04-18',
-          group_id: ['1'],
           top_n: '30',
         },
       })
@@ -310,7 +328,6 @@ describe('GET /api/v1/analytics/attack_matrix', () => {
       const url = new URL(`${mockServer.url}/api/v1/analytics/attack_matrix`)
       url.searchParams.append('date_from', '2026-01-01')
       url.searchParams.append('date_to', '2026-04-18')
-      url.searchParams.append('group_id', '1')
       url.searchParams.append('top_n', '30')
       const res = await fetch(url.toString())
       expect(res.status).toBe(200)
@@ -340,12 +357,15 @@ describe('GET /api/v1/analytics/attack_matrix', () => {
 describe('GET /api/v1/analytics/trend', () => {
   it('returns monthly-bucket counts matching YYYY-MM for the filter window', async () => {
     // BE state handler: `_ensure_trend_fixture`. Seeds 3 reports
-    // across 2 months (2026-02: 2 reports, 2026-03: 1 report) so
-    // the response has ≥2 buckets even under a group filter.
+    // across 2 months (2026-02: 2 reports, 2026-03: 1 report).
+    // No `group_id` on the wire — see the attack_matrix block for
+    // the Codex R1 P2 rationale (provider-state doesn't guarantee
+    // Lazarus id=1; unfiltered contract still exercises the D2
+    // monthly-bucket shape).
     provider
       .given('seeded trend dataset and an authenticated analyst session')
       .uponReceiving(
-        'a request for the monthly-trend buckets with date + group filters',
+        'a request for the monthly-trend buckets with date filter',
       )
       .withRequest({
         method: 'GET',
@@ -353,7 +373,6 @@ describe('GET /api/v1/analytics/trend', () => {
         query: {
           date_from: '2026-01-01',
           date_to: '2026-04-18',
-          group_id: ['1'],
         },
       })
       .willRespondWith({
@@ -378,7 +397,6 @@ describe('GET /api/v1/analytics/trend', () => {
       const url = new URL(`${mockServer.url}/api/v1/analytics/trend`)
       url.searchParams.append('date_from', '2026-01-01')
       url.searchParams.append('date_to', '2026-04-18')
-      url.searchParams.append('group_id', '1')
       const res = await fetch(url.toString())
       expect(res.status).toBe(200)
       const body = (await res.json()) as {

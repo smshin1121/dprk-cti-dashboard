@@ -4,7 +4,7 @@
   },
   "interactions": [
     {
-      "description": "a request for the ATT&CK matrix with date + group filters and top_n",
+      "description": "a request for the ATT&CK matrix with date filter and top_n",
       "providerStates": [
         {
           "name": "seeded attack_matrix dataset and an authenticated analyst session"
@@ -19,9 +19,6 @@
           ],
           "date_to": [
             "2026-04-18"
-          ],
-          "group_id": [
-            "1"
           ],
           "top_n": [
             "30"
@@ -658,7 +655,7 @@
       }
     },
     {
-      "description": "a request for the monthly-trend buckets with date + group filters",
+      "description": "a request for the monthly-trend buckets with date filter",
       "providerStates": [
         {
           "name": "seeded trend dataset and an authenticated analyst session"
@@ -673,9 +670,6 @@
           ],
           "date_to": [
             "2026-04-18"
-          ],
-          "group_id": [
-            "1"
           ]
         }
       },
