@@ -43,6 +43,23 @@
   },
   "dashboard": {
     "empty": "현재 필터에 해당하는 데이터가 없습니다.",
-    "error": "대시보드 데이터를 불러오지 못했습니다."
+    "error": "대시보드 데이터를 불러오지 못했습니다.",
+    "attackHeatmap": {
+      "title": "ATT&CK 매트릭스",
+      "empty": "현재 필터에 해당하는 ATT&CK 활동이 없습니다.",
+      "clearFilters": "필터 초기화",
+      "showAll": "전체 보기",
+      "showTopN": "상위 {{n}}개 보기",
+      "tacticHeader": "전술",
+      "techniqueHeader": "기법"
+    },
+    "motivationDonut": {
+      "title": "동기별 사건",
+      "empty": "분석할 동기 데이터가 없습니다."
+    },
+    "yearBar": {
+      "title": "연도별 보고서",
+      "empty": "분석할 연도 데이터가 없습니다."
+    }
   }
 }
