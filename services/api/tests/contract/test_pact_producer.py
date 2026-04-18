@@ -149,11 +149,38 @@ def test_pact_producer_verifies_consumer_contracts() -> None:
         provider="dprk-cti-api",
         provider_base_url=provider_base_url,
     )
+    # PR #12 Group I — state setup endpoint. The dev/test-only router
+    # registered in `main.py` under `APP_ENV != "prod"` accepts the
+    # verifier's per-interaction POST and seeds DB rows (groups,
+    # codenames, reports, incidents) so the matchers succeed.
+    provider_states_setup_url = (
+        f"{provider_base_url.rstrip('/')}/_pact/provider_states"
+    )
+
+    # Auth is supplied via custom_provider_headers, NOT via cookies
+    # set in the state-change response. pact-ruby's verifier does
+    # NOT forward cookies from state-change responses into
+    # interaction requests; `custom_provider_headers` is the
+    # documented path for static auth. The cookie value is minted
+    # by CI (see `.github/workflows/ci.yml contract-verify` job)
+    # by POSTing to /_pact/provider_states and reading Set-Cookie.
+    session_cookie_env = os.getenv("PACT_SESSION_COOKIE")
+    session_cookie_name = os.getenv(
+        "SESSION_COOKIE_NAME", "dprk_cti_session"
+    )
+    headers: list[str] = []
+    if session_cookie_env:
+        headers.append(
+            f"Cookie: {session_cookie_name}={session_cookie_env}"
+        )
+
     failures: list[str] = []
     for pact_file in pacts:
         exit_code, _logs = verifier.verify_pacts(
             str(pact_file),
             verbose=True,
+            provider_states_setup_url=provider_states_setup_url,
+            headers=headers,
         )
         if exit_code != 0:
             failures.append(f"{pact_file.name} → exit {exit_code}")

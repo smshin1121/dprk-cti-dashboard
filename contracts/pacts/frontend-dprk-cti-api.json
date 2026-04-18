@@ -1,0 +1,561 @@
+{
+  "consumer": {
+    "name": "frontend"
+  },
+  "interactions": [
+    {
+      "description": "a request for the actors list (first page)",
+      "providerStates": [
+        {
+          "name": "seeded actors and an authenticated session"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/actors",
+        "query": {
+          "limit": [
+            "50"
+          ],
+          "offset": [
+            "0"
+          ]
+        }
+      },
+      "response": {
+        "body": {
+          "items": [
+            {
+              "aka": [
+                "APT38"
+              ],
+              "codenames": [
+                "Andariel"
+              ],
+              "description": "DPRK-attributed group",
+              "id": 3,
+              "mitre_intrusion_set_id": "G0032",
+              "name": "Lazarus Group"
+            }
+          ],
+          "limit": 50,
+          "offset": 0,
+          "total": 12
+        },
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "matchingRules": {
+          "body": {
+            "$": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.items": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type",
+                  "min": 1
+                }
+              ]
+            },
+            "$.items[*].aka": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type",
+                  "min": 1
+                }
+              ]
+            },
+            "$.items[*].codenames": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type",
+                  "min": 1
+                }
+              ]
+            },
+            "$.items[*].description": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.items[*].id": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "integer"
+                }
+              ]
+            },
+            "$.items[*].mitre_intrusion_set_id": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.items[*].name": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.limit": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "integer"
+                }
+              ]
+            },
+            "$.offset": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "integer"
+                }
+              ]
+            },
+            "$.total": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "integer"
+                }
+              ]
+            }
+          }
+        },
+        "status": 200
+      }
+    },
+    {
+      "description": "a request for the actors list (second page)",
+      "providerStates": [
+        {
+          "name": "seeded actors with at least 100 rows and an authenticated session"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/actors",
+        "query": {
+          "limit": [
+            "50"
+          ],
+          "offset": [
+            "50"
+          ]
+        }
+      },
+      "response": {
+        "body": {
+          "items": [
+            {
+              "aka": [
+                "alias"
+              ],
+              "codenames": [
+                "codename"
+              ],
+              "description": "description",
+              "id": 99,
+              "mitre_intrusion_set_id": "G9999",
+              "name": "Some Actor"
+            }
+          ],
+          "limit": 50,
+          "offset": 50,
+          "total": 120
+        },
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "matchingRules": {
+          "body": {
+            "$": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.items": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type",
+                  "min": 1
+                }
+              ]
+            },
+            "$.items[*].aka": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type",
+                  "min": 1
+                }
+              ]
+            },
+            "$.items[*].codenames": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type",
+                  "min": 1
+                }
+              ]
+            },
+            "$.items[*].description": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.items[*].id": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "integer"
+                }
+              ]
+            },
+            "$.items[*].mitre_intrusion_set_id": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.items[*].name": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.limit": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "integer"
+                }
+              ]
+            },
+            "$.offset": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "integer"
+                }
+              ]
+            },
+            "$.total": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "integer"
+                }
+              ]
+            }
+          }
+        },
+        "status": 200
+      }
+    },
+    {
+      "description": "a request for the current user",
+      "providerStates": [
+        {
+          "name": "an authenticated analyst session"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/auth/me"
+      },
+      "response": {
+        "body": {
+          "email": "analyst@dprk.test",
+          "name": "Jane Analyst",
+          "roles": [
+            "analyst"
+          ],
+          "sub": "kc-uuid-analyst"
+        },
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "matchingRules": {
+          "body": {
+            "$": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.email": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.name": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.roles": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type",
+                  "min": 1
+                }
+              ]
+            },
+            "$.sub": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          }
+        },
+        "status": 200
+      }
+    },
+    {
+      "description": "a request for the dashboard summary with filters",
+      "providerStates": [
+        {
+          "name": "seeded reports/incidents/actors and an authenticated analyst session"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/dashboard/summary",
+        "query": {
+          "date_from": [
+            "2026-01-01"
+          ],
+          "date_to": [
+            "2026-04-18"
+          ],
+          "group_id": [
+            "1",
+            "3"
+          ]
+        }
+      },
+      "response": {
+        "body": {
+          "incidents_by_motivation": [
+            {
+              "count": 81,
+              "motivation": "financial"
+            }
+          ],
+          "reports_by_year": [
+            {
+              "count": 318,
+              "year": 2024
+            }
+          ],
+          "top_groups": [
+            {
+              "group_id": 3,
+              "name": "Lazarus Group",
+              "report_count": 412
+            }
+          ],
+          "total_actors": 12,
+          "total_incidents": 154,
+          "total_reports": 1204
+        },
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "matchingRules": {
+          "body": {
+            "$": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.incidents_by_motivation": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type",
+                  "min": 1
+                }
+              ]
+            },
+            "$.incidents_by_motivation[*].count": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "integer"
+                }
+              ]
+            },
+            "$.incidents_by_motivation[*].motivation": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.reports_by_year": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type",
+                  "min": 1
+                }
+              ]
+            },
+            "$.reports_by_year[*].count": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "integer"
+                }
+              ]
+            },
+            "$.reports_by_year[*].year": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "integer"
+                }
+              ]
+            },
+            "$.top_groups": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type",
+                  "min": 1
+                }
+              ]
+            },
+            "$.top_groups[*].group_id": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "integer"
+                }
+              ]
+            },
+            "$.top_groups[*].name": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.top_groups[*].report_count": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "integer"
+                }
+              ]
+            },
+            "$.total_actors": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "integer"
+                }
+              ]
+            },
+            "$.total_incidents": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "integer"
+                }
+              ]
+            },
+            "$.total_reports": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "integer"
+                }
+              ]
+            }
+          }
+        },
+        "status": 200
+      }
+    },
+    {
+      "description": "a request to log out",
+      "providerStates": [
+        {
+          "name": "an authenticated analyst session"
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/auth/logout"
+      },
+      "response": {
+        "status": 204
+      }
+    }
+  ],
+  "metadata": {
+    "pact-js": {
+      "version": "16.3.0"
+    },
+    "pactRust": {
+      "ffi": "0.5.3",
+      "models": "1.3.9"
+    },
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  },
+  "provider": {
+    "name": "dprk-cti-api"
+  }
+}

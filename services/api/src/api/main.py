@@ -26,6 +26,7 @@ from .routers import (
     incidents,
     ingest,
     meta,
+    pact_states,
     reports,
     search,
     staging,
@@ -183,6 +184,21 @@ app.include_router(
     tags=["export"],
     dependencies=[Depends(verify_token)],
 )
+
+
+# ---------------------------------------------------------------------------
+# Pact provider-state handler — dev/test envs only.
+# Registering in prod would expose an unauthenticated session minter;
+# the APP_ENV guard scopes it to the contract-verify CI job and local
+# devs reproducing that suite.
+# ---------------------------------------------------------------------------
+if _settings.app_env != "prod":
+    app.include_router(
+        pact_states.router,
+        prefix="/_pact/provider_states",
+        tags=["pact-states-dev-only"],
+        include_in_schema=False,
+    )
 
 
 @app.get("/healthz", tags=["ops"])

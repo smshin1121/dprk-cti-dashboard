@@ -1,0 +1,168 @@
+/**
+ * Design tokens (plan D4 lock).
+ *
+ * Two layers:
+ *
+ * 1. **Surface + text + accent** — semantic tokens the app's own
+ *    components read via Tailwind utilities (`bg-app`, `text-ink`,
+ *    `border-card`, etc.). These flip between light/dark modes.
+ *
+ * 2. **shadcn tokens** (primary, secondary, destructive, muted,
+ *    accent, popover, card, border, input, ring, radius) — kept in
+ *    their original shape from the existing scaffold so any future
+ *    shadcn-family components drop in without reworking the token
+ *    system. Their values also flip for dark mode.
+ *
+ * Theme switching
+ * ---------------
+ * The `useThemeStore` writes one of three values to
+ * `html[data-theme]`:
+ *   - `light` → matches `:root` (default)
+ *   - `dark`  → matches `[data-theme="dark"]`
+ *   - `system` → matches `[data-theme="system"]` which uses a CSS
+ *     media query to pick light vs. dark at paint time
+ *
+ * The `[data-theme="system"]` rule means a user's OS-level
+ * preference changes are reflected WITHOUT JavaScript re-rendering
+ * — CSS handles the switch. The JS layer only needs to persist
+ * the selection.
+ *
+ * FOUC prevention
+ * ---------------
+ * An inline `<script>` in `index.html` reads localStorage + the OS
+ * preference BEFORE React hydrates and sets `data-theme` on the
+ * `<html>` element. Without that, the first paint uses `:root`
+ * defaults (light) even if the user's preference is dark, then
+ * flashes to dark when the React store mounts. The inline script
+ * is small (< 500 bytes minified) and runs synchronously.
+ */
+
+@layer base {
+  :root {
+    /* Semantic surface + text + accent (HSL triples; consumed via
+     * Tailwind utilities like `bg-app`, `text-ink`, `border-card`). */
+    --app-bg: 210 20% 96%;
+    --surface: 0 0% 100%;
+    --surface-elevated: 0 0% 100%;
+    --ink: 210 44% 13%;
+    --ink-muted: 215 16% 47%;
+    --ink-subtle: 215 20% 65%;
+    --border-card: 206 28% 88%;
+    --border-strong: 214 32% 82%;
+    --signal: 18 61% 48%;
+    --signal-hover: 18 61% 42%;
+    --signal-fg: 0 0% 100%;
+    --focus-ring: 18 61% 48%;
+
+    /* CTI brand aliases (back-compat with pre-Group-C Tailwind classes
+     * `text-ink`, `border-grid` — grid == border-card now). */
+    --grid: 206 28% 88%;
+
+    /* shadcn compatibility tokens (unchanged semantics). */
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+    --primary: 222.2 47.4% 11.2%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 210 40% 96.1%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 222.2 84% 4.9%;
+    --radius: 0.5rem;
+  }
+
+  /* Explicit dark palette. Selected via html[data-theme="dark"] and
+   * also inside the "system" media-query branch below, so one set of
+   * overrides covers both paths. */
+  [data-theme='dark'] {
+    --app-bg: 222 47% 6%;
+    --surface: 217 32% 12%;
+    --surface-elevated: 217 32% 16%;
+    --ink: 210 40% 98%;
+    --ink-muted: 215 20% 75%;
+    --ink-subtle: 215 20% 55%;
+    --border-card: 217 32% 22%;
+    --border-strong: 217 32% 32%;
+    --signal: 18 80% 62%;
+    --signal-hover: 18 80% 68%;
+    --signal-fg: 222 47% 6%;
+    --focus-ring: 18 80% 62%;
+    --grid: 217 32% 22%;
+
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 210 40% 98%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 212.7 26.8% 83.9%;
+  }
+
+  /* System mode: same tokens, picked by media query. No JS needed
+   * to react to an OS-level change while the user has "system"
+   * selected — the media query fires on preference change. */
+  [data-theme='system'] {
+    /* Default to the light set (`:root` values already apply). The
+     * dark branch below overrides when the OS prefers dark. */
+  }
+
+  @media (prefers-color-scheme: dark) {
+    [data-theme='system'] {
+      --app-bg: 222 47% 6%;
+      --surface: 217 32% 12%;
+      --surface-elevated: 217 32% 16%;
+      --ink: 210 40% 98%;
+      --ink-muted: 215 20% 75%;
+      --ink-subtle: 215 20% 55%;
+      --border-card: 217 32% 22%;
+      --border-strong: 217 32% 32%;
+      --signal: 18 80% 62%;
+      --signal-hover: 18 80% 68%;
+      --signal-fg: 222 47% 6%;
+      --focus-ring: 18 80% 62%;
+      --grid: 217 32% 22%;
+
+      --background: 222.2 84% 4.9%;
+      --foreground: 210 40% 98%;
+      --card: 222.2 84% 4.9%;
+      --card-foreground: 210 40% 98%;
+      --popover: 222.2 84% 4.9%;
+      --popover-foreground: 210 40% 98%;
+      --primary: 210 40% 98%;
+      --primary-foreground: 222.2 47.4% 11.2%;
+      --secondary: 217.2 32.6% 17.5%;
+      --secondary-foreground: 210 40% 98%;
+      --muted: 217.2 32.6% 17.5%;
+      --muted-foreground: 215 20.2% 65.1%;
+      --accent: 217.2 32.6% 17.5%;
+      --accent-foreground: 210 40% 98%;
+      --destructive: 0 62.8% 30.6%;
+      --destructive-foreground: 210 40% 98%;
+      --border: 217.2 32.6% 17.5%;
+      --input: 217.2 32.6% 17.5%;
+      --ring: 212.7 26.8% 83.9%;
+    }
+  }
+}
