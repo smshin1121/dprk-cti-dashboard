@@ -1,11 +1,18 @@
 /**
  * Pact consumer test — frontend ↔ dprk-cti-api.
  *
- * Plan §4 Group H + §5.3, D8 lock. Six interactions across four
- * endpoints (the "four interactions" in §5.3 refers to the four
- * endpoints; sub-cases per endpoint are listed in D8):
+ * Plan §4 Group H + §5.3, D8 lock. Four endpoints; the
+ * `/api/v1/auth/me 401` sub-case in D8 is covered by the FE unit
+ * test `useMe.test.tsx::surfaces ApiError 401 as null cached data`
+ * (it pins the queryCache onError handler end-to-end). It is NOT
+ * included in the consumer pact because pact-ruby's verifier
+ * applies `custom_provider_headers` (the auth cookie) to every
+ * interaction in a single run, which would authenticate the 401
+ * request and fail the contract. The 401 path is a FE-side cache
+ * behavior contract, not an HTTP-shape contract, so Vitest is the
+ * right home.
  *
- *   /api/v1/auth/me          — happy (200) + missing-session (401)
+ *   /api/v1/auth/me          — happy (200)
  *   /api/v1/dashboard/summary — happy (200) with date+group filters
  *   /api/v1/actors            — first page + offset pagination
  *   /api/v1/auth/logout       — 204
@@ -83,25 +90,11 @@ describe('GET /api/v1/auth/me', () => {
     })
   })
 
-  it('returns 401 when no valid session cookie is present', async () => {
-    provider
-      .given('no valid session cookie')
-      .uponReceiving('a request for the current user without a session')
-      .withRequest({
-        method: 'GET',
-        path: '/api/v1/auth/me',
-      })
-      .willRespondWith({
-        status: 401,
-        headers: { 'Content-Type': 'application/json' },
-        body: like({ detail: string('not authenticated') }),
-      })
-
-    await provider.executeTest(async (mockServer) => {
-      const res = await fetch(`${mockServer.url}/api/v1/auth/me`)
-      expect(res.status).toBe(401)
-    })
-  })
+  // 401 case intentionally NOT included — see file header. The
+  // `useMe.test.tsx::surfaces ApiError 401 as null cached data via
+  // queryCache handler` unit test covers the FE cache-eviction
+  // contract end-to-end without requiring the live verifier to
+  // toggle auth state mid-run.
 })
 
 // ---------------------------------------------------------------------

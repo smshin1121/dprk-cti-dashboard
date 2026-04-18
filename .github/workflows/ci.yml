@@ -200,7 +200,12 @@ jobs:
       - name: Run pytest with coverage gate
         working-directory: services/api
         run: |
+          # tests/contract is covered by the dedicated contract-verify
+          # job (which boots pg+redis+uvicorn). Running them here too
+          # would fire the PACT_PROVIDER_BASE_URL fail-loud test
+          # against an unset env (plan D7 design) and red this job.
           uv run pytest \
+            --ignore=tests/contract \
             --cov=src/api \
             --cov-report=term-missing \
             --cov-report=xml:coverage.xml \
@@ -497,6 +502,29 @@ jobs:
           echo "uvicorn did not come up in 20s"
           cat uvicorn.log || true
           exit 1
+      # pact-ruby does NOT forward cookies from the state-change
+      # response to interaction requests. Auth must be a static
+      # custom_provider_header. Mint the session once here (via the
+      # same /_pact/provider_states endpoint the state setup uses —
+      # drift-free with the handler) and export the Cookie value for
+      # the verifier to inject.
+      - name: Pre-mint session cookie for verifier headers
+        run: |
+          headers=$(curl -s -D - \
+            -X POST http://127.0.0.1:8000/_pact/provider_states \
+            -H 'Content-Type: application/json' \
+            -d '{"state": "an authenticated analyst session"}')
+          cookie=$(printf '%s\n' "$headers" \
+            | grep -i '^set-cookie:' \
+            | head -1 \
+            | sed -E 's/^[Ss]et-[Cc]ookie: *[^=]+=([^;]+).*$/\1/')
+          if [ -z "$cookie" ]; then
+            echo "failed to mint session cookie"
+            echo "--- response ---"
+            echo "$headers"
+            exit 1
+          fi
+          echo "PACT_SESSION_COOKIE=$cookie" >> "$GITHUB_ENV"
       - name: Run Pact producer verifier against live uvicorn
         working-directory: services/api
         env:

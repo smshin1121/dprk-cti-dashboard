@@ -355,47 +355,6 @@
       }
     },
     {
-      "description": "a request for the current user without a session",
-      "providerStates": [
-        {
-          "name": "no valid session cookie"
-        }
-      ],
-      "request": {
-        "method": "GET",
-        "path": "/api/v1/auth/me"
-      },
-      "response": {
-        "body": {
-          "detail": "not authenticated"
-        },
-        "headers": {
-          "Content-Type": "application/json"
-        },
-        "matchingRules": {
-          "body": {
-            "$": {
-              "combine": "AND",
-              "matchers": [
-                {
-                  "match": "type"
-                }
-              ]
-            },
-            "$.detail": {
-              "combine": "AND",
-              "matchers": [
-                {
-                  "match": "type"
-                }
-              ]
-            }
-          }
-        },
-        "status": 401
-      }
-    },
-    {
       "description": "a request for the dashboard summary with filters",
       "providerStates": [
         {
