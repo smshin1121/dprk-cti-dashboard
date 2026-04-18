@@ -27,8 +27,13 @@ provider app reachable over HTTP. For baseline we assume it is run
 against a live uvicorn process (CI job does this; local devs can
 point ``PACT_PROVIDER_BASE_URL`` at their running dev stack). When
 ``PACT_PROVIDER_BASE_URL`` is unset AND pact files exist, the test
-xfails with a clear TODO rather than a bare ImportError — telling the
-next-PR author exactly what's missing.
+**fails loudly** (``pytest.fail``). The earlier draft used
+``pytest.xfail`` here but that counts as green on CI — a consumer
+pact file could land without the provider-URL wiring and the
+``contract-verify`` job would still pass, defeating the whole
+fail-fast posture locked by plan D7 ("consumer 생기면 자동으로
+verify path로 전환"). A missing provider URL when a contract exists
+is a real wiring regression; it MUST surface red.
 """
 
 from __future__ import annotations
@@ -106,9 +111,10 @@ def test_pact_producer_verifies_consumer_contracts() -> None:
     provider base URL comes from ``PACT_PROVIDER_BASE_URL``, which
     CI sets after booting a uvicorn subprocess; local devs point it
     at their dev-compose stack. When ``PACT_PROVIDER_BASE_URL`` is
-    unset AND files exist, the test xfails with an explicit TODO
-    so the next-PR author has a single, obvious place to wire up
-    the verifier subprocess.
+    unset AND files exist, the test **fails** (not xfails) — xfail
+    counts as green on CI and would silently bypass the verify path
+    the moment FE ships a pact file. Loud red is the correct posture:
+    contract present without wiring = wiring regression.
     """
     pacts = _list_pact_files()
     if not pacts:
@@ -119,12 +125,15 @@ def test_pact_producer_verifies_consumer_contracts() -> None:
 
     provider_base_url = os.getenv("PACT_PROVIDER_BASE_URL")
     if not provider_base_url:
-        pytest.xfail(
-            "consumer contract(s) present but PACT_PROVIDER_BASE_URL "
-            "is unset. Wire up a uvicorn subprocess in CI (see "
-            "contracts/pacts/README.md) and set PACT_PROVIDER_BASE_URL "
-            "to http://127.0.0.1:<port>. This xfail → pass flip is the "
-            "single remaining step; no harness edit needed."
+        pytest.fail(
+            "Consumer contract(s) present but PACT_PROVIDER_BASE_URL "
+            "is unset — contract-verify cannot run. Boot a uvicorn "
+            "subprocess in the `contract-verify` CI job (see "
+            "contracts/pacts/README.md) and export "
+            "`PACT_PROVIDER_BASE_URL=http://127.0.0.1:<port>` before "
+            "this test runs. Plan D7 locks that a committed pact "
+            "file must trigger real verification, not a green skip.",
+            pytrace=False,
         )
 
     pact = pytest.importorskip(
@@ -153,3 +162,38 @@ def test_pact_producer_verifies_consumer_contracts() -> None:
         "Pact producer verification failed for:\n  "
         + "\n  ".join(failures)
     )
+
+
+def test_missing_provider_url_with_pacts_present_fails_loudly(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression guard: if a consumer pact file is present and
+    ``PACT_PROVIDER_BASE_URL`` is unset, the verifier test must
+    **fail** (red CI), never skip or xfail (green CI).
+
+    An earlier draft used ``pytest.xfail`` for this branch. xfail
+    counts as a passing outcome on CI, which would let a consumer
+    contract file silently land without the provider-URL wiring ever
+    being completed — the worst possible failure mode for a contract
+    gate. This test stubs ``_list_pact_files`` to simulate "pact file
+    exists", unsets the env var, invokes the verifier test directly,
+    and asserts that ``_pytest.outcomes.Failed`` is raised.
+
+    If a future refactor downgrades the branch back to ``pytest.xfail``
+    or ``pytest.skip``, this test flips to failing — preserving the
+    fail-fast posture locked by plan D7.
+    """
+    from _pytest.outcomes import Failed
+
+    monkeypatch.delenv("PACT_PROVIDER_BASE_URL", raising=False)
+    monkeypatch.setattr(
+        "tests.contract.test_pact_producer._list_pact_files",
+        lambda: [Path("contracts/pacts/frontend-dprk-cti-api.json")],
+    )
+
+    with pytest.raises(Failed) as exc_info:
+        test_pact_producer_verifies_consumer_contracts()
+
+    # Message content pin — the failure must point the next-PR author
+    # at the wiring step, not just say "failed".
+    assert "PACT_PROVIDER_BASE_URL" in str(exc_info.value)
