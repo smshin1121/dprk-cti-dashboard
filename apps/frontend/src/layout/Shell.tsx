@@ -19,6 +19,7 @@
 import { NavLink, Outlet } from 'react-router-dom'
 
 import { ThemeToggle } from '../components/ThemeToggle'
+import { FilterBar } from './FilterBar'
 
 const NAV_ITEMS = [
   { to: '/dashboard', label: 'Dashboard' },
@@ -54,6 +55,7 @@ export function Shell(): JSX.Element {
         </nav>
         <ThemeToggle />
       </header>
+      <FilterBar />
       <main data-testid="shell-main" className="flex-1">
         <Outlet />
       </main>
