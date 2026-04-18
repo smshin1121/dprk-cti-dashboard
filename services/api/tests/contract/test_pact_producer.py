@@ -149,11 +149,21 @@ def test_pact_producer_verifies_consumer_contracts() -> None:
         provider="dprk-cti-api",
         provider_base_url=provider_base_url,
     )
+    # PR #12 Group I — state setup endpoint. The dev/test-only router
+    # registered in `main.py` under `APP_ENV != "prod"` accepts the
+    # verifier's per-interaction POST and returns a Set-Cookie the
+    # pact-ruby runtime reuses for the subsequent real request.
+    # Without this URL, authenticated interactions (/auth/me 200,
+    # /dashboard/summary, /actors) would receive 401 and fail.
+    provider_states_setup_url = (
+        f"{provider_base_url.rstrip('/')}/_pact/provider_states"
+    )
     failures: list[str] = []
     for pact_file in pacts:
         exit_code, _logs = verifier.verify_pacts(
             str(pact_file),
             verbose=True,
+            provider_states_setup_url=provider_states_setup_url,
         )
         if exit_code != 0:
             failures.append(f"{pact_file.name} → exit {exit_code}")

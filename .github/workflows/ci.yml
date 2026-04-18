@@ -270,6 +270,53 @@ jobs:
   # -------------------------------------------------------------------------
   contract-verify:
     runs-on: ubuntu-latest
+    # PR #12 Group I: flipped from skip-with-ok to live verify.
+    # Boots real PG + Redis + uvicorn, exports PACT_PROVIDER_BASE_URL,
+    # and runs pact-python's Verifier against the FE consumer pact at
+    # contracts/pacts/frontend-dprk-cti-api.json. Provider states
+    # resolve through the dev-only POST /_pact/provider_states
+    # endpoint (registered under APP_ENV != "prod" in main.py;
+    # prod-guard pinned by tests/contract/test_pact_states_prod_guard.py).
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: dprk_cti_pact
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      ALEMBIC_DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/dprk_cti_pact
+      # Uvicorn consumes the async URL at runtime.
+      DATABASE_URL: postgresql+psycopg_async://postgres:postgres@localhost:5432/dprk_cti_pact
+      REDIS_URL: redis://localhost:6379/0
+      RATE_LIMIT_STORAGE_URL: redis://localhost:6379/1
+      APP_ENV: dev
+      JWT_SECRET: pact-verify-secret-at-least-32-chars-long
+      OIDC_CLIENT_ID: dprk-cti
+      OIDC_CLIENT_SECRET: pact-verify-oidc-secret
+      OIDC_ISSUER_URL: http://keycloak.test/realms/dprk
+      OIDC_REDIRECT_BASE_URL: http://localhost:8000
+      SESSION_SIGNING_KEY: pact-verify-signing-key-at-least-32-chars
+      SESSION_COOKIE_NAME: dprk_cti_session
+      SESSION_COOKIE_SECURE: "false"
+      SESSION_COOKIE_SAMESITE: lax
+      CORS_ORIGINS: http://localhost:3000
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v4
@@ -279,9 +326,42 @@ jobs:
       - name: Sync api dev dependencies (includes pact-python)
         working-directory: services/api
         run: uv sync
-      - name: Run Pact producer verifier harness
+      - name: Run alembic upgrade head
+        run: uv run --project services/api alembic -c db/alembic.ini upgrade head
+      - name: Boot uvicorn in the background
         working-directory: services/api
+        run: |
+          uv run uvicorn api.main:app --host 127.0.0.1 --port 8000 \
+            --log-level warning > ../../uvicorn.log 2>&1 &
+          echo $! > ../../uvicorn.pid
+      - name: Wait for /healthz
+        run: |
+          for i in $(seq 1 40); do
+            if curl -sf http://127.0.0.1:8000/healthz >/dev/null 2>&1; then
+              echo "uvicorn up"
+              exit 0
+            fi
+            sleep 0.5
+          done
+          echo "uvicorn did not come up in 20s"
+          cat uvicorn.log || true
+          exit 1
+      - name: Run Pact producer verifier against live uvicorn
+        working-directory: services/api
+        env:
+          PACT_PROVIDER_BASE_URL: http://127.0.0.1:8000
         run: uv run pytest tests/contract -v
+      - name: Surface uvicorn log on failure
+        if: failure()
+        run: |
+          echo "=== uvicorn.log ==="
+          cat uvicorn.log || echo "(no log)"
+      - name: Stop uvicorn
+        if: always()
+        run: |
+          if [ -f uvicorn.pid ]; then
+            kill "$(cat uvicorn.pid)" 2>/dev/null || true
+          fi
 
   # -------------------------------------------------------------------------
   # api-integration — PR #10 Phase 2.1 Group H

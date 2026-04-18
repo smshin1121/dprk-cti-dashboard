@@ -47,15 +47,25 @@ failure, which is the intended fail-fast posture per plan D7.
 
 ## Provider states declared by these tests
 
-| State name                                                             | Meaning                                              |
-|:-----------------------------------------------------------------------|:-----------------------------------------------------|
-| `an authenticated analyst session`                                     | Valid signed session cookie present, role=analyst    |
-| `no valid session cookie`                                              | No cookie / expired cookie — `/auth/me` returns 401  |
-| `seeded reports/incidents/actors and an authenticated analyst session` | DB has rows for the dashboard aggregator             |
-| `seeded actors and an authenticated session`                           | DB has at least one actor row                        |
-| `seeded actors with at least 100 rows and an authenticated session`    | Actors > one page (PAGE_SIZE=50) so offset works     |
+Handlers live in `services/api/src/api/routers/pact_states.py` and
+mount at `POST /_pact/provider_states` when `APP_ENV != "prod"` (the
+prod guard is pinned by
+`services/api/tests/contract/test_pact_states_prod_guard.py`). The
+producer verifier harness in
+`services/api/tests/contract/test_pact_producer.py` passes
+`provider_states_setup_url` so pact-ruby POSTs each state before
+replaying its interaction.
 
-PR #11 baseline does not implement provider state handlers in the
-verifier. The handlers can be added incrementally; until they exist
-the producer test passes by virtue of stable test fixtures + the
-same shapes the BE returns under any analyst session.
+| State name                                                             | Handler behavior                                     |
+|:-----------------------------------------------------------------------|:-----------------------------------------------------|
+| `an authenticated analyst session`                                     | Mints a Redis session + returns `Set-Cookie` so the follow-up request authenticates |
+| `no valid session cookie`                                              | No-op — the follow-up `/auth/me` call reaches the 401 path |
+| `seeded reports/incidents/actors and an authenticated analyst session` | Ensures a group row + mints a session. Dashboard aggregator returns tolerable integers (matchers are shape-only). |
+| `seeded actors and an authenticated session`                           | Upserts `Lazarus Group` + mints a session            |
+| `seeded actors with at least 100 rows and an authenticated session`    | Idempotently seeds `pact-fixture-group-NNNN` rows up to 100 so offset=50 lands on a non-empty second page |
+
+Extending this list is PR-local: add a new `.given(...)` string in
+the FE pact test, add a matching branch in `pact_states.py`, and the
+verifier picks it up on the next run. Unknown states fall through to
+"mint an analyst session" so typos don't silently authenticate as
+an unintended role.
