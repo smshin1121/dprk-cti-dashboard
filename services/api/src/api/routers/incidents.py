@@ -5,7 +5,9 @@ Plan §2.3 matrix:
 - filters: ``date_from`` / ``date_to``, ``motivation[]`` / ``sector[]``
   / ``country[]`` (D5, repeatable = OR inside, AND across)
 - RBAC: 5-role inherited lock
-- rate-limit 60/min/user attached in Group H
+- rate-limit: 60/min/user read bucket attached in Group H
+  (independent of /actors, /reports GET, /dashboard buckets —
+  slowapi scopes per decorated route)
 
 Country filter enforces ISO 3166-1 alpha-2 at the Query layer (plan
 D12 — invalid filter values cannot silently ignore). Validator
@@ -19,7 +21,7 @@ import re
 from datetime import date
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import JSONResponse, Response
 from pydantic import AfterValidator
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -27,12 +29,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..auth.schemas import CurrentUser
 from ..db import get_db
 from ..deps import require_role
+from ..rate_limit import get_limiter
 from ..read import repositories as read_repositories
 from ..read.pagination import CursorDecodeError, decode_cursor, encode_cursor
 from ..schemas.read import IncidentItem, IncidentListResponse
 
 router = APIRouter()
 
+
+# PR #11 Group H — 60/min/user read bucket (see module docstring).
+_limiter = get_limiter()
 
 # Plan "Inherited locks" / §9.3 RBAC matrix. Shared across PR #11
 # read endpoints — actors / reports / incidents / dashboard.
@@ -137,11 +143,25 @@ def _validate_iso_alpha2(items: list[str] | None) -> list[str] | None:
             )
         },
         429: {
-            "description": "Rate limit 60/min/user exceeded (attached in Group H)."
+            "description": (
+                "Rate limit exceeded — 60/min/user read bucket (plan D2). "
+                "Per-route bucket, independent of the other three read "
+                "endpoints (slowapi scopes per decorated route)."
+            ),
+            "content": {
+                "application/json": {
+                    "example": {
+                        "error": "rate_limit_exceeded",
+                        "message": "60 per 1 minute",
+                    }
+                }
+            },
         },
     },
 )
+@_limiter.limit("60/minute")
 async def list_incidents_endpoint(
+    request: Request,
     date_from: Annotated[date | None, Query()] = None,
     date_to: Annotated[date | None, Query()] = None,
     motivation: Annotated[

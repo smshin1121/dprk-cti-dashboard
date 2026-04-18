@@ -292,9 +292,49 @@ async def callback(
     return response
 
 
-@router.get("/me", response_model=CurrentUser)
-async def me(user: CurrentUser = Depends(verify_token)) -> CurrentUser:
-    """Return the current authenticated user (401 if no/expired session)."""
+@router.get(
+    "/me",
+    response_model=CurrentUser,
+    responses={
+        401: {"description": "Missing or expired session cookie"},
+        429: {
+            "description": (
+                "Rate limit exceeded — 60/min/user read bucket (plan D2 / "
+                "Group H). /auth/me shares the read-bucket policy with "
+                "the four list endpoints but keeps its own per-route "
+                "counter. Body stays JSON (not redirect) so the FE "
+                "session-probe loop can branch on 429 the same way as "
+                "any other read call."
+            ),
+            "content": {
+                "application/json": {
+                    "example": {
+                        "error": "rate_limit_exceeded",
+                        "message": "60 per 1 minute",
+                    }
+                }
+            },
+        },
+    },
+)
+@_limiter.limit("60/minute")
+async def me(
+    request: Request,
+    user: CurrentUser = Depends(verify_token),
+) -> CurrentUser:
+    """Return the current authenticated user (401 if no/expired session).
+
+    The DTO (``CurrentUser``) is unchanged by Group H — only the
+    60/min decorator is added. slowapi's middleware runs BEFORE
+    FastAPI resolves ``verify_token``, so:
+
+    - Authenticated caller → session-cookie bucket
+    - No cookie → client-IP bucket (still rate-limited, then 401)
+    - Over limit → 429 without re-running ``verify_token``
+
+    Behaviour is consistent with the four read endpoints; same
+    bucket policy, same 429 body shape.
+    """
     return user
 
 

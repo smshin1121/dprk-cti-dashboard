@@ -131,10 +131,26 @@ def _reject_empty_items(items: list[str] | None) -> list[str] | None:
                 "uniform 422 with no silent ignore."
             )
         },
-        429: {"description": "Rate limit 60/min/user exceeded (attached in Group H)."},
+        429: {
+            "description": (
+                "Rate limit exceeded — 60/min/user read bucket (plan D2). "
+                "Per-route bucket: draining this does NOT consume the "
+                "/reports POST-review 30/min mutation bucket."
+            ),
+            "content": {
+                "application/json": {
+                    "example": {
+                        "error": "rate_limit_exceeded",
+                        "message": "60 per 1 minute",
+                    }
+                }
+            },
+        },
     },
 )
+@_limiter.limit("60/minute")
 async def list_reports_endpoint(
+    request: Request,
     q: Annotated[str | None, Query(min_length=1)] = None,
     tag: Annotated[
         list[str] | None, Query(), AfterValidator(_reject_empty_items)

@@ -19,18 +19,25 @@ from __future__ import annotations
 from datetime import date
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from pydantic import AfterValidator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth.schemas import CurrentUser
 from ..db import get_db
 from ..deps import require_role
+from ..rate_limit import get_limiter
 from ..read.dashboard_aggregator import compute_dashboard_summary
 from ..schemas.read import DashboardSummary
 
 router = APIRouter()
 
+
+# PR #11 Group H — 60/min/user read bucket (see module docstring in
+# rate_limit.py). The aggregate query itself is the same six-query
+# composition regardless of rate-limit decoration — shape of the
+# DashboardSummary DTO is unchanged.
+_limiter = get_limiter()
 
 # Plan "Inherited locks" / §9.3 RBAC matrix — same as the other
 # three PR #11 read endpoints.
@@ -125,10 +132,26 @@ def _validate_group_ids(items: list[int] | None) -> list[int] | None:
                 "negative `group_id`. Plan D12 uniform 422 contract."
             )
         },
-        429: {"description": "Rate limit 60/min/user exceeded (attached in Group H)."},
+        429: {
+            "description": (
+                "Rate limit exceeded — 60/min/user read bucket (plan D2). "
+                "Per-route bucket; aggregate totals/arrays remain "
+                "unaffected by the decorator when under limit."
+            ),
+            "content": {
+                "application/json": {
+                    "example": {
+                        "error": "rate_limit_exceeded",
+                        "message": "60 per 1 minute",
+                    }
+                }
+            },
+        },
     },
 )
+@_limiter.limit("60/minute")
 async def dashboard_summary_endpoint(
+    request: Request,
     date_from: Annotated[date | None, Query()] = None,
     date_to: Annotated[date | None, Query()] = None,
     group_id: Annotated[

@@ -11,26 +11,32 @@ read this endpoint per plan "Inherited locks" and §9.3.
 Filter surface: intentionally empty (plan D5). Detail endpoint
 (``/actors/{id}``) is plan D9 deferred to Phase 3.
 
-Rate limit (plan D2): 60/min/user decoration lands in Group H once
-the slowapi + Redis infrastructure is in place (Group F). This
-module stays rate-limit-unaware so Group F's middleware can attach
-externally without rewriting the handler signature.
+Rate limit (plan D2 / Group H): ``60/minute`` per user bucket via
+``session_or_ip_key`` — same-session cookie → same bucket, no
+cookie → client-IP bucket. Scope is per-decorated-route (slowapi
+semantics), so this endpoint's bucket is independent of the
+/reports / /incidents / /dashboard buckets even for the same user.
 """
 
 from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import get_db
 from ..deps import require_role
+from ..rate_limit import get_limiter
 from ..read import repositories as read_repositories
 from ..schemas.read import ActorItem, ActorListResponse
 
 router = APIRouter()
 
+
+# PR #11 Group H — 60/min/user read bucket. Module-level so the
+# decorator can reference it without re-resolving the lru_cache.
+_limiter = get_limiter()
 
 # Plan "Inherited locks" + §9.3 RBAC matrix: every authenticated
 # role can read the actors list. The same tuple is shared across
@@ -102,14 +108,25 @@ _READ_ROLES = ("analyst", "researcher", "policy", "soc", "admin")
         },
         429: {
             "description": (
-                "Rate limit exceeded (60/min/user). `Retry-After` and "
-                "`X-RateLimit-Remaining` headers present. Attached in "
-                "Group H once slowapi + Redis (Group F) lands."
-            )
+                "Rate limit exceeded — 60/min/user read bucket (plan D2). "
+                "`Retry-After`, `X-RateLimit-Limit`, `X-RateLimit-Remaining` "
+                "headers present. Body is the uniform JSON shape pinned by "
+                "Group G (`api.rate_limit.rate_limit_exceeded_handler`)."
+            ),
+            "content": {
+                "application/json": {
+                    "example": {
+                        "error": "rate_limit_exceeded",
+                        "message": "60 per 1 minute",
+                    }
+                }
+            },
         },
     },
 )
+@_limiter.limit("60/minute")
 async def list_actors_endpoint(
+    request: Request,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
     session: AsyncSession = Depends(get_db),
