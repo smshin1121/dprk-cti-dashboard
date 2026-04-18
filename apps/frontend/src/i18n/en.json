@@ -1,0 +1,90 @@
+{
+  "shell": {
+    "nav": {
+      "dashboard": "Dashboard",
+      "reports": "Reports",
+      "incidents": "Incidents",
+      "actors": "Actors"
+    },
+    "brand": "DPRK CTI",
+    "search": {
+      "placeholder": "Search",
+      "dialogLabel": "Command palette",
+      "emptyLabel": "No matching command.",
+      "inputPlaceholder": "Type a command…"
+    }
+  },
+  "userMenu": {
+    "theme": "Theme",
+    "language": "Language",
+    "signOut": "Sign out",
+    "triggerAriaLabel": "Account menu for {{email}}"
+  },
+  "locale": {
+    "ko": "한국어",
+    "en": "English",
+    "ariaLabel": "Language toggle"
+  },
+  "commands": {
+    "nav.dashboard": "Go to Dashboard",
+    "nav.reports": "Go to Reports",
+    "nav.incidents": "Go to Incidents",
+    "nav.actors": "Go to Actors",
+    "theme.cycle": "Cycle theme (light / dark / system)",
+    "filters.clear": "Clear all filters",
+    "auth.logout": "Sign out"
+  },
+  "list": {
+    "loading": "Loading…",
+    "empty": "No items found.",
+    "error": "Failed to load data.",
+    "retry": "Retry",
+    "rateLimited": "Too many requests. Please slow down."
+  },
+  "dashboard": {
+    "empty": "No data for current filters.",
+    "error": "Failed to load dashboard data.",
+    "attackHeatmap": {
+      "title": "ATT&CK Matrix",
+      "empty": "No ATT&CK activity for current filters.",
+      "clearFilters": "Clear filters",
+      "showAll": "Show all",
+      "showTopN": "Show top {{n}}",
+      "tacticHeader": "Tactic",
+      "techniqueHeader": "Techniques"
+    },
+    "motivationDonut": {
+      "title": "Incidents by Motivation",
+      "empty": "No motivation data to chart."
+    },
+    "yearBar": {
+      "title": "Reports by Year",
+      "empty": "No yearly data to chart."
+    },
+    "trendChart": {
+      "title": "Monthly Report Trend",
+      "empty": "No trend data to chart."
+    },
+    "groupsMiniList": {
+      "title": "Top Groups",
+      "empty": "No groups for current filters.",
+      "reportsSuffix": "reports"
+    },
+    "reportFeed": {
+      "title": "Latest Reports",
+      "empty": "No reports for current filters."
+    },
+    "similarReports": {
+      "title": "Similar Reports",
+      "placeholder": "Available after report detail views land.",
+      "phaseNote": "Phase 3 preview — requires detail endpoints."
+    },
+    "alerts": {
+      "trigger": "Alerts",
+      "title": "Alerts",
+      "empty": "No alerts right now.",
+      "phaseNote": "Phase 4 preview — requires real-time wiring.",
+      "close": "Close"
+    }
+  }
+}

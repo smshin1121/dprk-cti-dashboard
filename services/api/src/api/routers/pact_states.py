@@ -296,6 +296,254 @@ async def _ensure_incident_with_motivation(
     return incident_id
 
 
+# ---------------------------------------------------------------------------
+# PR #13 Group B — analytics fixture helpers
+# ---------------------------------------------------------------------------
+#
+# Three new endpoints (/analytics/attack_matrix, /trend, /geo) land in
+# PR #13 Group A. Group J will add consumer pact interactions for them
+# to ``frontend-dprk-cti-api.pact.test.ts``. Each interaction needs a
+# provider state the BE can seed — these helpers do that.
+#
+# Design principles carried from PR #12 Group I:
+#
+# 1. Every fixture row satisfies the STRICTEST matcher the FE pact
+#    will use for that endpoint. Concretely: every analytics response
+#    array uses ``eachLike(...)`` so the aggregator MUST return a
+#    non-empty list under the pact's filter window; and every sub-
+#    object field must have a non-null value typed correctly.
+# 2. Every helper is idempotent (SELECT-first OR ``ON CONFLICT DO
+#    NOTHING``). The verifier replays state setup before each
+#    interaction, so the same helper can be invoked 3+ times per run.
+# 3. Dates stay inside the committed pact filter window
+#    (``date_from=2026-01-01`` .. ``date_to=2026-04-18``) — seeding
+#    outside the window is the failure mode that burned PR #12
+#    (``06e47e9``) when 2024-* dates were filtered out of eachLike
+#    arrays at verify time.
+
+
+async def _ensure_technique(
+    session: AsyncSession,
+    *,
+    mitre_id: str,
+    name: str,
+    tactic: str,
+) -> int:
+    """Upsert a techniques row. Returns its id.
+
+    ``tactic`` is required here (non-null) because the
+    ``/analytics/attack_matrix`` aggregator drops null-tactic rows —
+    a fixture with a null tactic would never surface in the matrix
+    and would leave the ``rows`` array empty.
+    """
+    existing = (
+        await session.execute(
+            text("SELECT id FROM techniques WHERE mitre_id = :m"),
+            {"m": mitre_id},
+        )
+    ).first()
+    if existing is not None:
+        return int(existing[0])
+    row = await session.execute(
+        text(
+            "INSERT INTO techniques (mitre_id, name, tactic) "
+            "VALUES (:m, :n, :tac) RETURNING id"
+        ),
+        {"m": mitre_id, "n": name, "tac": tactic},
+    )
+    return int(row.scalar_one())
+
+
+async def _link_report_technique(
+    session: AsyncSession, *, report_id: int, technique_id: int
+) -> None:
+    """Idempotent ``report_techniques`` link row."""
+    await session.execute(
+        text(
+            "INSERT INTO report_techniques (report_id, technique_id) "
+            "VALUES (:r, :t) ON CONFLICT DO NOTHING"
+        ),
+        {"r": report_id, "t": technique_id},
+    )
+
+
+async def _ensure_incident_with_country(
+    session: AsyncSession,
+    *,
+    title: str,
+    reported: date,
+    country_iso2: str,
+) -> int:
+    """Upsert an incidents row + incident_countries row.
+
+    Mirrors ``_ensure_incident_with_motivation`` but on the country
+    join table. ``title`` is the natural key for the incident — the
+    geo fixture picks unique titles per country so incidents are not
+    shared with the dashboard fixture's Ronin row.
+    """
+    existing = (
+        await session.execute(
+            text("SELECT id FROM incidents WHERE title = :t"),
+            {"t": title},
+        )
+    ).first()
+    if existing is not None:
+        incident_id = int(existing[0])
+    else:
+        row = await session.execute(
+            text(
+                "INSERT INTO incidents (reported, title, description) "
+                "VALUES (:r, :t, :d) RETURNING id"
+            ),
+            {
+                "r": reported,
+                "t": title,
+                "d": "Pact fixture incident (geo)",
+            },
+        )
+        incident_id = int(row.scalar_one())
+    await session.execute(
+        text(
+            "INSERT INTO incident_countries (incident_id, country_iso2) "
+            "VALUES (:i, :c) ON CONFLICT DO NOTHING"
+        ),
+        {"i": incident_id, "c": country_iso2},
+    )
+    return incident_id
+
+
+async def _ensure_attack_matrix_fixture(session: AsyncSession) -> None:
+    """Seed the fixture set ``/analytics/attack_matrix`` pact requires.
+
+    Response contract shape (plan D2):
+
+        {tactics: eachLike({id, name}), rows: eachLike({tactic_id,
+         techniques: eachLike({technique_id, count})})}
+
+    Seed:
+      - 3 techniques across 2 tactics (TA0001: T1566 + T1190; TA0002:
+        T1059). Non-null tactic on all — null-tactic rows would be
+        dropped by the aggregator.
+      - 3 reports dated 2026-03-15 (inside pact window) linked BOTH to
+        the canonical Lazarus codename (so a ``group_id=1`` filter
+        still produces a non-empty matrix) AND to techniques.
+      - Technique mixture ensures:
+          * TA0001 has 2 techniques (T1566 + T1190) — one report r1 is
+            linked to both to exercise the ``COUNT(DISTINCT report_id)``
+            invariant (should count 1 not 2 under T1566).
+          * TA0002 has 1 technique (T1059).
+
+    Aggregator output (no filter):
+      - TA0001: {T1566: 2, T1190: 1}
+      - TA0002: {T1059: 1}
+    Every ``eachLike`` array is therefore non-empty.
+    """
+    source_id = await _ensure_source(session)
+    lazarus_id = await _ensure_canonical_lazarus_fixture(session)
+    andariel_id = await _ensure_codename(
+        session, name="Andariel", group_id=lazarus_id
+    )
+
+    t_1566 = await _ensure_technique(
+        session, mitre_id="T1566", name="Phishing", tactic="TA0001"
+    )
+    t_1190 = await _ensure_technique(
+        session,
+        mitre_id="T1190",
+        name="Exploit Public-Facing Application",
+        tactic="TA0001",
+    )
+    t_1059 = await _ensure_technique(
+        session,
+        mitre_id="T1059",
+        name="Command and Scripting Interpreter",
+        tactic="TA0002",
+    )
+
+    r1 = await _ensure_report_with_codename_link(
+        session,
+        source_id=source_id,
+        codename_id=andariel_id,
+        url_canonical="https://pact.test/analytics/attack/r1",
+        title="Pact fixture — attack_matrix r1",
+        published=date(2026, 3, 15),
+    )
+    await _link_report_technique(session, report_id=r1, technique_id=t_1566)
+    await _link_report_technique(session, report_id=r1, technique_id=t_1190)
+
+    r2 = await _ensure_report_with_codename_link(
+        session,
+        source_id=source_id,
+        codename_id=andariel_id,
+        url_canonical="https://pact.test/analytics/attack/r2",
+        title="Pact fixture — attack_matrix r2",
+        published=date(2026, 3, 15),
+    )
+    await _link_report_technique(session, report_id=r2, technique_id=t_1566)
+
+    r3 = await _ensure_report_with_codename_link(
+        session,
+        source_id=source_id,
+        codename_id=andariel_id,
+        url_canonical="https://pact.test/analytics/attack/r3",
+        title="Pact fixture — attack_matrix r3",
+        published=date(2026, 3, 15),
+    )
+    await _link_report_technique(session, report_id=r3, technique_id=t_1059)
+
+
+async def _ensure_trend_fixture(session: AsyncSession) -> None:
+    """Seed the fixture set ``/analytics/trend`` pact requires.
+
+    Response contract (plan D2):
+
+        {buckets: eachLike({month: matches(YYYY-MM), count})}
+
+    Seed: 3 reports spanning 2 months inside the pact window so the
+    response contains ≥2 buckets (gives more signal than a single-row
+    eachLike sample). Reports are linked to the Lazarus codename so a
+    group-filtered trend still produces non-empty buckets.
+    """
+    source_id = await _ensure_source(session)
+    lazarus_id = await _ensure_canonical_lazarus_fixture(session)
+    andariel_id = await _ensure_codename(
+        session, name="Andariel", group_id=lazarus_id
+    )
+
+    for idx, published in enumerate(
+        [date(2026, 2, 10), date(2026, 2, 20), date(2026, 3, 5)]
+    ):
+        await _ensure_report_with_codename_link(
+            session,
+            source_id=source_id,
+            codename_id=andariel_id,
+            url_canonical=f"https://pact.test/analytics/trend/r{idx}",
+            title=f"Pact fixture — trend r{idx}",
+            published=published,
+        )
+
+
+async def _ensure_geo_fixture(session: AsyncSession) -> None:
+    """Seed the fixture set ``/analytics/geo`` pact requires.
+
+    Response contract (plan D2 + D7):
+
+        {countries: eachLike({iso2: string(min=2,max=2), count})}
+
+    Seed: 3 incidents with distinct ISO2 country codes — including
+    ``KP`` to exercise the plan D7 "DPRK is a plain row" invariant.
+    Dates land inside the pact window. No group_ids wiring is needed
+    (``/analytics/geo`` is group-no-op by schema constraint).
+    """
+    for country_iso2 in ("KR", "US", "KP"):
+        await _ensure_incident_with_country(
+            session,
+            title=f"Pact fixture — geo {country_iso2}",
+            reported=date(2026, 2, 20),
+            country_iso2=country_iso2,
+        )
+
+
 async def _ensure_canonical_lazarus_fixture(session: AsyncSession) -> int:
     """Seed the canonical `Lazarus Group` fixture + one linked codename.
 
@@ -448,6 +696,30 @@ async def provider_states(
             "seeded reports/incidents/actors and an authenticated analyst session"
         ):
             await _ensure_dashboard_fixture(session)
+            await session.commit()
+            await _seed_analyst_session(response, session_store)
+            continue
+
+        if state == (
+            "seeded attack_matrix dataset and an authenticated analyst session"
+        ):
+            await _ensure_attack_matrix_fixture(session)
+            await session.commit()
+            await _seed_analyst_session(response, session_store)
+            continue
+
+        if state == (
+            "seeded trend dataset and an authenticated analyst session"
+        ):
+            await _ensure_trend_fixture(session)
+            await session.commit()
+            await _seed_analyst_session(response, session_store)
+            continue
+
+        if state == (
+            "seeded geo dataset and an authenticated analyst session"
+        ):
+            await _ensure_geo_fixture(session)
             await session.commit()
             await _seed_analyst_session(response, session_store)
             continue

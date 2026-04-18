@@ -181,3 +181,72 @@ export interface IncidentListResponse {
   items: IncidentItem[]
   next_cursor: string | null
 }
+
+/**
+ * `/api/v1/analytics/*` — plan D2 lock, PR #13 Group A.
+ *
+ * Three read-only endpoints all share the same filter contract as
+ * `/dashboard/summary` (date_from / date_to / group_id[]); attack_matrix
+ * additionally accepts top_n (default 30, max 200). Responses are
+ * parsed through Zod at the boundary so drift vs the BE Pydantic
+ * models surfaces on ingest, not when a viz tries to render a
+ * malformed shape.
+ *
+ * Shape mirrors `services/api/src/api/schemas/read.py::{Attack
+ * MatrixResponse, TrendResponse, GeoResponse}` verbatim. The empty-
+ * payload case (`{tactics: [], rows: []}` / `{buckets: []}` /
+ * `{countries: []}`) parses successfully here — the FE viz owns the
+ * empty-state card per plan D8, this layer just forwards the
+ * BE-shaped payload through.
+ */
+
+export const tacticRefSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+})
+
+export const attackTechniqueCountSchema = z.object({
+  technique_id: z.string(),
+  count: z.number().int().gte(0),
+})
+
+export const attackTacticRowSchema = z.object({
+  tactic_id: z.string(),
+  techniques: z.array(attackTechniqueCountSchema),
+})
+
+export const attackMatrixResponseSchema = z.object({
+  tactics: z.array(tacticRefSchema),
+  rows: z.array(attackTacticRowSchema),
+})
+
+export const trendBucketSchema = z.object({
+  /** BE emits strict YYYY-MM (zero-padded); regex pins it to keep
+   *  the viz's month-axis parsing unambiguous. */
+  month: z.string().regex(/^\d{4}-\d{2}$/),
+  count: z.number().int().gte(0),
+})
+
+export const trendResponseSchema = z.object({
+  buckets: z.array(trendBucketSchema),
+})
+
+export const geoCountrySchema = z.object({
+  /** ISO 3166-1 alpha-2. DPRK is `KP` — plan D7 lock says the FE
+   *  highlights it; the BE treats it as a plain row here. */
+  iso2: z.string().length(2),
+  count: z.number().int().gte(0),
+})
+
+export const geoResponseSchema = z.object({
+  countries: z.array(geoCountrySchema),
+})
+
+export type TacticRef = z.infer<typeof tacticRefSchema>
+export type AttackTechniqueCount = z.infer<typeof attackTechniqueCountSchema>
+export type AttackTacticRow = z.infer<typeof attackTacticRowSchema>
+export type AttackMatrixResponse = z.infer<typeof attackMatrixResponseSchema>
+export type TrendBucket = z.infer<typeof trendBucketSchema>
+export type TrendResponse = z.infer<typeof trendResponseSchema>
+export type GeoCountry = z.infer<typeof geoCountrySchema>
+export type GeoResponse = z.infer<typeof geoResponseSchema>

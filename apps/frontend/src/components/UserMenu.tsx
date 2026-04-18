@@ -27,17 +27,20 @@
 
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 import { ChevronDown, LogOut, UserCircle } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 
 import { useAuth } from '../features/auth/useAuth'
 import { useLogout } from '../features/auth/useLogout'
 import { cn } from '../lib/utils'
+import { LocaleToggle } from './LocaleToggle'
 import { ThemeToggle } from './ThemeToggle'
 
 export function UserMenu(): JSX.Element | null {
   const { user } = useAuth()
   const logoutMutation = useLogout()
   const navigate = useNavigate()
+  const { t } = useTranslation()
 
   if (user == null) return null
 
@@ -55,7 +58,7 @@ export function UserMenu(): JSX.Element | null {
         <button
           type="button"
           data-testid="user-menu-trigger"
-          aria-label={`Account menu for ${user.email}`}
+          aria-label={t('userMenu.triggerAriaLabel', { email: user.email })}
           className={cn(
             'flex h-8 items-center gap-2 rounded border border-border-card bg-app px-2 text-xs text-ink',
             'hover:border-signal focus:outline-none focus:ring-2 focus:ring-signal',
@@ -94,9 +97,16 @@ export function UserMenu(): JSX.Element | null {
 
           <div className="flex items-center justify-between px-2 py-1.5">
             <span className="text-[10px] font-semibold uppercase tracking-wider text-ink-subtle">
-              Theme
+              {t('userMenu.theme')}
             </span>
             <ThemeToggle />
+          </div>
+
+          <div className="flex items-center justify-between px-2 py-1.5">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-ink-subtle">
+              {t('userMenu.language')}
+            </span>
+            <LocaleToggle />
           </div>
 
           <DropdownMenu.Separator className="my-1 h-px bg-border-card" />
@@ -117,7 +127,7 @@ export function UserMenu(): JSX.Element | null {
             )}
           >
             <LogOut aria-hidden className="h-3 w-3" />
-            Sign out
+            {t('userMenu.signOut')}
           </DropdownMenu.Item>
         </DropdownMenu.Content>
       </DropdownMenu.Portal>

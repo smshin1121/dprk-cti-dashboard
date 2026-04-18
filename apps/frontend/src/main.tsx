@@ -3,6 +3,10 @@ import ReactDOM from "react-dom/client";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "react-router-dom";
 
+// i18n init — must run before any component renders so the first
+// paint already has translations. Import for side-effect; module
+// guard inside prevents re-init on HMR.
+import "./i18n";
 import { createQueryClient } from "./lib/queryClient";
 import { router } from "./routes/router";
 import "./index.css";

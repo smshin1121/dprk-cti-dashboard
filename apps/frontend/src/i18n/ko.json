@@ -1,0 +1,90 @@
+{
+  "shell": {
+    "nav": {
+      "dashboard": "대시보드",
+      "reports": "보고서",
+      "incidents": "사건",
+      "actors": "조직"
+    },
+    "brand": "DPRK CTI",
+    "search": {
+      "placeholder": "검색",
+      "dialogLabel": "커맨드 팔레트",
+      "emptyLabel": "일치하는 커맨드가 없습니다.",
+      "inputPlaceholder": "커맨드를 입력하세요…"
+    }
+  },
+  "userMenu": {
+    "theme": "테마",
+    "language": "언어",
+    "signOut": "로그아웃",
+    "triggerAriaLabel": "계정 메뉴: {{email}}"
+  },
+  "locale": {
+    "ko": "한국어",
+    "en": "English",
+    "ariaLabel": "언어 전환"
+  },
+  "commands": {
+    "nav.dashboard": "대시보드로 이동",
+    "nav.reports": "보고서로 이동",
+    "nav.incidents": "사건으로 이동",
+    "nav.actors": "조직으로 이동",
+    "theme.cycle": "테마 전환 (light / dark / system)",
+    "filters.clear": "모든 필터 초기화",
+    "auth.logout": "로그아웃"
+  },
+  "list": {
+    "loading": "불러오는 중…",
+    "empty": "결과가 없습니다.",
+    "error": "데이터를 불러오지 못했습니다.",
+    "retry": "다시 시도",
+    "rateLimited": "요청이 너무 많습니다. 잠시 후 다시 시도하십시오."
+  },
+  "dashboard": {
+    "empty": "현재 필터에 해당하는 데이터가 없습니다.",
+    "error": "대시보드 데이터를 불러오지 못했습니다.",
+    "attackHeatmap": {
+      "title": "ATT&CK 매트릭스",
+      "empty": "현재 필터에 해당하는 ATT&CK 활동이 없습니다.",
+      "clearFilters": "필터 초기화",
+      "showAll": "전체 보기",
+      "showTopN": "상위 {{n}}개 보기",
+      "tacticHeader": "전술",
+      "techniqueHeader": "기법"
+    },
+    "motivationDonut": {
+      "title": "동기별 사건",
+      "empty": "분석할 동기 데이터가 없습니다."
+    },
+    "yearBar": {
+      "title": "연도별 보고서",
+      "empty": "분석할 연도 데이터가 없습니다."
+    },
+    "trendChart": {
+      "title": "월별 보고서 추이",
+      "empty": "분석할 추이 데이터가 없습니다."
+    },
+    "groupsMiniList": {
+      "title": "상위 조직",
+      "empty": "현재 필터에 해당하는 조직이 없습니다.",
+      "reportsSuffix": "건"
+    },
+    "reportFeed": {
+      "title": "최신 보고서",
+      "empty": "현재 필터에 해당하는 보고서가 없습니다."
+    },
+    "similarReports": {
+      "title": "유사 보고서",
+      "placeholder": "보고서 상세 보기가 활성화되면 표시됩니다.",
+      "phaseNote": "Phase 3 예정 — 상세 뷰 연동 후 제공됩니다."
+    },
+    "alerts": {
+      "trigger": "알림",
+      "title": "알림",
+      "empty": "현재 알림이 없습니다.",
+      "phaseNote": "Phase 4 예정 — 실시간 알림 연동 후 제공됩니다.",
+      "close": "닫기"
+    }
+  }
+}

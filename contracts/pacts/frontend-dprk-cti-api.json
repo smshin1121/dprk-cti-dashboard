@@ -4,6 +4,133 @@
   },
   "interactions": [
     {
+      "description": "a request for the ATT&CK matrix with date filter and top_n",
+      "providerStates": [
+        {
+          "name": "seeded attack_matrix dataset and an authenticated analyst session"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/analytics/attack_matrix",
+        "query": {
+          "date_from": [
+            "2026-01-01"
+          ],
+          "date_to": [
+            "2026-04-18"
+          ],
+          "top_n": [
+            "30"
+          ]
+        }
+      },
+      "response": {
+        "body": {
+          "rows": [
+            {
+              "tactic_id": "TA0001",
+              "techniques": [
+                {
+                  "count": 2,
+                  "technique_id": "T1566"
+                }
+              ]
+            }
+          ],
+          "tactics": [
+            {
+              "id": "TA0001",
+              "name": "Initial Access"
+            }
+          ]
+        },
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "matchingRules": {
+          "body": {
+            "$": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.rows": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type",
+                  "min": 1
+                }
+              ]
+            },
+            "$.rows[*].tactic_id": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.rows[*].techniques": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type",
+                  "min": 1
+                }
+              ]
+            },
+            "$.rows[*].techniques[*].count": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "integer"
+                }
+              ]
+            },
+            "$.rows[*].techniques[*].technique_id": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.tactics": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type",
+                  "min": 1
+                }
+              ]
+            },
+            "$.tactics[*].id": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.tactics[*].name": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          }
+        },
+        "status": 200
+      }
+    },
+    {
       "description": "a request for the actors list (first page)",
       "providerStates": [
         {
@@ -519,6 +646,148 @@
               "matchers": [
                 {
                   "match": "integer"
+                }
+              ]
+            }
+          }
+        },
+        "status": 200
+      }
+    },
+    {
+      "description": "a request for the monthly-trend buckets with date filter",
+      "providerStates": [
+        {
+          "name": "seeded trend dataset and an authenticated analyst session"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/analytics/trend",
+        "query": {
+          "date_from": [
+            "2026-01-01"
+          ],
+          "date_to": [
+            "2026-04-18"
+          ]
+        }
+      },
+      "response": {
+        "body": {
+          "buckets": [
+            {
+              "count": 2,
+              "month": "2026-02"
+            }
+          ]
+        },
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "matchingRules": {
+          "body": {
+            "$": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.buckets": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type",
+                  "min": 1
+                }
+              ]
+            },
+            "$.buckets[*].count": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "integer"
+                }
+              ]
+            },
+            "$.buckets[*].month": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          }
+        },
+        "status": 200
+      }
+    },
+    {
+      "description": "a request for the per-country aggregate with date filters",
+      "providerStates": [
+        {
+          "name": "seeded geo dataset and an authenticated analyst session"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/analytics/geo",
+        "query": {
+          "date_from": [
+            "2026-01-01"
+          ],
+          "date_to": [
+            "2026-04-18"
+          ]
+        }
+      },
+      "response": {
+        "body": {
+          "countries": [
+            {
+              "count": 1,
+              "iso2": "KP"
+            }
+          ]
+        },
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "matchingRules": {
+          "body": {
+            "$": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.countries": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type",
+                  "min": 1
+                }
+              ]
+            },
+            "$.countries[*].count": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "integer"
+                }
+              ]
+            },
+            "$.countries[*].iso2": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
                 }
               ]
             }
