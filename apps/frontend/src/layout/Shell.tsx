@@ -26,6 +26,7 @@ import { NavLink, Outlet } from 'react-router-dom'
 
 import { CommandPaletteButton } from '../components/CommandPaletteButton'
 import { UserMenu } from '../components/UserMenu'
+import { useFilterUrlSync } from '../features/url-state/useFilterUrlSync'
 import { FilterBar } from './FilterBar'
 
 const NAV_ITEMS = [
@@ -36,6 +37,11 @@ const NAV_ITEMS = [
 ] as const
 
 export function Shell(): JSX.Element {
+  // Plan D4 URL-state sync (PR #13 Group E). Runs on every
+  // authenticated route so filter + dashboard view/tab stay in sync
+  // with the URL. Hook is void-returning; no render-level effect.
+  useFilterUrlSync()
+
   return (
     <div className="flex min-h-screen flex-col bg-app text-ink">
       <header
