@@ -1901,7 +1901,7 @@
                 }
               }
             },
-            "description": "Rate limit exceeded — 60/min/user read bucket (plan D2). Shared bucket with other read endpoints (reports, incidents, actors, dashboard)."
+            "description": "Rate limit exceeded — same 60/min/user policy as other read endpoints (dashboard, reports, incidents, actors) but a per-decorated-route bucket. Exhausting /analytics/attack_matrix does NOT consume /analytics/trend or /dashboard/summary budget."
           }
         },
         "summary": "ATT&CK tactic × technique matrix",
@@ -2041,7 +2041,7 @@
                 }
               }
             },
-            "description": "Rate limit exceeded — 60/min/user read bucket (plan D2). Shared bucket with other read endpoints (reports, incidents, actors, dashboard)."
+            "description": "Rate limit exceeded — same 60/min/user policy as other read endpoints (dashboard, reports, incidents, actors) but a per-decorated-route bucket. Exhausting /analytics/attack_matrix does NOT consume /analytics/trend or /dashboard/summary budget."
           }
         },
         "summary": "Country-aggregated incident count",
@@ -2181,7 +2181,7 @@
                 }
               }
             },
-            "description": "Rate limit exceeded — 60/min/user read bucket (plan D2). Shared bucket with other read endpoints (reports, incidents, actors, dashboard)."
+            "description": "Rate limit exceeded — same 60/min/user policy as other read endpoints (dashboard, reports, incidents, actors) but a per-decorated-route bucket. Exhausting /analytics/attack_matrix does NOT consume /analytics/trend or /dashboard/summary budget."
           }
         },
         "summary": "Monthly report volume trend",

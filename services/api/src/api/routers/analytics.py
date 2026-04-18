@@ -82,9 +82,11 @@ _RESPONSES_COMMON_AUTH: dict[int | str, dict[str, object]] = {
     403: {"description": "Role not analyst / researcher / policy / soc / admin"},
     429: {
         "description": (
-            "Rate limit exceeded — 60/min/user read bucket (plan D2). "
-            "Shared bucket with other read endpoints (reports, "
-            "incidents, actors, dashboard)."
+            "Rate limit exceeded — same 60/min/user policy as other "
+            "read endpoints (dashboard, reports, incidents, actors) "
+            "but a per-decorated-route bucket. Exhausting "
+            "/analytics/attack_matrix does NOT consume /analytics/trend "
+            "or /dashboard/summary budget."
         ),
         "content": {
             "application/json": {
