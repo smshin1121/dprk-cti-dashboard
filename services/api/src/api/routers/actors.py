@@ -104,7 +104,22 @@ _READ_ROLES = ("analyst", "researcher", "policy", "soc", "admin")
             "description": (
                 "Invalid query parameter (limit out of 1..200, offset "
                 "negative). Plan D12 — no silent ignore of filter values."
-            )
+            ),
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": [
+                            {
+                                "loc": ["query", "limit"],
+                                "msg": (
+                                    "Input should be less than or equal to 200"
+                                ),
+                                "type": "less_than_equal",
+                            }
+                        ]
+                    }
+                }
+            },
         },
         429: {
             "description": (

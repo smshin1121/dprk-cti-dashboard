@@ -130,7 +130,22 @@ def _validate_group_ids(items: list[int] | None) -> list[int] | None:
             "description": (
                 "Invalid query param — bad ISO date, `top_n` out of 1..20, "
                 "negative `group_id`. Plan D12 uniform 422 contract."
-            )
+            ),
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": [
+                            {
+                                "loc": ["query", "top_n"],
+                                "msg": (
+                                    "Input should be less than or equal to 20"
+                                ),
+                                "type": "less_than_equal",
+                            }
+                        ]
+                    }
+                }
+            },
         },
         429: {
             "description": (

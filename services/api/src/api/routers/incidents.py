@@ -140,7 +140,23 @@ def _validate_iso_alpha2(items: list[str] | None) -> list[str] | None:
                 "Invalid query param — bad ISO date, non-alpha-2 country, "
                 "empty filter value, malformed cursor, out-of-range limit. "
                 "Plan D12 uniform 422 contract."
-            )
+            ),
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": [
+                            {
+                                "loc": ["query", "country", 0],
+                                "msg": (
+                                    "country must be ISO 3166-1 alpha-2 "
+                                    "(two letters)"
+                                ),
+                                "type": "value_error",
+                            }
+                        ]
+                    }
+                }
+            },
         },
         429: {
             "description": (

@@ -1,10 +1,21 @@
 """Real-PostgreSQL integration tests for PR #11 read endpoints.
 
-Plan §5.2 locks 8 scenarios for Group K acceptance. Group B lands
-scenario 1 (`/actors` list) only; scenarios 2–8 (reports filters,
-incidents multi-country, /dashboard/summary, keyset cursor
-stability, rate-limit 429, invalid-filter 422, OpenAPI example
-drift) are added by Groups C–K.
+Plan §5.2 locks 8 scenarios as the Group K acceptance gate. All 8
+are in this module to match the plan 1:1 and keep the acceptance
+surface consolidated — even the ones that don't strictly require
+PG (rate-limit, invalid-filter 422, OpenAPI examples) live here so
+a reviewer can audit §5.2 compliance in one file.
+
+Scenario-to-function map (plan §5.2):
+
+- Scenario 1 → ``test_scenario_1_actors_list_and_default_sort``
+- Scenario 2 → ``test_scenario_2_reports_filters_and_join_dedup``
+- Scenario 3 → ``test_scenario_3_incidents_multi_country_and_dedup``
+- Scenario 4 → ``test_scenario_4_dashboard_summary_totals_and_top_groups``
+- Scenario 5 → ``test_scenario_5_keyset_cursor_stability_under_insert``
+- Scenario 6 → ``test_scenario_6_rate_limit_429_and_headers``
+- Scenario 7 → ``test_scenario_7_invalid_filter_returns_422_uniform``
+- Scenario 8 → ``test_scenario_8_openapi_examples_d13_populated``
 
 Skipped when ``POSTGRES_TEST_URL`` is unset — matches the PR #10
 pattern so developers can still run ``pytest tests/`` without
@@ -653,3 +664,332 @@ async def test_scenario_4_dashboard_summary_totals_and_top_groups(
     assert top[0]["report_count"] == 2  # not 3 (dedup proof)
     assert top[1]["name"] == "Kimsuky"
     assert top[1]["report_count"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Scenario 5 — Keyset cursor stability under concurrent insert (plan §5.2)
+# ---------------------------------------------------------------------------
+
+
+async def test_scenario_5_keyset_cursor_stability_under_insert(
+    read_client: AsyncClient,
+    make_session_cookie,
+    pg_session: AsyncSession,
+    clean_pg,
+) -> None:
+    """Plan §5.2 scenario 5 — "동시 insert 중 next_cursor 로 페이지 넘겨도
+    중복 없음 + cursor tiebreak (id DESC) 효과 검증".
+
+    Keyset cursor `(published_at DESC, id DESC)` vs offset:
+
+    - **Stability under insert:** after fetching page 1 with limit=3,
+      inserting rows at published_at positions BEFORE the page-1
+      last cursor AND AFTER it. Page 2 via next_cursor returns only
+      rows that existed at page-1 time, AND only those strictly
+      `<(published_at, id)` than the page-1 last item — so the
+      late-inserted rows at higher dates don't shift page boundaries,
+      and rows at the same date use id tiebreak rather than
+      appearing twice.
+    - **Tiebreak proof:** seed multiple rows at the SAME published_at
+      date with distinct ids. The cursor composite (date, id) drops
+      ambiguity; without the id tiebreak the page boundary would be
+      either all-or-nothing for rows sharing that date.
+
+    sqlite can't be trusted for concurrent-insert semantics — it
+    serializes write transactions. PG with real psycopg_async is
+    the only place this scenario is meaningful.
+    """
+    src = await _seed_source(pg_session, "src-cursor")
+
+    # Seed 6 reports at distinct dates, including two sharing
+    # 2026-03-13 so the id-tiebreak half of the scenario has teeth.
+    seed_plan = [
+        ("r-a", _dt.date(2026, 3, 20)),  # newest — page 1 position 1
+        ("r-b", _dt.date(2026, 3, 18)),  # page 1 position 2
+        ("r-c", _dt.date(2026, 3, 15)),  # page 1 position 3 — last
+        ("r-d", _dt.date(2026, 3, 13)),  # page 2 position 1 (same date)
+        ("r-e", _dt.date(2026, 3, 13)),  # page 2 position 2 (same date, id tiebreak)
+        ("r-f", _dt.date(2026, 3, 10)),  # page 2 position 3 — oldest
+    ]
+    seeded_ids: dict[str, int] = {}
+    for title, date in seed_plan:
+        seeded_ids[title] = await _seed_report(
+            pg_session,
+            title=title,
+            url=f"https://ex/{title}",
+            source_id=src,
+            published=date,
+        )
+
+    cookie = await _analyst_cookie(make_session_cookie)
+
+    # Page 1 — limit 3. Expect the newest three: r-a, r-b, r-c.
+    p1 = await read_client.get(
+        f"{REPORTS_URL}?limit=3", cookies={"dprk_cti_session": cookie}
+    )
+    assert p1.status_code == 200
+    p1_body = p1.json()
+    p1_ids = [it["id"] for it in p1_body["items"]]
+    assert p1_ids == [seeded_ids["r-a"], seeded_ids["r-b"], seeded_ids["r-c"]]
+    assert p1_body["next_cursor"] is not None
+
+    # Concurrent insert simulation: commit new rows BEFORE reading
+    # page 2 via the cursor. One row at a date newer than page 1
+    # (would crash into page 2 under offset pagination), one at a
+    # date older than the cursor (always below the fold anyway).
+    late_new = await _seed_report(
+        pg_session,
+        title="r-late-new",
+        url="https://ex/late-new",
+        source_id=src,
+        published=_dt.date(2026, 3, 25),
+    )
+    late_old = await _seed_report(
+        pg_session,
+        title="r-late-old",
+        url="https://ex/late-old",
+        source_id=src,
+        published=_dt.date(2026, 3, 5),
+    )
+
+    # Page 2 via the cursor. Must return:
+    # - r-d and r-e (same date 2026-03-13, id tiebreak DESC order)
+    # - r-f (oldest pre-insert)
+    # - r-late-old (new but older than cursor → included)
+    # Must NOT include:
+    # - r-late-new (newer than cursor → filtered by keyset)
+    # - r-a/r-b/r-c (already returned on page 1 — no dup)
+    p2 = await read_client.get(
+        f"{REPORTS_URL}?limit=10&cursor={p1_body['next_cursor']}",
+        cookies={"dprk_cti_session": cookie},
+    )
+    assert p2.status_code == 200
+    p2_ids = [it["id"] for it in p2.json()["items"]]
+
+    # No duplicates across pages — the core stability invariant.
+    assert set(p1_ids).isdisjoint(set(p2_ids))
+
+    # Late-inserted row at NEWER date must NOT leak into page 2.
+    assert late_new not in p2_ids
+
+    # Late-inserted row at OLDER date shows up below the cursor.
+    assert late_old in p2_ids
+
+    # Tiebreak order proof: the two rows sharing 2026-03-13 appear
+    # in id-DESC order (newer insert first). r-e was inserted after
+    # r-d so r-e.id > r-d.id → r-e first.
+    r_d = seeded_ids["r-d"]
+    r_e = seeded_ids["r-e"]
+    assert r_e > r_d, "fixture assumption — ids monotonically increase"
+    p2_idx = {iid: idx for idx, iid in enumerate(p2_ids)}
+    assert p2_idx[r_e] < p2_idx[r_d], (
+        "id tiebreak DESC failed — r-e (higher id) should precede r-d"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Scenario 6 — Rate-limit 429 + headers on real-PG stack (plan §5.2)
+# ---------------------------------------------------------------------------
+
+
+async def test_scenario_6_rate_limit_429_and_headers(
+    read_client: AsyncClient,
+    make_session_cookie,
+    clean_pg,
+) -> None:
+    """Plan §5.2 scenario 6 — "60/min/route 초과 시 429 + Retry-After +
+    X-RateLimit-Remaining. /auth/login 10/min 경계도 별도 케이스로 검증
+    (IP 기반). Per-route 독립 버킷 pin".
+
+    Re-runs the boundary + IP-bucket + per-route scoping checks
+    through the real-PG client fixture so the switch from
+    sqlite-aiosqlite to psycopg_async driver doesn't perturb the
+    rate-limit middleware path. The slowapi storage stays
+    ``memory://`` (conftest forces it) regardless of DB backend,
+    but the decorator wrapping still runs on real requests and
+    this test is the guard against a future decorator/driver
+    interaction that breaks only on PG.
+    """
+    cookie = await _analyst_cookie(make_session_cookie)
+
+    # 60/min/route boundary on /reports (read bucket).
+    for i in range(60):
+        resp = await read_client.get(
+            REPORTS_URL, cookies={"dprk_cti_session": cookie}
+        )
+        assert resp.status_code == 200, (
+            f"request {i} should pass under real-PG path"
+        )
+
+    over = await read_client.get(
+        REPORTS_URL, cookies={"dprk_cti_session": cookie}
+    )
+    assert over.status_code == 429
+    body = over.json()
+    assert body == {"error": "rate_limit_exceeded", "message": "60 per 1 minute"}
+
+    # Headers pin — plan D2.
+    assert int(over.headers["Retry-After"]) >= 1
+    assert int(over.headers["X-RateLimit-Limit"]) == 60
+    assert int(over.headers["X-RateLimit-Remaining"]) == 0
+
+    # Per-route bucket scope on real-PG: /incidents is a separate
+    # bucket for the same cookie — fresh 200 even though /reports
+    # is exhausted.
+    fresh = await read_client.get(
+        INCIDENTS_URL, cookies={"dprk_cti_session": cookie}
+    )
+    assert fresh.status_code == 200
+
+    # /auth/login IP bucket — 10/min. No cookie → key_func falls to
+    # IP bucket. 11th call 429 without consulting PG at all (auth
+    # endpoints don't touch the DB until after rate check).
+    for _ in range(10):
+        resp = await read_client.get("/api/v1/auth/login")
+        # 302/307 on success (redirect to keycloak stub) — both acceptable.
+        assert resp.status_code in (302, 307, 500), (
+            f"/auth/login unexpected status {resp.status_code}"
+        )
+
+    over_login = await read_client.get("/api/v1/auth/login")
+    assert over_login.status_code == 429
+
+
+# ---------------------------------------------------------------------------
+# Scenario 7 — Invalid filter → 422 uniform (plan §5.2 / D12)
+# ---------------------------------------------------------------------------
+
+
+async def test_scenario_7_invalid_filter_returns_422_uniform(
+    read_client: AsyncClient,
+    make_session_cookie,
+    clean_pg,
+) -> None:
+    """Plan §5.2 scenario 7 — "빈 tag, invalid date, invalid country
+    code, limit=0, limit=201, malformed cursor 각각 422 + FastAPI
+    HTTPValidationError shape".
+
+    All 6 invalid inputs must short-circuit to 422 BEFORE touching
+    PG. The empty real-PG fixture acts as the witness: if any
+    case accidentally ran the query, the response would be 200
+    with an empty list — so any non-422 here is a D12 regression.
+
+    Response body shape uniformity: all must carry a ``detail``
+    array of validation-error dicts (FastAPI's
+    ``HTTPValidationError``). The error handler's
+    ``malformed_cursor`` branch in routers/reports.py hand-crafts
+    the same ``detail[].loc/msg/type`` shape so clients branch on
+    one 422 schema regardless of source.
+    """
+    cookie = await _analyst_cookie(make_session_cookie)
+
+    invalid_cases: list[tuple[str, str]] = [
+        ("empty tag value", f"{REPORTS_URL}?tag="),
+        ("invalid ISO date", f"{REPORTS_URL}?date_from=not-a-date"),
+        ("non-alpha-2 country", f"{INCIDENTS_URL}?country=korea"),
+        ("limit=0 below min", f"{ACTORS_URL}?limit=0"),
+        ("limit=201 above max", f"{ACTORS_URL}?limit=201"),
+        ("malformed cursor", f"{REPORTS_URL}?cursor=!!!invalid!!!"),
+    ]
+
+    for label, url in invalid_cases:
+        resp = await read_client.get(url, cookies={"dprk_cti_session": cookie})
+        assert resp.status_code == 422, f"{label}: {resp.status_code} ({url})"
+        body = resp.json()
+        assert "detail" in body, f"{label}: missing 'detail' key"
+        assert isinstance(body["detail"], list), (
+            f"{label}: 'detail' must be a list"
+        )
+        assert body["detail"], f"{label}: 'detail' must be non-empty"
+        # FastAPI HTTPValidationError uniform shape — every entry has
+        # loc/msg/type. Reports' malformed-cursor hand-crafted path
+        # mirrors this exactly so the client contract is one-schema.
+        for entry in body["detail"]:
+            assert "loc" in entry, f"{label}: detail entry missing 'loc'"
+            assert "msg" in entry, f"{label}: detail entry missing 'msg'"
+            assert "type" in entry, f"{label}: detail entry missing 'type'"
+
+
+# ---------------------------------------------------------------------------
+# Scenario 8 — OpenAPI surface + examples D13 populated (plan §5.2)
+# ---------------------------------------------------------------------------
+
+
+async def test_scenario_8_openapi_examples_d13_populated() -> None:
+    """Plan §5.2 scenario 8 — "5개 endpoint + DTO 가 /openapi.json 에
+    존재 + 각 endpoint 의 response examples (happy/429/422/empty) 4종
+    populate".
+
+    Acceptance for D13 lock. Assertions:
+
+    1. 5 read endpoints present in spec.
+    2. Each of the 4 list endpoints carries response examples for
+       200 (multi-example: happy + empty/last_page), 429 (single
+       example with rate_limit_exceeded body), 422 (single example
+       with FastAPI HTTPValidationError detail shape).
+    3. /auth/me has 200 example (CurrentUser DTO) + 429 example.
+       No 422 — endpoint has no query params or body, FastAPI
+       wouldn't emit one and D13 filter-example set doesn't apply.
+
+    No DB — pure schema assertion. Lives in this file to keep
+    §5.2 1:1 consolidation (plan Group K reviewer ask: all 8
+    scenarios in one place for audit ease).
+    """
+    from api.main import app
+
+    spec = app.openapi()
+    paths = spec["paths"]
+
+    # (1) surface presence
+    required_paths = [
+        "/api/v1/actors",
+        "/api/v1/reports",
+        "/api/v1/incidents",
+        "/api/v1/dashboard/summary",
+        "/api/v1/auth/me",
+    ]
+    for p in required_paths:
+        assert p in paths, f"OpenAPI missing path: {p}"
+
+    # (2) list-endpoint example coverage (happy/429/422, + empty via
+    # the 200 multi-example set).
+    list_endpoints = required_paths[:4]
+    for p in list_endpoints:
+        responses = paths[p]["get"]["responses"]
+
+        # 200 — multi-example (happy + empty or last_page).
+        ok_json = responses["200"]["content"]["application/json"]
+        assert "examples" in ok_json, f"{p} 200: missing multi 'examples'"
+        assert len(ok_json["examples"]) >= 2, (
+            f"{p} 200: D13 requires both happy + empty/last_page examples"
+        )
+
+        # 429 — single example, rate_limit_exceeded body.
+        r429 = responses["429"]["content"]["application/json"]
+        assert "example" in r429, f"{p} 429: missing example"
+        assert r429["example"]["error"] == "rate_limit_exceeded", (
+            f"{p} 429 example wrong 'error' field"
+        )
+
+        # 422 — FastAPI HTTPValidationError shape.
+        r422 = responses["422"]["content"]["application/json"]
+        assert "example" in r422, f"{p} 422: missing example (D13 requires)"
+        example422 = r422["example"]
+        assert "detail" in example422 and isinstance(
+            example422["detail"], list
+        ), f"{p} 422 example must carry a 'detail' list"
+        assert example422["detail"], f"{p} 422 example 'detail' must be non-empty"
+        entry = example422["detail"][0]
+        for field in ("loc", "msg", "type"):
+            assert field in entry, f"{p} 422 example missing detail.{field}"
+
+    # (3) /auth/me — DTO and rate-limit examples, no 422 (no filter set).
+    me_responses = paths["/api/v1/auth/me"]["get"]["responses"]
+    me_200 = me_responses["200"]["content"]["application/json"]
+    assert "example" in me_200, "/auth/me 200 missing CurrentUser example"
+    for field in ("sub", "email", "roles"):
+        assert field in me_200["example"], (
+            f"/auth/me 200 example missing CurrentUser.{field}"
+        )
+    me_429 = me_responses["429"]["content"]["application/json"]
+    assert me_429["example"]["error"] == "rate_limit_exceeded"

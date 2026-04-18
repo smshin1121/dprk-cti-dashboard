@@ -1345,6 +1345,22 @@
             "description": "Authenticated role is not analyst / researcher / policy / soc / admin"
           },
           "422": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "detail": [
+                    {
+                      "loc": [
+                        "query",
+                        "limit"
+                      ],
+                      "msg": "Input should be less than or equal to 200",
+                      "type": "less_than_equal"
+                    }
+                  ]
+                }
+              }
+            },
             "description": "Invalid query parameter (limit out of 1..200, offset negative). Plan D12 — no silent ignore of filter values."
           },
           "429": {
@@ -1723,12 +1739,20 @@
           "200": {
             "content": {
               "application/json": {
+                "example": {
+                  "email": "analyst@dprk.test",
+                  "name": "Jane Analyst",
+                  "roles": [
+                    "analyst"
+                  ],
+                  "sub": "abc-123"
+                },
                 "schema": {
                   "$ref": "#/components/schemas/CurrentUser"
                 }
               }
             },
-            "description": "Successful Response"
+            "description": "Current authenticated user identity + roles."
           },
           "401": {
             "description": "Missing or expired session cookie"
@@ -1897,6 +1921,22 @@
             "description": "Role not analyst / researcher / policy / soc / admin"
           },
           "422": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "detail": [
+                    {
+                      "loc": [
+                        "query",
+                        "top_n"
+                      ],
+                      "msg": "Input should be less than or equal to 20",
+                      "type": "less_than_equal"
+                    }
+                  ]
+                }
+              }
+            },
             "description": "Invalid query param — bad ISO date, `top_n` out of 1..20, negative `group_id`. Plan D12 uniform 422 contract."
           },
           "429": {
@@ -2154,6 +2194,23 @@
             "description": "Role not analyst / researcher / policy / soc / admin"
           },
           "422": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "detail": [
+                    {
+                      "loc": [
+                        "query",
+                        "country",
+                        0
+                      ],
+                      "msg": "country must be ISO 3166-1 alpha-2 (two letters)",
+                      "type": "value_error"
+                    }
+                  ]
+                }
+              }
+            },
             "description": "Invalid query param — bad ISO date, non-alpha-2 country, empty filter value, malformed cursor, out-of-range limit. Plan D12 uniform 422 contract."
           },
           "429": {
@@ -2406,6 +2463,22 @@
             "description": "Role not analyst / researcher / policy / soc / admin"
           },
           "422": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "detail": [
+                    {
+                      "loc": [
+                        "query",
+                        "cursor"
+                      ],
+                      "msg": "malformed cursor",
+                      "type": "value_error.malformed_cursor"
+                    }
+                  ]
+                }
+              }
+            },
             "description": "Invalid query param — malformed cursor, empty filter value, invalid ISO date, out-of-range limit, etc. Plan D12 locks uniform 422 with no silent ignore."
           },
           "429": {

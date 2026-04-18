@@ -296,6 +296,19 @@ async def callback(
     "/me",
     response_model=CurrentUser,
     responses={
+        200: {
+            "description": "Current authenticated user identity + roles.",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "sub": "abc-123",
+                        "email": "analyst@dprk.test",
+                        "name": "Jane Analyst",
+                        "roles": ["analyst"],
+                    }
+                }
+            },
+        },
         401: {"description": "Missing or expired session cookie"},
         429: {
             "description": (

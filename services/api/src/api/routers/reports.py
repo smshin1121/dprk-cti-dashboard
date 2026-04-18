@@ -129,7 +129,20 @@ def _reject_empty_items(items: list[str] | None) -> list[str] | None:
                 "Invalid query param — malformed cursor, empty filter value, "
                 "invalid ISO date, out-of-range limit, etc. Plan D12 locks "
                 "uniform 422 with no silent ignore."
-            )
+            ),
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": [
+                            {
+                                "loc": ["query", "cursor"],
+                                "msg": "malformed cursor",
+                                "type": "value_error.malformed_cursor",
+                            }
+                        ]
+                    }
+                }
+            },
         },
         429: {
             "description": (
