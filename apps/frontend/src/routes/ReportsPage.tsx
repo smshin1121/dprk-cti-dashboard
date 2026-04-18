@@ -15,7 +15,7 @@ export function ReportsPage(): JSX.Element {
       <h1 id="reports-heading" className="text-2xl font-bold">
         Reports
       </h1>
-      <p className="mt-2 text-sm text-slate-600">
+      <p className="mt-2 text-sm text-ink-muted">
         Live list lands in Group F.
       </p>
     </section>

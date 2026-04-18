@@ -4,6 +4,34 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>DPRK CTI</title>
+    <script>
+      /*
+       * FOUC prevention — plan D4 lock.
+       * Reads the persisted theme preference from localStorage and
+       * writes it to html[data-theme] BEFORE React hydrates, so the
+       * first paint matches the user's choice. Without this, the
+       * page briefly renders under the :root (light) palette and
+       * flashes to dark once the React store mounts.
+       *
+       * Contract with src/stores/theme.ts::THEME_STORAGE_KEY /
+       * ::isValidThemeMode — changes here MUST be mirrored in the
+       * store (and vice versa). A test in theme.test.ts pins this
+       * contract so drift surfaces as a test failure.
+       */
+      (function () {
+        try {
+          var key = 'dprk-cti.theme'
+          var saved = localStorage.getItem(key)
+          var mode =
+            saved === 'light' || saved === 'dark' || saved === 'system'
+              ? saved
+              : 'system'
+          document.documentElement.setAttribute('data-theme', mode)
+        } catch (_) {
+          document.documentElement.setAttribute('data-theme', 'system')
+        }
+      })()
+    </script>
   </head>
   <body>
     <div id="root"></div>

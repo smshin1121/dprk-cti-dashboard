@@ -91,9 +91,9 @@ export const router = buildRouter()
 
 function NotFound(): JSX.Element {
   return (
-    <section className="m-6 rounded-lg border border-slate-200 bg-white p-5">
+    <section className="m-6 rounded-lg border border-border-card bg-surface p-5">
       <h1 className="text-lg font-semibold">Not found</h1>
-      <p className="mt-2 text-sm text-slate-600">
+      <p className="mt-2 text-sm text-ink-muted">
         This route doesn&apos;t exist. Pick an entry from the nav above.
       </p>
     </section>

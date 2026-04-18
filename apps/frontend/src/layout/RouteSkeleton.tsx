@@ -25,8 +25,8 @@ export function RouteSkeleton(): JSX.Element {
       aria-live="polite"
       aria-busy="true"
     >
-      <div className="h-6 w-48 animate-pulse rounded bg-slate-200" />
-      <div className="h-4 w-80 animate-pulse rounded bg-slate-200" />
+      <div className="h-6 w-48 animate-pulse rounded bg-border-card" />
+      <div className="h-4 w-80 animate-pulse rounded bg-border-card" />
     </div>
   )
 }

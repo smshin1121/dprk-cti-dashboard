@@ -16,7 +16,7 @@ export function DashboardPage(): JSX.Element {
       <h1 id="dashboard-heading" className="text-2xl font-bold">
         Dashboard
       </h1>
-      <p className="mt-2 text-sm text-slate-600">
+      <p className="mt-2 text-sm text-ink-muted">
         KPI strip wires in Group E. Dashboard visualizations arrive in PR #13.
       </p>
     </section>

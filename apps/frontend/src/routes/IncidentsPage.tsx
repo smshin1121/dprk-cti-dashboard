@@ -16,7 +16,7 @@ export function IncidentsPage(): JSX.Element {
       <h1 id="incidents-heading" className="text-2xl font-bold">
         Incidents
       </h1>
-      <p className="mt-2 text-sm text-slate-600">
+      <p className="mt-2 text-sm text-ink-muted">
         Live list lands in Group F.
       </p>
     </section>
