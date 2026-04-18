@@ -844,11 +844,20 @@ async def test_scenario_6_rate_limit_429_and_headers(
     # /auth/login IP bucket — 10/min. No cookie → key_func falls to
     # IP bucket. 11th call 429 without consulting PG at all (auth
     # endpoints don't touch the DB until after rate check).
-    for _ in range(10):
+    #
+    # First-10 status code is intentionally left underspecified:
+    # the actual handler body talks to Redis (store_oidc_state),
+    # and whether Redis is reachable from this test env depends
+    # on the fixture stack. What matters for THIS scenario is that
+    # the 10 calls consume the IP bucket (i.e. are not 429-short-
+    # circuited by some stale leftover state), regardless of whether
+    # the handler body succeeds (302) or fails with 500 (bare
+    # ConnectionError) / 503 (caught by handle_storage_unavailable —
+    # Codex R1 P2). The 11th call MUST be 429 from slowapi.
+    for i in range(10):
         resp = await read_client.get("/api/v1/auth/login")
-        # 302/307 on success (redirect to keycloak stub) — both acceptable.
-        assert resp.status_code in (302, 307, 500), (
-            f"/auth/login unexpected status {resp.status_code}"
+        assert resp.status_code != 429, (
+            f"request {i} should NOT be rate-limited (bucket not yet full)"
         )
 
     over_login = await read_client.get("/api/v1/auth/login")

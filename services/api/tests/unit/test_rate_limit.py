@@ -289,3 +289,114 @@ class TestAppStartup:
         from api.main import app
 
         assert RateLimitExceeded in app.exception_handlers
+
+
+# ---------------------------------------------------------------------------
+# TestStorageUnavailableHandler — Codex R1 P2
+# ---------------------------------------------------------------------------
+#
+# rate_limit.py's module docstring promises that a Redis outage during
+# request time surfaces as a typed 503, not a 500 with a stack trace.
+# That promise is worth nothing unless (a) the handler exists and
+# returns the right shape, (b) it is registered against the exception
+# types slowapi's Redis driver actually raises, and (c) a real request
+# through a decorated route surfaces 503 when the storage raises.
+# This class covers all three.
+
+
+class TestStorageUnavailableHandler:
+    """Codex R1 P2 — handle_storage_unavailable 503 path."""
+
+    def test_handler_returns_503_json_with_expected_shape(self) -> None:
+        """Direct handler call, independent of any middleware. Proves
+        the body/headers contract pointed at by the module docstring."""
+        import json
+
+        from fastapi import Request
+        from redis.exceptions import ConnectionError as RedisConnectionError
+
+        from api.rate_limit import handle_storage_unavailable
+
+        req = MagicMock(spec=Request)
+        req.url = MagicMock()
+        req.url.path = "/api/v1/actors"
+        req.method = "GET"
+
+        resp = handle_storage_unavailable(
+            req, RedisConnectionError("simulated outage")
+        )
+
+        assert resp.status_code == 503
+        body = json.loads(resp.body)
+        assert body == {
+            "error": "rate_limit_storage_unavailable",
+            "message": (
+                "Rate-limit storage backend is temporarily unreachable. "
+                "Retry after a short delay."
+            ),
+        }
+        # Retry-After pin — ops tooling + browser retry both expect it.
+        assert resp.headers["retry-after"] == "5"
+
+    def test_handler_registered_for_all_storage_exception_types(self) -> None:
+        """Group F docstring lists three exception surfaces that slowapi
+        may propagate from Redis. The 503 path is only real when the
+        registration covers all three — missing one creates a silent
+        500 window.
+        """
+        from limits.errors import StorageError
+        from redis.exceptions import ConnectionError as RedisConnectionError
+        from redis.exceptions import TimeoutError as RedisTimeoutError
+
+        from api.main import app
+        from api.rate_limit import handle_storage_unavailable
+
+        for exc_type in (StorageError, RedisConnectionError, RedisTimeoutError):
+            assert exc_type in app.exception_handlers, (
+                f"{exc_type.__name__} handler not registered — 503 promise broken"
+            )
+            assert app.exception_handlers[exc_type] is handle_storage_unavailable
+
+    async def test_storage_raises_surface_as_503_through_decorated_route(
+        self,
+        client,
+        override_session_store,
+        make_session_cookie,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """End-to-end proof: when slowapi's underlying storage
+        ``hit()`` raises ``RedisConnectionError`` (simulating a Redis
+        outage), a decorated endpoint returns 503 JSON through the
+        registered handler — not 500, not a stack-trace leak.
+
+        Patches ``app.state.limiter._limiter.hit`` because that is
+        where slowapi reaches into ``limits`` during the decorator
+        check. If slowapi's internal path changes, this test will
+        break loudly — which is desirable: it prevents a silent
+        regression where the exception gets re-wrapped and our
+        handler no longer catches it.
+        """
+        from redis.exceptions import ConnectionError as RedisConnectionError
+
+        from api.main import app
+
+        cookie = await make_session_cookie(roles=["analyst"])
+
+        def _raise_connection_error(*_args, **_kwargs) -> bool:
+            raise RedisConnectionError("simulated Redis outage")
+
+        monkeypatch.setattr(
+            app.state.limiter._limiter, "hit", _raise_connection_error
+        )
+
+        resp = await client.get(
+            "/api/v1/actors",
+            cookies={"dprk_cti_session": cookie},
+        )
+        assert resp.status_code == 503, (
+            f"expected 503 from storage failure, got {resp.status_code}"
+        )
+        body = resp.json()
+        assert body["error"] == "rate_limit_storage_unavailable"
+        assert "temporarily unreachable" in body["message"]
+        assert resp.headers["retry-after"] == "5"

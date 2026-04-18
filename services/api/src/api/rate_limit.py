@@ -21,8 +21,14 @@ test + dev never silently inheriting the prod enforcement path:
   operationally equivalent to "no rate limit" when the API runs
   behind a load balancer. Per plan §9.2 STRIDE "DoS" mitigation,
   prod cannot ship without it. When Redis is genuinely unreachable
-  at request time, slowapi's own Redis driver raises and the
-  exception handler returns 503 (see ``handle_storage_unavailable``).
+  at request time, slowapi's Redis driver raises
+  ``redis.exceptions.ConnectionError`` / ``TimeoutError`` (or
+  ``limits.errors.StorageError`` if wrapped upstream); the
+  exception handler ``handle_storage_unavailable`` converts those
+  to HTTP 503 JSON so the client gets a typed, non-500 error and
+  ops tooling can page on the storage dependency cleanly. The
+  handler is registered in ``main.py`` alongside the
+  ``RateLimitExceeded`` → 429 one.
 - **test** — forced to ``memory://`` regardless of what the env
   variable says. The goal is deterministic window semantics in CI
   without an external Redis container. ``RATE_LIMIT_STORAGE_URL``
@@ -62,6 +68,9 @@ from functools import lru_cache
 
 from fastapi import Request
 from fastapi.responses import JSONResponse
+from limits.errors import StorageError
+from redis.exceptions import ConnectionError as RedisConnectionError
+from redis.exceptions import TimeoutError as RedisTimeoutError
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
@@ -244,9 +253,59 @@ def rate_limit_exceeded_handler(
     return response
 
 
+def handle_storage_unavailable(
+    request: Request,
+    exc: StorageError | RedisConnectionError | RedisTimeoutError,
+) -> JSONResponse:
+    """Convert rate-limit storage backend failure into HTTP 503 JSON.
+
+    When slowapi's Redis driver cannot reach the storage backend
+    (network partition, Redis process down, slow DNS, TLS handshake
+    failure), the underlying exception propagates up through the
+    decorator wrapper. Without this handler, FastAPI's default
+    behavior is to bubble it into a 500 with the stack trace in
+    the response — wrong for three reasons:
+
+    - **Semantics.** 500 means "the API is broken". A Redis blip
+      means "rate-limit state is temporarily unknown". Clients
+      (and upstream gateways) should retry, not mark the API dead.
+    - **Observability.** A typed 503 with a stable ``error`` field
+      lets ops dashboards alert on the storage dependency separately
+      from app bugs.
+    - **Security.** Default FastAPI 500 body may leak the exception
+      class name / details in dev, which can hint at the storage
+      backend topology. The 503 body here is intentionally terse.
+
+    The plan D8 lock says storage-block events should be structured
+    logs only; this handler logs a warning for ops visibility but
+    does not write an audit row (audit is for domain mutations,
+    not operational incidents).
+    """
+    logger.warning(
+        "rate_limit.storage_unavailable",
+        extra={
+            "exc_type": type(exc).__name__,
+            "path": request.url.path,
+            "method": request.method,
+        },
+    )
+    return JSONResponse(
+        status_code=503,
+        content={
+            "error": "rate_limit_storage_unavailable",
+            "message": (
+                "Rate-limit storage backend is temporarily unreachable. "
+                "Retry after a short delay."
+            ),
+        },
+        headers={"Retry-After": "5"},
+    )
+
+
 __all__ = [
     "build_limiter",
     "get_limiter",
+    "handle_storage_unavailable",
     "rate_limit_exceeded_handler",
     "session_or_ip_key",
 ]

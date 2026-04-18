@@ -2,12 +2,19 @@ import os
 
 from fastapi import Depends, FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from limits.errors import StorageError
+from redis.exceptions import ConnectionError as RedisConnectionError
+from redis.exceptions import TimeoutError as RedisTimeoutError
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
 from .config import get_settings
 from .deps import verify_token
-from .rate_limit import get_limiter, rate_limit_exceeded_handler
+from .rate_limit import (
+    get_limiter,
+    handle_storage_unavailable,
+    rate_limit_exceeded_handler,
+)
 from .telemetry import setup_telemetry
 from .routers import (
     actors,
@@ -60,6 +67,15 @@ app.state.limiter = _limiter
 # OpenAPI `rate_limit_exceeded` example for every decorated route,
 # including the auth/callback browser-redirect path).
 app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
+# Storage backend (Redis) failure handler — 503 JSON instead of bare
+# 500 when the rate-limit Redis is unreachable. Codex R1 P2 lock:
+# rate_limit.py's fail-closed docstring promised a 503 path; this
+# registration is what makes the promise real. Covers both limits'
+# wrapper (`StorageError`) and redis-py's raw connection errors
+# (which slowapi's Redis backend does not always re-wrap).
+app.add_exception_handler(StorageError, handle_storage_unavailable)
+app.add_exception_handler(RedisConnectionError, handle_storage_unavailable)
+app.add_exception_handler(RedisTimeoutError, handle_storage_unavailable)
 app.add_middleware(SlowAPIMiddleware)
 
 # ---------------------------------------------------------------------------
