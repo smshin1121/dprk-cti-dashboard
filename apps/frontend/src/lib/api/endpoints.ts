@@ -9,11 +9,41 @@
  */
 
 import { apiGet, apiPost } from '../api'
-import { currentUserSchema, type CurrentUser } from './schemas'
+import {
+  type DashboardSummaryFilters,
+  toDashboardSummaryQueryParams,
+} from '../dashboardFilters'
+import {
+  currentUserSchema,
+  dashboardSummarySchema,
+  type CurrentUser,
+  type DashboardSummary,
+} from './schemas'
 
 /** `GET /api/v1/auth/me` — returns the current authenticated user. */
 export function getMe(signal?: AbortSignal): Promise<CurrentUser> {
   return apiGet('/api/v1/auth/me', currentUserSchema, signal)
+}
+
+/**
+ * `GET /api/v1/dashboard/summary` — D6 aggregate shape.
+ *
+ * Filter contract: accepts the wire-shaped `DashboardSummaryFilters`
+ * (the same object that seeds the React Query cache key). The type
+ * has no tlp field by construction (plan D5), so this endpoint is
+ * structurally incapable of leaking a tlp query param even if a
+ * future caller tries. `toDashboardSummaryQueryParams` handles the
+ * `group_id` repetition + date-key serialization.
+ */
+export function getDashboardSummary(
+  filters: DashboardSummaryFilters,
+  signal?: AbortSignal,
+): Promise<DashboardSummary> {
+  const qs = toDashboardSummaryQueryParams(filters).toString()
+  const path = qs.length > 0
+    ? `/api/v1/dashboard/summary?${qs}`
+    : '/api/v1/dashboard/summary'
+  return apiGet(path, dashboardSummarySchema, signal)
 }
 
 /**

@@ -47,3 +47,50 @@ export const currentUserSchema = z.object({
 })
 
 export type CurrentUser = z.infer<typeof currentUserSchema>
+
+/**
+ * `/api/v1/dashboard/summary` — plan D6 shape. Mirrors BE Pydantic
+ * `DashboardSummary` in `services/api/src/api/schemas/read.py`.
+ * Field bounds (`ge=0`, `year in 1900..2100`) mirror the BE so the
+ * FE refuses to ingest payloads the BE would not produce — cheap
+ * canary for DB corruption or mock-server drift.
+ *
+ * BE wire shape (copy of the BE DTO):
+ * ```
+ * total_reports: int >= 0
+ * total_incidents: int >= 0
+ * total_actors: int >= 0
+ * reports_by_year: [{ year: 1900..2100, count: int >= 0 }]
+ * incidents_by_motivation: [{ motivation: str, count: int >= 0 }]
+ * top_groups: [{ group_id: int, name: str, report_count: int >= 0 }]
+ * ```
+ */
+export const dashboardYearCountSchema = z.object({
+  year: z.number().int().gte(1900).lte(2100),
+  count: z.number().int().gte(0),
+})
+
+export const dashboardMotivationCountSchema = z.object({
+  motivation: z.string(),
+  count: z.number().int().gte(0),
+})
+
+export const dashboardTopGroupSchema = z.object({
+  group_id: z.number().int(),
+  name: z.string(),
+  report_count: z.number().int().gte(0),
+})
+
+export const dashboardSummarySchema = z.object({
+  total_reports: z.number().int().gte(0),
+  total_incidents: z.number().int().gte(0),
+  total_actors: z.number().int().gte(0),
+  reports_by_year: z.array(dashboardYearCountSchema),
+  incidents_by_motivation: z.array(dashboardMotivationCountSchema),
+  top_groups: z.array(dashboardTopGroupSchema),
+})
+
+export type DashboardYearCount = z.infer<typeof dashboardYearCountSchema>
+export type DashboardMotivationCount = z.infer<typeof dashboardMotivationCountSchema>
+export type DashboardTopGroup = z.infer<typeof dashboardTopGroupSchema>
+export type DashboardSummary = z.infer<typeof dashboardSummarySchema>
