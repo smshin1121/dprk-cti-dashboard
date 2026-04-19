@@ -1,18 +1,198 @@
-from fastapi import APIRouter
-from fastapi.responses import JSONResponse
+"""Search router - PR #17 Group B.
+
+Exposes ``GET /api/v1/search`` as the FTS-only MVP over reports.
+
+Locked scope for this slice:
+- Reports only (D1). No codenames / incidents / alerts yet.
+- PostgreSQL FTS only (D2/D3) via ``search_service``. Hybrid/vector
+  search is a follow-up PR once llm-proxy gains an embedding endpoint.
+- Filters are date-only (D8): ``date_from`` / ``date_to`` plus
+  ``limit``. No tag/source/group/tlp/q-subfilters.
+- Rate limit is the same 60/min/user read policy as the rest of the
+  read surface, but a per-decorated-route bucket (slowapi semantics).
+- RBAC matches the five read roles.
+"""
+
+from __future__ import annotations
+
+from datetime import date
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, Query, Request
+from fastapi.responses import JSONResponse, Response
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from ..auth.schemas import CurrentUser
+from ..db import get_db
+from ..deps import require_role
+from ..rate_limit import get_limiter
+from ..read import search_cache, search_service
+from ..schemas.read import (
+    SEARCH_LIMIT_DEFAULT,
+    SEARCH_LIMIT_MAX,
+    SEARCH_LIMIT_MIN,
+    SearchResponse,
+)
 
 router = APIRouter()
 
+_limiter = get_limiter()
+_READ_ROLES = ("analyst", "researcher", "policy", "soc", "admin")
 
-@router.get("")
-async def search(q: str = "", limit: int = 20) -> JSONResponse:
-    """§5.2 Global full-text + semantic search across reports/alerts/actors."""
-    return JSONResponse(
-        status_code=501,
-        content={
-            "status": "not_implemented",
-            "endpoint": "search",
-            "q": q,
-            "limit": limit,
+
+@router.get(
+    "",
+    response_model=SearchResponse,
+    summary="Full-text search reports",
+    description=(
+        "PostgreSQL FTS-only MVP over reports. Query text is required, "
+        "whitespace-only queries are rejected with 422, and the filter "
+        "surface is intentionally narrow: `date_from`, `date_to`, and "
+        "`limit` only. Response envelope is `{items, total_hits, latency_ms}` "
+        "with per-hit `fts_rank` and a forward-compat `vector_rank: null` "
+        "slot reserved for the follow-up hybrid PR."
+    ),
+    responses={
+        200: {
+            "description": (
+                "Search hits ordered by `fts_rank DESC, report.id DESC`, or "
+                "the D10 empty envelope when there are no matches."
+            ),
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "happy": {
+                            "summary": "One report hit",
+                            "value": {
+                                "items": [
+                                    {
+                                        "report": {
+                                            "id": 999060,
+                                            "title": "Lazarus targets SK crypto exchanges",
+                                            "url": "https://pact.test/search/lazarus-1",
+                                            "url_canonical": "https://pact.test/search/lazarus-1",
+                                            "published": "2026-03-15",
+                                            "source_id": 1,
+                                            "source_name": "Vendor",
+                                            "lang": "en",
+                                            "tlp": "WHITE",
+                                        },
+                                        "fts_rank": 0.0759,
+                                        "vector_rank": None,
+                                    }
+                                ],
+                                "total_hits": 1,
+                                "latency_ms": 42,
+                            },
+                        },
+                        "empty": {
+                            "summary": "No matches",
+                            "value": {
+                                "items": [],
+                                "total_hits": 0,
+                                "latency_ms": 12,
+                            },
+                        },
+                    }
+                }
+            },
         },
+        401: {"description": "Missing or invalid session cookie"},
+        403: {
+            "description": (
+                "Authenticated role is not analyst / researcher / policy "
+                "/ soc / admin"
+            )
+        },
+        422: {
+            "description": (
+                "Invalid query parameter: missing `q`, blank/whitespace-only `q`, "
+                "invalid ISO date, or `limit` outside 1..50. Plan D12 uniform 422."
+            ),
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "blank_q": {
+                            "summary": "Whitespace-only query rejected",
+                            "value": {
+                                "detail": [
+                                    {
+                                        "loc": ["query", "q"],
+                                        "msg": "q must not be blank",
+                                        "type": "value_error.blank_query",
+                                    }
+                                ]
+                            },
+                        },
+                        "limit": {
+                            "summary": "Limit out of range",
+                            "value": {
+                                "detail": [
+                                    {
+                                        "loc": ["query", "limit"],
+                                        "msg": "Input should be less than or equal to 50",
+                                        "type": "less_than_equal",
+                                    }
+                                ]
+                            },
+                        },
+                    }
+                }
+            },
+        },
+        429: {
+            "description": (
+                "Rate limit exceeded - same 60/min/user read policy as the "
+                "other read endpoints, but a per-decorated-route bucket. "
+                "Exhausting `/search` does NOT consume `/actors` or `/reports` budget."
+            ),
+            "content": {
+                "application/json": {
+                    "example": {
+                        "error": "rate_limit_exceeded",
+                        "message": "60 per 1 minute",
+                    }
+                }
+            },
+        },
+    },
+)
+@_limiter.limit("60/minute")
+async def search_endpoint(
+    request: Request,
+    q: Annotated[str, Query(min_length=1)],
+    date_from: Annotated[date | None, Query()] = None,
+    date_to: Annotated[date | None, Query()] = None,
+    limit: Annotated[
+        int,
+        Query(ge=SEARCH_LIMIT_MIN, le=SEARCH_LIMIT_MAX),
+    ] = SEARCH_LIMIT_DEFAULT,
+    session: AsyncSession = Depends(get_db),
+    redis=Depends(search_cache.get_redis_for_search_cache),
+    _current_user: CurrentUser = Depends(require_role(*_READ_ROLES)),
+) -> Response:
+    """Report search endpoint (PR #17 Group B)."""
+    q_stripped = q.strip()
+    if not q_stripped:
+        return JSONResponse(
+            status_code=422,
+            content={
+                "detail": [
+                    {
+                        "loc": ["query", "q"],
+                        "msg": "q must not be blank",
+                        "type": "value_error.blank_query",
+                    }
+                ]
+            },
+        )
+
+    result = await search_service.get_search_results(
+        session,
+        redis,
+        q=q_stripped,
+        date_from=date_from,
+        date_to=date_to,
+        limit=limit,
     )
+    return SearchResponse.model_validate(result.payload)

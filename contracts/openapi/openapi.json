@@ -1501,6 +1501,108 @@
         "title": "ReviewDecisionResponse",
         "type": "object"
       },
+      "SearchHit": {
+        "description": "One row in ``SearchResponse.items`` (plan D9).\n\nFTS-only MVP shape:\n    - ``report``: the full ReportItem (id, title, url, url_canonical,\n      published, source_id, source_name, lang, tlp) — same DTO the\n      /reports list returns, so FE row components are reusable.\n    - ``fts_rank``: PostgreSQL ``ts_rank_cd`` value (positive float;\n      higher = better match). Non-negative by construction since\n      ``ts_rank_cd`` over a `simple` tsvector always returns >= 0.\n    - ``vector_rank``: **always ``None`` this slice** (D9 forward-\n      compat slot). The follow-up hybrid PR will fill this with the\n      1-indexed rank position within the vector-kNN result list.",
+        "examples": [
+          {
+            "fts_rank": 0.0759,
+            "report": {
+              "id": 999060,
+              "lang": "en",
+              "published": "2026-03-15",
+              "source_id": 1,
+              "source_name": "Vendor",
+              "title": "Lazarus targets SK crypto exchanges",
+              "tlp": "WHITE",
+              "url": "https://pact.test/search/lazarus-1",
+              "url_canonical": "https://pact.test/search/lazarus-1"
+            }
+          }
+        ],
+        "properties": {
+          "fts_rank": {
+            "minimum": 0.0,
+            "title": "Fts Rank",
+            "type": "number"
+          },
+          "report": {
+            "$ref": "#/components/schemas/ReportItem"
+          },
+          "vector_rank": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vector Rank"
+          }
+        },
+        "required": [
+          "report",
+          "fts_rank"
+        ],
+        "title": "SearchHit",
+        "type": "object"
+      },
+      "SearchResponse": {
+        "description": "Response for ``GET /api/v1/search`` (plan D9 / D10 / D12).\n\nEnvelope:\n    - ``items``: up to ``SEARCH_LIMIT_MAX`` hits ordered by FTS\n      rank DESC, tiebroken by ``reports.id DESC`` (D2 locks the\n      stable secondary key).\n    - ``total_hits``: count of rows matched by the FTS predicate\n      BEFORE the ``LIMIT`` is applied (not the per-page count).\n      Hard-capped at a sane ceiling by the service layer so a\n      pathological query doesn't scan the corpus twice.\n    - ``latency_ms``: envelope-level observability of the\n      per-request server-side time. Sub-budgets (fts_ms,\n      cache_hit) are logged via D16 — not echoed in the payload.\n\nD10 empty contract: zero-match queries emit\n``{items: [], total_hits: 0, latency_ms: <int>}`` with 200 OK.\nNOT 404, NOT 500, NO fake fallback.",
+        "examples": [
+          {
+            "items": [
+              {
+                "fts_rank": 0.0759,
+                "report": {
+                  "id": 999060,
+                  "lang": "en",
+                  "published": "2026-03-15",
+                  "source_id": 1,
+                  "source_name": "Vendor",
+                  "title": "Lazarus targets SK crypto exchanges",
+                  "tlp": "WHITE",
+                  "url": "https://pact.test/search/lazarus-1",
+                  "url_canonical": "https://pact.test/search/lazarus-1"
+                }
+              }
+            ],
+            "latency_ms": 42,
+            "total_hits": 1
+          },
+          {
+            "items": [],
+            "latency_ms": 12,
+            "total_hits": 0
+          }
+        ],
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SearchHit"
+            },
+            "maxItems": 50,
+            "title": "Items",
+            "type": "array"
+          },
+          "latency_ms": {
+            "minimum": 0.0,
+            "title": "Latency Ms",
+            "type": "integer"
+          },
+          "total_hits": {
+            "minimum": 0.0,
+            "title": "Total Hits",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total_hits",
+          "latency_ms"
+        ],
+        "title": "SearchResponse",
+        "type": "object"
+      },
       "SimilarReportEntry": {
         "description": "One row in ``SimilarReportsResponse.items`` (plan D8).\n\n``report`` is the shallow ``LinkedReportSummary`` used elsewhere\nin PR #14 — same shape as the incident detail's linked reports\nlist so the FE can render both panels with one row component.\n``score`` is cosine similarity in ``[0, 1]`` (pgvector's\n``<=>`` is cosine DISTANCE; we emit ``1 - distance`` so higher\nvalues mean \"more similar\" — matches the analyst mental model).",
         "examples": [
@@ -4207,17 +4309,51 @@
     },
     "/api/v1/search": {
       "get": {
-        "description": "§5.2 Global full-text + semantic search across reports/alerts/actors.",
-        "operationId": "search_api_v1_search_get",
+        "description": "PostgreSQL FTS-only MVP over reports. Query text is required, whitespace-only queries are rejected with 422, and the filter surface is intentionally narrow: `date_from`, `date_to`, and `limit` only. Response envelope is `{items, total_hits, latency_ms}` with per-hit `fts_rank` and a forward-compat `vector_rank: null` slot reserved for the follow-up hybrid PR.",
+        "operationId": "search_endpoint_api_v1_search_get",
         "parameters": [
           {
             "in": "query",
             "name": "q",
-            "required": false,
+            "required": true,
             "schema": {
-              "default": "",
+              "minLength": 1,
               "title": "Q",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "date_from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Date From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "date_to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Date To"
             }
           },
           {
@@ -4225,7 +4361,9 @@
             "name": "limit",
             "required": false,
             "schema": {
-              "default": 20,
+              "default": 10,
+              "maximum": 50,
+              "minimum": 1,
               "title": "Limit",
               "type": "integer"
             }
@@ -4235,23 +4373,104 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "examples": {
+                  "empty": {
+                    "summary": "No matches",
+                    "value": {
+                      "items": [],
+                      "latency_ms": 12,
+                      "total_hits": 0
+                    }
+                  },
+                  "happy": {
+                    "summary": "One report hit",
+                    "value": {
+                      "items": [
+                        {
+                          "fts_rank": 0.0759,
+                          "report": {
+                            "id": 999060,
+                            "lang": "en",
+                            "published": "2026-03-15",
+                            "source_id": 1,
+                            "source_name": "Vendor",
+                            "title": "Lazarus targets SK crypto exchanges",
+                            "tlp": "WHITE",
+                            "url": "https://pact.test/search/lazarus-1",
+                            "url_canonical": "https://pact.test/search/lazarus-1"
+                          }
+                        }
+                      ],
+                      "latency_ms": 42,
+                      "total_hits": 1
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResponse"
+                }
               }
             },
-            "description": "Successful Response"
+            "description": "Search hits ordered by `fts_rank DESC, report.id DESC`, or the D10 empty envelope when there are no matches."
+          },
+          "401": {
+            "description": "Missing or invalid session cookie"
+          },
+          "403": {
+            "description": "Authenticated role is not analyst / researcher / policy / soc / admin"
           },
           "422": {
             "content": {
               "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                "examples": {
+                  "blank_q": {
+                    "summary": "Whitespace-only query rejected",
+                    "value": {
+                      "detail": [
+                        {
+                          "loc": [
+                            "query",
+                            "q"
+                          ],
+                          "msg": "q must not be blank",
+                          "type": "value_error.blank_query"
+                        }
+                      ]
+                    }
+                  },
+                  "limit": {
+                    "summary": "Limit out of range",
+                    "value": {
+                      "detail": [
+                        {
+                          "loc": [
+                            "query",
+                            "limit"
+                          ],
+                          "msg": "Input should be less than or equal to 50",
+                          "type": "less_than_equal"
+                        }
+                      ]
+                    }
+                  }
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Invalid query parameter: missing `q`, blank/whitespace-only `q`, invalid ISO date, or `limit` outside 1..50. Plan D12 uniform 422."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": "rate_limit_exceeded",
+                  "message": "60 per 1 minute"
+                }
+              }
+            },
+            "description": "Rate limit exceeded - same 60/min/user read policy as the other read endpoints, but a per-decorated-route bucket. Exhausting `/search` does NOT consume `/actors` or `/reports` budget."
           }
         },
-        "summary": "Search",
+        "summary": "Full-text search reports",
         "tags": [
           "search"
         ]
