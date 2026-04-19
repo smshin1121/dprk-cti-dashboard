@@ -887,6 +887,16 @@ ACTOR_REPORTS_LIMIT_MAX = 200
 ACTOR_REPORTS_LIMIT_DEFAULT = 50
 
 
+# PR #17 plan D13 — /search FTS-only MVP. Default 10 matches /similar;
+# max 50 caps the palette "show more" room without widening pagination.
+# ``vector_rank`` is a forward-compat slot (D9) filled by the follow-up
+# hybrid PR; this slice always emits ``null``.
+SEARCH_LIMIT_MIN = 1
+SEARCH_LIMIT_MAX = 50
+SEARCH_LIMIT_DEFAULT = 10
+SEARCH_CACHE_TTL_SECONDS = 60
+
+
 class SimilarReportEntry(BaseModel):
     """One row in ``SimilarReportsResponse.items`` (plan D8).
 
@@ -962,6 +972,122 @@ class SimilarReportsResponse(BaseModel):
     ]
 
 
+# ---------------------------------------------------------------------------
+# PR #17 /search FTS-only MVP (plan D9 / D10 / D12)
+# ---------------------------------------------------------------------------
+#
+# Hybrid (BM25 + vector + RRF) is the Draft v1 design target but was
+# blocked at plan lock by OI5 = B: llm-proxy has no embedding endpoint
+# today. This slice ships the FTS half only; the ``vector_rank`` slot
+# on every SearchHit is reserved as ``None`` so the follow-up hybrid
+# PR can fill it without breaking the JSON schema (additive change).
+
+
+class SearchHit(BaseModel):
+    """One row in ``SearchResponse.items`` (plan D9).
+
+    FTS-only MVP shape:
+        - ``report``: the full ReportItem (id, title, url, url_canonical,
+          published, source_id, source_name, lang, tlp) — same DTO the
+          /reports list returns, so FE row components are reusable.
+        - ``fts_rank``: PostgreSQL ``ts_rank_cd`` value (positive float;
+          higher = better match). Non-negative by construction since
+          ``ts_rank_cd`` over a `simple` tsvector always returns >= 0.
+        - ``vector_rank``: **always ``None`` this slice** (D9 forward-
+          compat slot). The follow-up hybrid PR will fill this with the
+          1-indexed rank position within the vector-kNN result list.
+    """
+
+    model_config = ConfigDict(
+        frozen=True,
+        json_schema_extra={
+            "examples": [
+                {
+                    "report": {
+                        "id": 999060,
+                        "title": "Lazarus targets SK crypto exchanges",
+                        "url": "https://pact.test/search/lazarus-1",
+                        "url_canonical": "https://pact.test/search/lazarus-1",
+                        "published": "2026-03-15",
+                        "source_id": 1,
+                        "source_name": "Vendor",
+                        "lang": "en",
+                        "tlp": "WHITE",
+                    },
+                    "fts_rank": 0.0759,
+                    "vector_rank": None,
+                }
+            ]
+        },
+    )
+
+    report: ReportItem
+    fts_rank: Annotated[float, Field(ge=0.0)]
+    # Literal None this slice. Keep Optional[int] so the follow-up
+    # hybrid PR fills it without schema churn (FE Zod already accepts
+    # `z.number().int().nullable()` for the same reason).
+    vector_rank: int | None = None
+
+
+class SearchResponse(BaseModel):
+    """Response for ``GET /api/v1/search`` (plan D9 / D10 / D12).
+
+    Envelope:
+        - ``items``: up to ``SEARCH_LIMIT_MAX`` hits ordered by FTS
+          rank DESC, tiebroken by ``reports.id DESC`` (D2 locks the
+          stable secondary key).
+        - ``total_hits``: count of rows matched by the FTS predicate
+          BEFORE the ``LIMIT`` is applied (not the per-page count).
+          Hard-capped at a sane ceiling by the service layer so a
+          pathological query doesn't scan the corpus twice.
+        - ``latency_ms``: envelope-level observability of the
+          per-request server-side time. Sub-budgets (fts_ms,
+          cache_hit) are logged via D16 — not echoed in the payload.
+
+    D10 empty contract: zero-match queries emit
+    ``{items: [], total_hits: 0, latency_ms: <int>}`` with 200 OK.
+    NOT 404, NOT 500, NO fake fallback.
+    """
+
+    model_config = ConfigDict(
+        frozen=True,
+        json_schema_extra={
+            "examples": [
+                {
+                    "items": [
+                        {
+                            "report": {
+                                "id": 999060,
+                                "title": "Lazarus targets SK crypto exchanges",
+                                "url": "https://pact.test/search/lazarus-1",
+                                "url_canonical": "https://pact.test/search/lazarus-1",
+                                "published": "2026-03-15",
+                                "source_id": 1,
+                                "source_name": "Vendor",
+                                "lang": "en",
+                                "tlp": "WHITE",
+                            },
+                            "fts_rank": 0.0759,
+                            "vector_rank": None,
+                        }
+                    ],
+                    "total_hits": 1,
+                    "latency_ms": 42,
+                },
+                # Plan D10 empty contract — zero FTS matches.
+                {"items": [], "total_hits": 0, "latency_ms": 12},
+            ]
+        },
+    )
+
+    items: Annotated[
+        list[SearchHit],
+        Field(default_factory=list, max_length=SEARCH_LIMIT_MAX),
+    ]
+    total_hits: Annotated[int, Field(ge=0)]
+    latency_ms: Annotated[int, Field(ge=0)]
+
+
 class ActorDetail(BaseModel):
     """Response for ``GET /api/v1/actors/{id}`` (plan D1 + D11).
 
@@ -1003,6 +1129,10 @@ __all__ = [
     "ACTOR_REPORTS_LIMIT_DEFAULT",
     "ACTOR_REPORTS_LIMIT_MAX",
     "ACTOR_REPORTS_LIMIT_MIN",
+    "SEARCH_CACHE_TTL_SECONDS",
+    "SEARCH_LIMIT_DEFAULT",
+    "SEARCH_LIMIT_MAX",
+    "SEARCH_LIMIT_MIN",
     "ActorDetail",
     "ActorItem",
     "ActorListResponse",
@@ -1028,6 +1158,8 @@ __all__ = [
     "SIMILAR_K_DEFAULT",
     "SIMILAR_K_MAX",
     "SIMILAR_K_MIN",
+    "SearchHit",
+    "SearchResponse",
     "SimilarReportEntry",
     "SimilarReportsResponse",
     "TacticRef",
