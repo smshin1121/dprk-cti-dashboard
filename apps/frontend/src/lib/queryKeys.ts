@@ -73,4 +73,29 @@ export const queryKeys = {
 
   analyticsGeo: (filters: AnalyticsFilters) =>
     ['analytics', 'geo', filters] as const,
+
+  /**
+   * `/api/v1/reports/{id}` / `/incidents/{id}` / `/actors/{id}` —
+   * plan D1 + D11 (PR #14 Group D). Detail pages aren't filterable:
+   * the path-param id IS the identifier. Each key carries ONLY the
+   * id — no FilterBar date / group / tlp state reaches these caches
+   * because the hooks (`useReportDetail` / `useIncidentDetail` /
+   * `useActorDetail`) don't subscribe to `useFilterStore`. Pinned
+   * by `use{Report,Incident,Actor}Detail.test.tsx` no-refetch-on-
+   * filter-toggle cases.
+   */
+  reportDetail: (id: number) => ['reports', 'detail', id] as const,
+  incidentDetail: (id: number) => ['incidents', 'detail', id] as const,
+  actorDetail: (id: number) => ['actors', 'detail', id] as const,
+
+  /**
+   * `/api/v1/reports/{id}/similar` — plan D8 (PR #14 Group D). Key
+   * scope is `(report_id, k)` matching the BE Redis cache key
+   * `similar_reports:{id}:{k}` exactly: changing the source report
+   * or k opens a new cache slot on both sides. Mirrors the
+   * `analyticsAttackMatrix` top_n pattern (caller-configurable arg,
+   * not global filter). No filter state participates.
+   */
+  similarReports: (reportId: number, k: number) =>
+    ['reports', reportId, 'similar', k] as const,
 } as const

@@ -29,19 +29,28 @@ import {
   toReportListQueryParams,
 } from '../listFilters'
 import {
+  actorDetailSchema,
   actorListResponseSchema,
   attackMatrixResponseSchema,
   currentUserSchema,
   dashboardSummarySchema,
   geoResponseSchema,
+  incidentDetailSchema,
+  reportDetailSchema,
+  similarReportsResponseSchema,
+  SIMILAR_K_DEFAULT,
   trendResponseSchema,
+  type ActorDetail,
   type ActorListResponse,
   type AttackMatrixResponse,
   type CurrentUser,
   type DashboardSummary,
   type GeoResponse,
+  type IncidentDetail,
   type IncidentListResponse,
+  type ReportDetail,
   type ReportListResponse,
+  type SimilarReportsResponse,
   type TrendResponse,
 } from './schemas'
 
@@ -180,6 +189,64 @@ export function getGeo(
     ? `/api/v1/analytics/geo?${qs}`
     : '/api/v1/analytics/geo'
   return apiGet(path, geoResponseSchema, signal)
+}
+
+/**
+ * `GET /api/v1/reports/{id}` — plan D1 + D9 + D11 (PR #14 Group D).
+ *
+ * Path-param only; no filter querystring. Detail pages aren't
+ * filterable — the id IS the identifier. Caller guards `id` before
+ * calling (the hook layer enables the query only for positive
+ * integer ids); `apiGet` surfaces 404 as `ApiError`.
+ */
+export function getReportDetail(
+  id: number,
+  signal?: AbortSignal,
+): Promise<ReportDetail> {
+  return apiGet(`/api/v1/reports/${id}`, reportDetailSchema, signal)
+}
+
+/**
+ * `GET /api/v1/incidents/{id}` — plan D1 + D9 + D11 (PR #14 Group D).
+ */
+export function getIncidentDetail(
+  id: number,
+  signal?: AbortSignal,
+): Promise<IncidentDetail> {
+  return apiGet(`/api/v1/incidents/${id}`, incidentDetailSchema, signal)
+}
+
+/**
+ * `GET /api/v1/actors/{id}` — plan D1 + D11 (PR #14 Group D).
+ *
+ * Response schema has no reports-like key per D11; unknown keys are
+ * silently stripped (see `actorDetailSchema` docstring).
+ */
+export function getActorDetail(
+  id: number,
+  signal?: AbortSignal,
+): Promise<ActorDetail> {
+  return apiGet(`/api/v1/actors/${id}`, actorDetailSchema, signal)
+}
+
+/**
+ * `GET /api/v1/reports/{id}/similar?k=N` — plan D2 + D8 + D10
+ * (PR #14 Group D).
+ *
+ * `k` is caller-configurable (not global state); it participates in
+ * the BE Redis cache key `similar_reports:{id}:{k}` AND in the FE
+ * React Query cache key — changing k opens a fresh cache scope on
+ * both sides. Defaults to `SIMILAR_K_DEFAULT` (10) matching BE.
+ * Caller is responsible for keeping `k` in `[SIMILAR_K_MIN,
+ * SIMILAR_K_MAX]`; out-of-range values surface as BE 422.
+ */
+export function getSimilarReports(
+  reportId: number,
+  k: number = SIMILAR_K_DEFAULT,
+  signal?: AbortSignal,
+): Promise<SimilarReportsResponse> {
+  const path = `/api/v1/reports/${reportId}/similar?k=${k}`
+  return apiGet(path, similarReportsResponseSchema, signal)
 }
 
 /**
