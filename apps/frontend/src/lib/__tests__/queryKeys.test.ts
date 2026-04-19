@@ -206,3 +206,81 @@ describe('queryKeys.similarReports', () => {
     expect(json).not.toContain('group_id')
   })
 })
+
+describe('queryKeys.actorReports (PR #15 Group D)', () => {
+  const emptyFilters = {}
+  const dateFilters = { date_from: '2026-01-01', date_to: '2026-12-31' }
+
+  it('uses the documented ["actors", id, "reports", filters, pagination] shape', () => {
+    const key = queryKeys.actorReports(999003, emptyFilters, {})
+    expect(key).toEqual(['actors', 999003, 'reports', {}, {}])
+  })
+
+  // D13 cache-key scope lock — key carries (actorId, filters,
+  // pagination) only.
+  it('different actorIds produce different keys', () => {
+    expect(queryKeys.actorReports(1, emptyFilters, {})).not.toEqual(
+      queryKeys.actorReports(2, emptyFilters, {}),
+    )
+  })
+
+  it('different filters produce different keys for same actorId', () => {
+    expect(queryKeys.actorReports(999003, emptyFilters, {})).not.toEqual(
+      queryKeys.actorReports(999003, dateFilters, {}),
+    )
+  })
+
+  it('different cursor/limit produce different keys', () => {
+    expect(
+      queryKeys.actorReports(999003, emptyFilters, { cursor: 'abc' }),
+    ).not.toEqual(
+      queryKeys.actorReports(999003, emptyFilters, { cursor: 'xyz' }),
+    )
+    expect(
+      queryKeys.actorReports(999003, emptyFilters, { limit: 10 }),
+    ).not.toEqual(
+      queryKeys.actorReports(999003, emptyFilters, { limit: 50 }),
+    )
+  })
+
+  // D2 / D13 filter-scope lock — no tlp, no groupIds, no q/tag/source.
+  // ActorReportsFilters type has no such fields by construction; this
+  // runtime test is the defensive belt against a future FilterBar
+  // widening that would inadvertently pollute the cache key.
+  it('cache key JSON contains no filter-store markers', () => {
+    const key = queryKeys.actorReports(999003, dateFilters, {
+      cursor: 'abc',
+      limit: 50,
+    })
+    const json = JSON.stringify(key).toLowerCase()
+    expect(json).not.toContain('tlp')
+    expect(json).not.toContain('group_id')
+    expect(json).not.toContain('groupids')
+    expect(json).not.toContain('"q"')
+    expect(json).not.toContain('"tag"')
+    expect(json).not.toContain('"source"')
+  })
+
+  // D2 — key only ever contains actorId + date range + cursor +
+  // limit. This test introspects every leaf string in the key to
+  // catch a future schema widening at the contract layer.
+  it('key leaf strings are exactly {date_from, date_to, cursor, limit} (order-independent)', () => {
+    const key = queryKeys.actorReports(999003, dateFilters, {
+      cursor: 'abc',
+      limit: 50,
+    })
+    // key = ['actors', 999003, 'reports', filters, pagination]
+    const filters = key[3] as Record<string, string>
+    const pagination = key[4] as Record<string, string | number>
+    const filterKeys = Object.keys(filters).sort()
+    const paginationKeys = Object.keys(pagination).sort()
+    expect(filterKeys).toEqual(['date_from', 'date_to'])
+    expect(paginationKeys).toEqual(['cursor', 'limit'])
+  })
+
+  it('does not collide with actorDetail key', () => {
+    expect(queryKeys.actorReports(999003, emptyFilters, {})).not.toEqual(
+      queryKeys.actorDetail(999003),
+    )
+  })
+})

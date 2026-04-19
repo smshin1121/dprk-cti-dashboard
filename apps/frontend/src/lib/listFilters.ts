@@ -51,6 +51,22 @@ export interface ActorListPagination {
   offset?: number
 }
 
+/**
+ * `/api/v1/actors/{id}/reports` — PR #15 Phase 3 slice 2 Group D
+ * (plan D2). Filter surface is MINIMAL: date range only. No `q` /
+ * `tag` / `source` / `tlp` / `groupIds` — reusing any of those types
+ * would pollute the React Query cache key with fields the BE
+ * ignores. Pinned at the type level + runtime serializer below.
+ *
+ * Kept as a distinct type (not a `ReportListFilters` alias) so a
+ * future widening of `/reports` filter scope cannot accidentally
+ * leak into this endpoint's wire contract.
+ */
+export interface ActorReportsFilters {
+  date_from?: string
+  date_to?: string
+}
+
 function pickDateRange(
   state: Pick<FilterState, 'dateFrom' | 'dateTo'>,
 ): { date_from?: string; date_to?: string } {
@@ -102,5 +118,31 @@ export function toActorListQueryParams(
   const params = new URLSearchParams()
   if (pagination.limit != null) params.append('limit', String(pagination.limit))
   if (pagination.offset != null) params.append('offset', String(pagination.offset))
+  return params
+}
+
+/**
+ * `/api/v1/actors/{id}/reports` — PR #15 Group D. Mirror of
+ * `toReportListQueryParams` except the path prefix is different —
+ * the `actorId` lives in the URL path (not the query string) so the
+ * serializer here emits only `date_from` / `date_to` / `cursor` /
+ * `limit`. Keeps tlp / groupIds / q / tag / source structurally out
+ * of reach.
+ */
+export function toActorReportsFilters(
+  state: Pick<FilterState, 'dateFrom' | 'dateTo'>,
+): ActorReportsFilters {
+  return pickDateRange(state)
+}
+
+export function toActorReportsQueryParams(
+  filters: ActorReportsFilters,
+  pagination: { cursor?: string; limit?: number } = {},
+): URLSearchParams {
+  const params = new URLSearchParams()
+  if (filters.date_from != null) params.append('date_from', filters.date_from)
+  if (filters.date_to != null) params.append('date_to', filters.date_to)
+  if (pagination.cursor != null) params.append('cursor', pagination.cursor)
+  if (pagination.limit != null) params.append('limit', String(pagination.limit))
   return params
 }
