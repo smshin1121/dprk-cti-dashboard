@@ -217,9 +217,20 @@ async def _run_fts(
     # no boolean operators), which is the safe default for MVP. The
     # ``websearch_to_tsquery`` dialect-variant would support ANDs/ORs
     # but isn't worth the UX-explanation cost until analysts ask.
-    tsquery = sa.func.plainto_tsquery(sa.literal("simple"), sa.bindparam("q"))
+    #
+    # The FTS config literal is wrapped in an explicit ``CAST(... AS
+    # TEXT)`` because SQLAlchemy's ``sa.literal("simple")`` default-
+    # types to VARCHAR, and PostgreSQL's implicit cast graph only
+    # takes ONE step during function resolution. ``text → regconfig``
+    # is implicit; ``varchar → regconfig`` would require two hops
+    # (``varchar → text → regconfig``) and PG refuses, raising
+    # ``function to_tsvector(character varying, text) does not exist``.
+    # Forcing the argument to TEXT lets the single-step implicit
+    # cast succeed. Same reason applies to ``plainto_tsquery``.
+    config = sa.cast(sa.literal("simple"), sa.Text())
+    tsquery = sa.func.plainto_tsquery(config, sa.bindparam("q"))
     document = sa.func.to_tsvector(
-        sa.literal("simple"),
+        config,
         sa.func.coalesce(reports_table.c.title, sa.literal(""))
         + sa.literal(" ")
         + sa.func.coalesce(reports_table.c.summary, sa.literal("")),
