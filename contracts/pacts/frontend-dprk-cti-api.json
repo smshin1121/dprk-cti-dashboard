@@ -4,6 +4,599 @@
   },
   "interactions": [
     {
+      "description": "a request for a report detail by id (PR #14 Group G)",
+      "providerStates": [
+        {
+          "name": "seeded report detail fixture and an authenticated analyst session"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/reports/999001"
+      },
+      "response": {
+        "body": {
+          "codenames": [
+            "Andariel"
+          ],
+          "id": 999001,
+          "lang": "en",
+          "linked_incidents": [
+            {
+              "id": 18,
+              "reported": "2026-02-10",
+              "title": "Pact fixture — report detail linked incident 1"
+            }
+          ],
+          "published": "2026-03-15",
+          "source_id": 1,
+          "source_name": "pact-fixture-source",
+          "summary": "Pact fixture body — report detail happy path.",
+          "tags": [
+            "pact-detail-tag-a"
+          ],
+          "techniques": [
+            "T1566"
+          ],
+          "title": "Pact fixture — report detail source",
+          "tlp": "WHITE",
+          "url": "https://pact.test/reports/detail/source",
+          "url_canonical": "https://pact.test/reports/detail/source"
+        },
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "matchingRules": {
+          "body": {
+            "$": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.codenames": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type",
+                  "min": 1
+                }
+              ]
+            },
+            "$.id": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "integer"
+                }
+              ]
+            },
+            "$.lang": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.linked_incidents": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type",
+                  "min": 1
+                }
+              ]
+            },
+            "$.linked_incidents[*].id": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "integer"
+                }
+              ]
+            },
+            "$.linked_incidents[*].reported": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.linked_incidents[*].title": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.published": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.source_id": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "integer"
+                }
+              ]
+            },
+            "$.source_name": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.summary": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.tags": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type",
+                  "min": 1
+                }
+              ]
+            },
+            "$.techniques": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type",
+                  "min": 1
+                }
+              ]
+            },
+            "$.title": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.tlp": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.url": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.url_canonical": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          }
+        },
+        "status": 200
+      }
+    },
+    {
+      "description": "a request for an actor detail by id (PR #14 Group G)",
+      "providerStates": [
+        {
+          "name": "seeded actor detail fixture and an authenticated analyst session"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/actors/999003"
+      },
+      "response": {
+        "body": {
+          "aka": [
+            "APT38"
+          ],
+          "codenames": [
+            "Andariel"
+          ],
+          "description": "DPRK-attributed actor description",
+          "id": 999003,
+          "mitre_intrusion_set_id": "G0032",
+          "name": "Lazarus Group"
+        },
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "matchingRules": {
+          "body": {
+            "$": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.aka": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type",
+                  "min": 1
+                }
+              ]
+            },
+            "$.codenames": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type",
+                  "min": 1
+                }
+              ]
+            },
+            "$.description": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.id": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "integer"
+                }
+              ]
+            },
+            "$.mitre_intrusion_set_id": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.name": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          }
+        },
+        "status": 200
+      }
+    },
+    {
+      "description": "a request for an incident detail by id (PR #14 Group G)",
+      "providerStates": [
+        {
+          "name": "seeded incident detail fixture and an authenticated analyst session"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/incidents/999002"
+      },
+      "response": {
+        "body": {
+          "attribution_confidence": "HIGH",
+          "countries": [
+            "KR"
+          ],
+          "description": "Pact fixture incident description",
+          "id": 999002,
+          "linked_reports": [
+            {
+              "id": 42,
+              "published": "2026-03-15",
+              "source_name": "pact-fixture-source",
+              "title": "Pact fixture — incident detail linked report",
+              "url": "https://pact.test/reports/linked/1"
+            }
+          ],
+          "motivations": [
+            "financial"
+          ],
+          "reported": "2024-05-02",
+          "sectors": [
+            "crypto"
+          ],
+          "title": "Pact fixture — incident detail"
+        },
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "matchingRules": {
+          "body": {
+            "$": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.attribution_confidence": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.countries": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type",
+                  "min": 1
+                }
+              ]
+            },
+            "$.description": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.id": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "integer"
+                }
+              ]
+            },
+            "$.linked_reports": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type",
+                  "min": 1
+                }
+              ]
+            },
+            "$.linked_reports[*].id": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "integer"
+                }
+              ]
+            },
+            "$.linked_reports[*].published": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.linked_reports[*].source_name": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.linked_reports[*].title": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.linked_reports[*].url": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.motivations": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type",
+                  "min": 1
+                }
+              ]
+            },
+            "$.reported": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.sectors": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type",
+                  "min": 1
+                }
+              ]
+            },
+            "$.title": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          }
+        },
+        "status": 200
+      }
+    },
+    {
+      "description": "a request for similar reports with a null-embedding source (PR #14 Group G)",
+      "providerStates": [
+        {
+          "name": "seeded similar reports empty-embedding fixture and an authenticated analyst session"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/reports/999030/similar",
+        "query": {
+          "k": [
+            "10"
+          ]
+        }
+      },
+      "response": {
+        "body": {
+          "items": []
+        },
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "description": "a request for similar reports with a populated source (PR #14 Group G)",
+      "providerStates": [
+        {
+          "name": "seeded similar reports populated fixture and an authenticated analyst session"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/reports/999020/similar",
+        "query": {
+          "k": [
+            "10"
+          ]
+        }
+      },
+      "response": {
+        "body": {
+          "items": [
+            {
+              "report": {
+                "id": 999011,
+                "published": "2025-12-01",
+                "source_name": "pact-fixture-source",
+                "title": "Pact fixture — similar neighbor",
+                "url": "https://pact.test/reports/similar/neighbor-1"
+              },
+              "score": 0.87
+            }
+          ]
+        },
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "matchingRules": {
+          "body": {
+            "$": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.items": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type",
+                  "min": 1
+                }
+              ]
+            },
+            "$.items[*].report.id": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "integer"
+                }
+              ]
+            },
+            "$.items[*].report.published": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.items[*].report.source_name": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.items[*].report.title": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.items[*].report.url": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.items[*].score": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          }
+        },
+        "status": 200
+      }
+    },
+    {
       "description": "a request for the ATT&CK matrix with date filter and top_n",
       "providerStates": [
         {

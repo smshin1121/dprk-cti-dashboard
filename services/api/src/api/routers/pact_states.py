@@ -698,6 +698,17 @@ async def _ensure_dashboard_fixture(session: AsyncSession) -> None:
 # same numbers without drift.
 REPORT_DETAIL_FIXTURE_ID = 999001
 INCIDENT_DETAIL_FIXTURE_ID = 999002
+# Actor detail (added in Group G) — previously `_ensure_actor_detail_
+# fixture` aliased the canonical Lazarus fixture whose id was
+# DB-assigned via the `groups` sequence. That made the pact consumer
+# structurally unable to target a concrete `/actors/{id}` path
+# without either (a) a regex-on-path matcher (R3 pact-js V3 panic
+# risk) or (b) hoping the sequence put Lazarus at id=1 (drift-prone
+# across state replays and fixture reorderings). Pinning a separate
+# Pact-specific actor at 999003 eliminates both risks; the matcher
+# example values keep Lazarus-shaped content so human review of a
+# failing verifier log is still readable.
+ACTOR_DETAIL_FIXTURE_ID = 999003
 SIMILAR_POPULATED_SOURCE_ID = 999020
 SIMILAR_POPULATED_NEIGHBOR_IDS = (999011, 999012, 999013)
 SIMILAR_EMPTY_EMBEDDING_SOURCE_ID = 999030
@@ -949,20 +960,55 @@ async def _ensure_incident_detail_fixture(session: AsyncSession) -> None:
 
 
 async def _ensure_actor_detail_fixture(session: AsyncSession) -> None:
-    """Seed the fixture that ``GET /actors/{id}`` pact uses.
+    """Seed the pinned-id actor fixture that ``GET /actors/{id}`` pact uses.
 
-    Reuses the canonical Lazarus fixture — the actor detail DTO only
-    covers core group fields + codenames (plan D11: no traversal
-    into report_codenames). A single codename satisfies the
-    ``codenames: eachLike('...')`` matcher; Lazarus already has
-    Andariel via ``_ensure_canonical_lazarus_fixture``.
+    Deliberately does NOT reuse ``_ensure_canonical_lazarus_fixture``
+    — that helper lets the DB sequence assign the Lazarus id, which
+    is drift-prone across state replays and makes the consumer pact
+    either (a) dependent on regex-on-path (pact-js V3 R3 risk) or
+    (b) reliant on sequence ordering that nothing guarantees.
 
-    This helper is a thin alias for clarity in the state router;
-    any future divergence (e.g., add a second codename specifically
-    for actor detail) lands here without touching the dashboard
-    fixture path.
+    Instead, seed a Pact-specific group at ``ACTOR_DETAIL_FIXTURE_ID``
+    with a distinct name (``groups.name`` is UNIQUE — we can't
+    pin-id-upsert with the Lazarus name without risking a conflict
+    when another fixture has already seeded Lazarus under a
+    different id). The group carries Lazarus-shaped core fields
+    plus one linked codename, which is the full surface the actor
+    detail DTO exposes per plan D11 (no linked-reports traversal).
+
+    The pact consumer matchers are ``like(...)`` + ``eachLike(...)``
+    on shape, so example values (name "Lazarus Group", codenames
+    ["Andariel"]) match this fixture's values (name "Pact fixture
+    actor detail", codename "pact-actor-detail-codename") by TYPE
+    — integer/string — not by exact value. Human reviewers of a
+    failing verifier log still see a readable Lazarus-shaped row.
+
+    Idempotent: ``ON CONFLICT (id) DO NOTHING`` on the groups insert
+    + ``_ensure_codename`` is SELECT-first.
     """
-    await _ensure_canonical_lazarus_fixture(session)
+    await session.execute(
+        text(
+            "INSERT INTO groups "
+            "(id, name, mitre_intrusion_set_id, aka, description) "
+            "VALUES (:id, :n, :m, :aka, :d) "
+            "ON CONFLICT (id) DO NOTHING"
+        ),
+        {
+            "id": ACTOR_DETAIL_FIXTURE_ID,
+            "n": "Pact fixture actor detail",
+            "m": "G9003",
+            "aka": ["pact-fixture-alias-1", "pact-fixture-alias-2"],
+            "d": "Pact fixture — actor detail happy path (pinned id)",
+        },
+    )
+    # Codename linked to the pinned actor. A distinct codename name
+    # avoids colliding with the canonical Lazarus fixture's Andariel
+    # link if both fixtures run in the same state-replay sequence.
+    await _ensure_codename(
+        session,
+        name="pact-actor-detail-codename",
+        group_id=ACTOR_DETAIL_FIXTURE_ID,
+    )
 
 
 async def _ensure_similar_reports_populated_fixture(

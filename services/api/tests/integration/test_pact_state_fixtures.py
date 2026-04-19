@@ -55,6 +55,7 @@ if not _PG_URL:
 
 
 from api.routers.pact_states import (  # noqa: E402
+    ACTOR_DETAIL_FIXTURE_ID,
     INCIDENT_DETAIL_FIXTURE_ID,
     REPORT_DETAIL_FIXTURE_ID,
     SIMILAR_EMPTY_EMBEDDING_NEIGHBOR_ID,
@@ -642,33 +643,76 @@ async def test_actor_detail_fixture_satisfies_matcher(
     clean_pg: None, pg_session: AsyncSession
 ) -> None:
     """``/actors/{id}`` pact — core fields + non-empty codenames. No
-    linked_reports path per plan D11. Fixture reuses the canonical
-    Lazarus fixture which already seeds Andariel as a codename.
+    linked_reports path per plan D11.
+
+    PR #14 Group G: fixture pins ``ACTOR_DETAIL_FIXTURE_ID`` so the
+    pact consumer can target ``/actors/999003`` literally (no regex
+    path matcher, no DB-sequence drift). Matchers are shape-only
+    (like/eachLike), so the pact's example values ("Lazarus Group",
+    "Andariel") match this fixture's values ("Pact fixture actor
+    detail", "pact-actor-detail-codename") by type — integer for id,
+    string for names, arrays non-empty — not by exact value.
     """
     await _ensure_actor_detail_fixture(pg_session)
     await pg_session.commit()
 
-    # Actor id is allocated by the sequence — SELECT to find it.
-    row = (
-        await pg_session.execute(
-            sa.text("SELECT id FROM groups WHERE name = 'Lazarus Group'")
-        )
-    ).first()
-    assert row is not None, "Lazarus Group not seeded"
-    actor_id = int(row[0])
-
-    detail = await get_actor_detail(pg_session, actor_id=actor_id)
-    assert detail is not None
-    assert detail["name"] == "Lazarus Group"
-    assert detail["mitre_intrusion_set_id"] == "G0032"
+    # Pinned id — no SELECT-by-name probe.
+    detail = await get_actor_detail(
+        pg_session, actor_id=ACTOR_DETAIL_FIXTURE_ID
+    )
+    assert detail is not None, (
+        f"actor detail fixture not seeded at id={ACTOR_DETAIL_FIXTURE_ID}"
+    )
+    # Shape — not exact value. These are the matchers the pact
+    # consumer asserts on; any fixture that satisfies the PACT
+    # eachLike/like shape satisfies this test.
+    assert isinstance(detail["id"], int)
+    assert detail["id"] == ACTOR_DETAIL_FIXTURE_ID
+    assert isinstance(detail["name"], str) and detail["name"]
+    assert isinstance(detail["mitre_intrusion_set_id"], str)
     assert detail["aka"], "actor detail fixture aka empty"
     assert detail["description"]
     assert detail["codenames"], (
-        "actor detail fixture codenames empty — Andariel link broken"
+        "actor detail fixture codenames empty — pinned codename link broken"
     )
     # D11 lock — actor detail MUST NOT expose reports-like keys.
     for forbidden in ("linked_reports", "reports", "recent_reports"):
         assert forbidden not in detail
+
+
+async def test_actor_detail_fixture_is_idempotent(
+    clean_pg: None, pg_session: AsyncSession
+) -> None:
+    """PR #14 Group G idempotency — state replays across a verifier
+    run MUST not double-insert the pinned actor or its codename.
+
+    The groups insert uses ``ON CONFLICT (id) DO NOTHING``; the
+    codename upsert is SELECT-first. Two consecutive calls produce
+    exactly one row each.
+    """
+    await _ensure_actor_detail_fixture(pg_session)
+    await _ensure_actor_detail_fixture(pg_session)
+    await pg_session.commit()
+
+    group_count = (
+        await pg_session.execute(
+            sa.text(
+                "SELECT COUNT(*) FROM groups WHERE id = :id"
+            ),
+            {"id": ACTOR_DETAIL_FIXTURE_ID},
+        )
+    ).scalar_one()
+    assert int(group_count) == 1
+
+    codename_count = (
+        await pg_session.execute(
+            sa.text(
+                "SELECT COUNT(*) FROM codenames WHERE group_id = :g"
+            ),
+            {"g": ACTOR_DETAIL_FIXTURE_ID},
+        )
+    ).scalar_one()
+    assert int(codename_count) == 1
 
 
 async def test_similar_populated_fixture_produces_non_empty_knn(
