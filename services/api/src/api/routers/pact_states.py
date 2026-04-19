@@ -725,6 +725,16 @@ SIMILAR_POPULATED_SOURCE_ID = 999020
 SIMILAR_POPULATED_NEIGHBOR_IDS = (999011, 999012, 999013)
 SIMILAR_EMPTY_EMBEDDING_SOURCE_ID = 999030
 SIMILAR_EMPTY_EMBEDDING_NEIGHBOR_ID = 999031
+# PR #17 Group C — /search populated + empty fixtures. Pinned into the
+# 999060-range so they never collide with the PR #14/#15 ranges above.
+# Populated reports carry "Lazarus" in BOTH title and summary so the
+# FTS document ``title || ' ' || summary`` matches the pact's
+# ``q=lazarus`` interaction under ``plainto_tsquery('simple', ...)``.
+# Empty distractor exists so a query against ``nomatchxyz123`` runs
+# against a non-empty reports table (an empty table would trivially
+# satisfy the D10 envelope and hide an FTS-predicate regression).
+SEARCH_POPULATED_FIXTURE_REPORT_IDS = (999060, 999061, 999062)
+SEARCH_EMPTY_FIXTURE_REPORT_IDS = (999063,)
 
 
 def _make_embedding(non_zero_slots: dict[int, float]) -> str:
@@ -1171,6 +1181,149 @@ async def _ensure_actor_with_no_reports_fixture(
     )
 
 
+# ---------------------------------------------------------------------------
+# PR #17 Group C — /search populated + empty fixture helpers
+# ---------------------------------------------------------------------------
+#
+# Two FE pact interactions land in PR #17 Group F:
+#   GET /api/v1/search?q=lazarus         (populated — eachLike on items)
+#   GET /api/v1/search?q=nomatchxyz123   (D10 empty — items: [])
+#
+# Populated seed: 3 reports pinned at SEARCH_POPULATED_FIXTURE_REPORT_
+# IDS (999060-62) with "Lazarus" in BOTH title AND summary. The FTS
+# document is ``COALESCE(title,'') || ' ' || COALESCE(summary,'')``
+# (see api.read.search_service._run_fts), so a hit in either column
+# is sufficient — seeding both makes the query-shape debug-friendly
+# for a reviewer staring at a failing verifier log. Distinct
+# ``published`` dates give a stable tie-breaker if a future pact
+# interaction adds a date filter.
+#
+# Empty seed: one distractor report pinned at SEARCH_EMPTY_FIXTURE_
+# REPORT_IDS[0] (999063) whose title + summary intentionally avoid
+# the pact's ``nomatchxyz123`` query. Existence of this row pins the
+# invariant that the D10 empty envelope comes from an FTS predicate
+# MISS — not from a zero-row reports table. Same role as the
+# D10 empty-embedding neighbor at 999031 for /similar.
+
+
+async def _ensure_search_populated_fixture(session: AsyncSession) -> None:
+    """Seed the fixture ``GET /api/v1/search?q=lazarus`` pact uses.
+
+    Three reports (pinned at ``SEARCH_POPULATED_FIXTURE_REPORT_IDS``)
+    with "Lazarus" in both title and summary so FTS matches against
+    ``plainto_tsquery('simple', 'lazarus')`` regardless of which
+    column the analyst's query hits. Distinct ``published`` dates
+    exist to keep the ordering deterministic under any date filter
+    a future pact interaction might layer on; inside the current
+    plan the sort is ``ts_rank_cd DESC, reports.id DESC`` so the
+    three rows still produce a stable order even when their rank
+    values are near-identical.
+
+    Idempotent: ``ON CONFLICT (id) DO NOTHING`` on every report
+    insert. A repeat state setup is a no-op at the DB layer.
+    """
+    source_id = await _ensure_source(session)
+
+    # Distinct published dates + Lazarus-heavy title/summary pairs.
+    # Matcher-shape (FE pact uses eachLike on items + like on each
+    # hit) accepts any type-correct row, so these specific strings
+    # are for reviewer readability only.
+    report_seed_data = [
+        (
+            SEARCH_POPULATED_FIXTURE_REPORT_IDS[0],
+            date(2026, 3, 15),
+            "Lazarus targets SK crypto exchanges",
+            (
+                "Lazarus Group ran a credential-harvesting operation "
+                "against multiple SK crypto exchange analysts in Q1."
+            ),
+        ),
+        (
+            SEARCH_POPULATED_FIXTURE_REPORT_IDS[1],
+            date(2026, 2, 10),
+            "Lazarus phishing campaign — MFA bypass",
+            (
+                "Lazarus actors leveraged OAuth consent phishing plus "
+                "session-cookie theft to bypass MFA in a February wave."
+            ),
+        ),
+        (
+            SEARCH_POPULATED_FIXTURE_REPORT_IDS[2],
+            date(2026, 1, 5),
+            "Lazarus loader variant profiled",
+            (
+                "Analysts profiled a new Lazarus loader dropping "
+                "BLINDINGCAN-like stagers on compromised hosts."
+            ),
+        ),
+    ]
+
+    for report_id, published, title, summary in report_seed_data:
+        await session.execute(
+            text(
+                "INSERT INTO reports "
+                "(id, source_id, title, url, url_canonical, sha256_title, "
+                "published, lang, tlp, summary) "
+                "VALUES (:id, :s, :t, :u, :uc, :sh, :p, :l, :tlp, :sm) "
+                "ON CONFLICT (id) DO NOTHING"
+            ),
+            {
+                "id": report_id,
+                "s": source_id,
+                "t": title,
+                "u": f"https://pact.test/search/populated-{report_id}",
+                "uc": f"https://pact.test/search/populated-{report_id}",
+                "sh": f"pact-sha-search-pop-{report_id}",
+                "p": published,
+                "l": "en",
+                "tlp": "WHITE",
+                "sm": summary,
+            },
+        )
+
+
+async def _ensure_search_empty_fixture(session: AsyncSession) -> None:
+    """Seed the fixture ``GET /api/v1/search?q=nomatchxyz123`` pact uses.
+
+    One distractor report pinned at ``SEARCH_EMPTY_FIXTURE_REPORT_IDS[0]``
+    (999063). Title + summary deliberately avoid the pact's
+    ``nomatchxyz123`` query token — no dictionary word contains that
+    substring naturally, so human-written prose will not match. The
+    row's purpose is to pin the contract "D10 empty envelope fires
+    on FTS MISS, not DB emptiness" — analogous to the empty-embedding
+    neighbor at ``SIMILAR_EMPTY_EMBEDDING_NEIGHBOR_ID``.
+
+    Idempotent: ``ON CONFLICT (id) DO NOTHING``.
+    """
+    source_id = await _ensure_source(session)
+
+    await session.execute(
+        text(
+            "INSERT INTO reports "
+            "(id, source_id, title, url, url_canonical, sha256_title, "
+            "published, lang, tlp, summary) "
+            "VALUES (:id, :s, :t, :u, :uc, :sh, :p, :l, :tlp, :sm) "
+            "ON CONFLICT (id) DO NOTHING"
+        ),
+        {
+            "id": SEARCH_EMPTY_FIXTURE_REPORT_IDS[0],
+            "s": source_id,
+            "t": "Pact fixture - search empty distractor",
+            "u": "https://pact.test/search/empty-distractor",
+            "uc": "https://pact.test/search/empty-distractor",
+            "sh": "pact-sha-search-empty-distractor",
+            "p": date(2026, 2, 20),
+            "l": "en",
+            "tlp": "WHITE",
+            "sm": (
+                "Distractor report whose title and summary intentionally "
+                "do not contain the pact query token so the FTS predicate "
+                "misses and the D10 empty envelope fires."
+            ),
+        },
+    )
+
+
 async def _ensure_similar_reports_populated_fixture(
     session: AsyncSession,
 ) -> None:
@@ -1454,6 +1607,29 @@ async def provider_states(
             "and an authenticated analyst session"
         ):
             await _ensure_actor_with_no_reports_fixture(session)
+            await session.commit()
+            await _seed_analyst_session(response, session_store)
+            continue
+
+        # PR #17 Group C — /search populated + empty fixtures. Populated
+        # seeds 3 reports (999060-62) with Lazarus in both title and
+        # summary so FTS matches q=lazarus. Empty seeds 1 distractor
+        # (999063) with prose that does not contain the pact's
+        # nomatchxyz123 query, pinning the D10-on-miss contract.
+        if state == (
+            "seeded search populated fixture "
+            "and an authenticated analyst session"
+        ):
+            await _ensure_search_populated_fixture(session)
+            await session.commit()
+            await _seed_analyst_session(response, session_store)
+            continue
+
+        if state == (
+            "seeded search empty fixture "
+            "and an authenticated analyst session"
+        ):
+            await _ensure_search_empty_fixture(session)
             await session.commit()
             await _seed_analyst_session(response, session_store)
             continue

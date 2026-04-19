@@ -351,3 +351,111 @@ class TestLogLineShape:
         # Raw q text must NOT appear anywhere in log output.
         log_text = "\n".join(r.getMessage() for r in caplog.records)
         assert "secret-actor-name-PII" not in log_text
+
+
+# ---------------------------------------------------------------------------
+# FE pact path literal alignment — runs unconditionally (no POSTGRES needed)
+# ---------------------------------------------------------------------------
+
+
+class TestSearchFixturePactPathLiteralAlignment:
+    """Constant-drift guard for PR #17 Group C pinned fixture ids.
+
+    The FE pact consumer hardcodes ``GET /api/v1/search?q=lazarus``
+    plus ``q=nomatchxyz123`` and (via Group F pinned-path discipline)
+    expects the provider-state handler to seed the specific ids in
+    ``SEARCH_POPULATED_FIXTURE_REPORT_IDS`` + ``SEARCH_EMPTY_FIXTURE_
+    REPORT_IDS``. A BE rename without a matching FE update would
+    silently fail the live pact verifier.
+
+    Lives in the unit-test module so it runs unconditionally; the
+    Postgres-gated pact-state tests cover the DB-side seed shape.
+    Pattern mirrors ``test_actor_reports.TestFePactPathLiteralAlignment``.
+    """
+
+    def test_populated_fixture_ids_pinned_at_999060_62(self) -> None:
+        from api.routers.pact_states import (
+            SEARCH_POPULATED_FIXTURE_REPORT_IDS,
+        )
+
+        assert SEARCH_POPULATED_FIXTURE_REPORT_IDS == (
+            999060,
+            999061,
+            999062,
+        ), (
+            "SEARCH_POPULATED_FIXTURE_REPORT_IDS drift — PR #17 plan "
+            "pins 999060-62 for the q=lazarus pact interaction"
+        )
+
+    def test_empty_fixture_id_pinned_at_999063(self) -> None:
+        from api.routers.pact_states import SEARCH_EMPTY_FIXTURE_REPORT_IDS
+
+        assert SEARCH_EMPTY_FIXTURE_REPORT_IDS == (999063,), (
+            "SEARCH_EMPTY_FIXTURE_REPORT_IDS drift — PR #17 plan "
+            "pins 999063 for the q=nomatchxyz123 pact interaction"
+        )
+
+    def test_populated_fixture_seeds_three_reports(self) -> None:
+        from api.routers.pact_states import (
+            SEARCH_POPULATED_FIXTURE_REPORT_IDS,
+        )
+
+        # eachLike on items rejects empty — need >=1. Three rows
+        # give the D2 sort a meaningful set of ranks to order and
+        # keep human review of a failing verifier log readable.
+        assert len(SEARCH_POPULATED_FIXTURE_REPORT_IDS) == 3
+
+    def test_search_ids_do_not_collide_with_other_pinned_fixtures(
+        self,
+    ) -> None:
+        from api.routers.pact_states import (
+            SEARCH_EMPTY_FIXTURE_REPORT_IDS,
+            SEARCH_POPULATED_FIXTURE_REPORT_IDS,
+        )
+
+        # Collision guard — these ranges are used by the existing
+        # pinned-id fixtures. A future add to either tuple that
+        # overlaps would cross-pollute pact state seeding.
+        reserved = {
+            999001,  # report detail
+            999002,  # incident detail
+            999003,  # actor detail (populated)
+            999004,  # actor with no reports
+            999011,  # similar populated neighbors
+            999012,
+            999013,
+            999020,  # similar populated source
+            999030,  # similar empty-embedding source
+            999031,  # similar empty-embedding neighbor
+            999050,  # actor-reports populated rows
+            999051,
+            999052,
+        }
+        all_search_ids = (
+            SEARCH_POPULATED_FIXTURE_REPORT_IDS
+            + SEARCH_EMPTY_FIXTURE_REPORT_IDS
+        )
+        for rid in all_search_ids:
+            assert rid not in reserved, (
+                f"search fixture id {rid} collides with another "
+                f"pinned fixture — pick an id outside {reserved}"
+            )
+
+    def test_populated_and_empty_ids_are_disjoint(self) -> None:
+        """Populated + empty rows share the reports table — their
+        pinned ids must be disjoint. A repeat-seed via a state
+        dispatch for ``populated`` followed by ``empty`` must not
+        step on each other's rows.
+        """
+        from api.routers.pact_states import (
+            SEARCH_EMPTY_FIXTURE_REPORT_IDS,
+            SEARCH_POPULATED_FIXTURE_REPORT_IDS,
+        )
+
+        assert set(SEARCH_POPULATED_FIXTURE_REPORT_IDS).isdisjoint(
+            set(SEARCH_EMPTY_FIXTURE_REPORT_IDS)
+        ), (
+            "populated and empty fixture id tuples overlap — the two "
+            "seed helpers would fight over rows and state replay "
+            "would leave the DB in a mixed state"
+        )
