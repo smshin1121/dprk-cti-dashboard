@@ -10,11 +10,11 @@ jobs:
   frontend:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v5
         with:
           version: 9.15.9
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: "22"
           cache: "pnpm"
@@ -82,16 +82,16 @@ jobs:
       E2E_BASE_URL: http://127.0.0.1:4173
       E2E_API_BASE_URL: http://127.0.0.1:8000
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v5
         with:
           version: 9.15.9
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: "22"
           cache: "pnpm"
-      - uses: astral-sh/setup-uv@v4
-      - uses: actions/setup-python@v5
+      - uses: astral-sh/setup-uv@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - run: pnpm install
@@ -149,7 +149,7 @@ jobs:
         run: pnpm test:e2e
       - name: Upload Playwright artifacts on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: playwright-report
           path: |
@@ -178,9 +178,9 @@ jobs:
       matrix:
         service: [api, worker, llm-proxy]
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - run: uv sync --project services/${{ matrix.service }} --no-install-project
@@ -189,9 +189,9 @@ jobs:
   api-tests:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: Sync api dev dependencies
@@ -212,7 +212,7 @@ jobs:
             --cov-fail-under=70
       - name: Upload coverage report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: api-coverage-xml
           path: services/api/coverage.xml
@@ -221,9 +221,9 @@ jobs:
   worker-tests:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: Sync worker dev dependencies
@@ -271,7 +271,7 @@ jobs:
           "
       - name: Upload coverage report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: worker-coverage-xml
           path: services/worker/coverage.xml
@@ -294,11 +294,11 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - uses: astral-sh/setup-uv@v4
+      - uses: astral-sh/setup-uv@v5
       - name: Install alembic deps from services/api
         run: uv sync --project services/api --no-install-project
       - name: Run alembic upgrade head
@@ -365,11 +365,11 @@ jobs:
     env:
       DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/dprk_cti_test
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - uses: astral-sh/setup-uv@v4
+      - uses: astral-sh/setup-uv@v5
       - name: Sync worker dev dependencies
         working-directory: services/worker
         run: uv sync
@@ -403,7 +403,7 @@ jobs:
             --report-path "${GITHUB_WORKSPACE}/artifacts/dq_report.jsonl"
       - name: Upload dq_report.jsonl artifact
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: dq-report-jsonl
           path: artifacts/dq_report.jsonl
@@ -474,9 +474,9 @@ jobs:
       SESSION_COOKIE_SAMESITE: lax
       CORS_ORIGINS: http://localhost:3000
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: Sync api dev dependencies (includes pact-python)
@@ -572,11 +572,11 @@ jobs:
       # Async URL for the pytest integration run — switches driver to psycopg_async.
       POSTGRES_TEST_URL: postgresql+psycopg_async://postgres:postgres@localhost:5432/dprk_cti_test
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - uses: astral-sh/setup-uv@v4
+      - uses: astral-sh/setup-uv@v5
       - name: Sync api dev dependencies
         working-directory: services/api
         run: uv sync
