@@ -307,6 +307,32 @@ incident_countries_table = sa.Table(
     sa.Column("country_iso2", sa.String(length=2), primary_key=True),
 )
 
+# incident_sources is the canonical M:N link between incidents and the
+# reports that document them (migration 0001 lines 145-149). Added for
+# PR #14 Group A — the report detail endpoint lists "incidents this
+# report is a source of" and the incident detail endpoint lists
+# "reports that are sources of this incident" via this join. A single
+# index on ``report_id`` (migration 0002 line 175 —
+# ``ix_incident_sources_report_id``) makes the report→incidents
+# direction efficient; the PK (incident_id, report_id) indexes the
+# opposite direction for free. No new migration required.
+incident_sources_table = sa.Table(
+    "incident_sources",
+    metadata,
+    sa.Column(
+        "incident_id",
+        _BIGINT,
+        sa.ForeignKey("incidents.id"),
+        primary_key=True,
+    ),
+    sa.Column(
+        "report_id",
+        _BIGINT,
+        sa.ForeignKey("reports.id"),
+        primary_key=True,
+    ),
+)
+
 
 # ---------------------------------------------------------------------------
 # staging (migration 0002 + 0008 decision_reason)
@@ -403,6 +429,7 @@ __all__ = [
     "incident_countries_table",
     "incident_motivations_table",
     "incident_sectors_table",
+    "incident_sources_table",
     "incidents_table",
     "metadata",
     "report_codenames_table",

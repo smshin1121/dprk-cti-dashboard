@@ -3,7 +3,11 @@
 Endpoints:
 - ``GET /api/v1/reports`` — keyset-paginated list with filter surface
   (PR #11 Phase 2.2 Group C).
-- ``GET /api/v1/reports/{report_id}/similar`` — 501 stub (Phase 3).
+- ``GET /api/v1/reports/{report_id}`` — single report detail with
+  shallow joins and capped linked_incidents (PR #14 Phase 3 slice 1
+  Group A, plan D1 + D9 + D11).
+- ``GET /api/v1/reports/{report_id}/similar`` — 501 stub (Phase 3
+  slice 1 Group B will implement; plan D2 + D8 + D10).
 - ``POST /api/v1/reports/review/{staging_id}`` — approve/reject a
   staging row (PR #10 Phase 2.1 Group F).
 """
@@ -29,9 +33,9 @@ from ..promote.errors import (
     StagingInvalidStateError,
     StagingNotFoundError,
 )
-from ..read import repositories as read_repositories
+from ..read import detail_aggregator, repositories as read_repositories
 from ..read.pagination import CursorDecodeError, decode_cursor, encode_cursor
-from ..schemas.read import ReportItem, ReportListResponse
+from ..schemas.read import ReportDetail, ReportItem, ReportListResponse
 from ..schemas.review import (
     AlreadyDecidedError,
     ApproveRequest,
@@ -234,11 +238,85 @@ async def list_reports_endpoint(
     )
 
 
+@router.get(
+    "/{report_id}",
+    response_model=ReportDetail,
+    summary="Get one report with related joins and capped linked incidents",
+    description=(
+        "Shallow-joined detail view of a single report. Plan D9 caps the "
+        "`linked_incidents` collection at 10 newest-reported entries; "
+        "reports with > 10 incident links return only the top 10 (ordered "
+        "`reported DESC NULLS LAST, id DESC`). `tags`, `codenames`, and "
+        "`techniques` are flat string lists. Returns 404 when the report "
+        "id is unknown."
+    ),
+    responses={
+        200: {
+            "description": "Report detail with shallow joins (plan D9).",
+        },
+        401: {"description": "Missing or invalid session cookie"},
+        403: {"description": "Role not analyst / researcher / policy / soc / admin"},
+        404: {
+            "description": "Report id not found",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "report not found"}
+                }
+            },
+        },
+        422: {
+            "description": (
+                "Invalid path parameter — non-integer report_id. Plan D12 "
+                "uniform 422 (FastAPI path-param validation)."
+            ),
+        },
+        429: {
+            "description": (
+                "Rate limit exceeded — 60/min/user read bucket (plan D2). "
+                "Per-route bucket: this endpoint's drain does NOT consume "
+                "the /reports list bucket."
+            ),
+            "content": {
+                "application/json": {
+                    "example": {
+                        "error": "rate_limit_exceeded",
+                        "message": "60 per 1 minute",
+                    }
+                }
+            },
+        },
+    },
+)
+@_limiter.limit("60/minute")
+async def get_report_detail_endpoint(
+    request: Request,
+    report_id: int,
+    session: AsyncSession = Depends(get_db),
+    _current_user: CurrentUser = Depends(require_role(*_READ_ROLES)),
+) -> Response:
+    """Report detail with linked incidents (plan D1 + D9 + D11).
+
+    Cap on linked_incidents is enforced in SQL by the aggregator (see
+    ``detail_aggregator._fetch_linked_incidents``) AND re-checked by
+    the DTO's ``Field(max_length=REPORT_DETAIL_INCIDENTS_CAP)``. Both
+    layers agree on the same module-level constant — no drift path.
+    """
+    detail = await detail_aggregator.get_report_detail(
+        session, report_id=report_id
+    )
+    if detail is None:
+        return JSONResponse(
+            status_code=404,
+            content={"detail": "report not found"},
+        )
+    return ReportDetail.model_validate(detail)
+
+
 @router.get("/{report_id}/similar")
 async def similar_reports(report_id: int, k: int = 10) -> JSONResponse:
     """§5.2 pgvector similarity search for related reports.
 
-    Stub: returns 501 until Phase 3 analytics work.
+    Stub: returns 501 until Phase 3 slice 1 Group B (plan D2 + D8 + D10).
     """
     return JSONResponse(
         status_code=501,

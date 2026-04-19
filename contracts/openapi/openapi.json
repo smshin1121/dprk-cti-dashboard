@@ -1,6 +1,77 @@
 {
   "components": {
     "schemas": {
+      "ActorDetail": {
+        "description": "Response for ``GET /api/v1/actors/{id}`` (plan D1 + D11).\n\nAll core ``ActorItem`` fields plus no linked-reports collection:\nper plan D11 out-of-scope ruling, ``ActorDetail`` does NOT\ntraverse ``report_codenames`` to surface reports that mention\nthis actor. That surface needs a dedicated endpoint whose filter\ncontract, pagination, and RBAC scope have not been locked yet —\ncarried to a later Phase 3 slice. The FE consequence: there is\nno \"recent reports for this actor\" panel on the actor detail\npage this PR.",
+        "examples": [
+          {
+            "aka": [
+              "APT38",
+              "Hidden Cobra"
+            ],
+            "codenames": [
+              "Andariel",
+              "Bluenoroff"
+            ],
+            "description": "DPRK-attributed cyber espionage and financially motivated group",
+            "id": 3,
+            "mitre_intrusion_set_id": "G0032",
+            "name": "Lazarus Group"
+          }
+        ],
+        "properties": {
+          "aka": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Aka",
+            "type": "array"
+          },
+          "codenames": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Codenames",
+            "type": "array"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "mitre_intrusion_set_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mitre Intrusion Set Id"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "ActorDetail",
+        "type": "object"
+      },
       "ActorItem": {
         "description": "Single actor row in the ``/actors`` list view.\n\n``codenames`` flattens the ``codenames`` table join on\n``group_id``. Fields mirror the v1.0 §5.4 shape verbatim so the\nFE consumer lands without a rename pass.",
         "examples": [
@@ -653,6 +724,136 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "IncidentDetail": {
+        "description": "Response for ``GET /api/v1/incidents/{id}`` (plan D1 + D9 + D11).\n\nAll core ``IncidentItem`` fields (including flat motivations /\nsectors / countries arrays) plus the capped ``linked_reports``\nlist (per D9 cap ``INCIDENT_DETAIL_REPORTS_CAP``; ordered by\n``reports.published DESC, reports.id DESC`` to surface the newest\nreports first when the full set exceeds the cap).",
+        "examples": [
+          {
+            "attribution_confidence": "HIGH",
+            "countries": [
+              "VN",
+              "SG"
+            ],
+            "description": "620M USD bridge compromise attributed to Lazarus",
+            "est_loss_usd": 620000000,
+            "id": 18,
+            "linked_reports": [
+              {
+                "id": 42,
+                "published": "2026-03-15",
+                "source_name": "Mandiant",
+                "title": "Lazarus targets SK crypto exchanges",
+                "url": "https://mandiant.com/blog/lazarus-2026q1"
+              }
+            ],
+            "motivations": [
+              "financial"
+            ],
+            "reported": "2024-05-02",
+            "sectors": [
+              "crypto"
+            ],
+            "title": "Axie Infinity Ronin bridge exploit"
+          },
+          {
+            "countries": [],
+            "id": 99,
+            "linked_reports": [],
+            "motivations": [],
+            "sectors": [],
+            "title": "Incident without source reports yet"
+          }
+        ],
+        "properties": {
+          "attribution_confidence": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attribution Confidence"
+          },
+          "countries": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Countries",
+            "type": "array"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "est_loss_usd": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Est Loss Usd"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "linked_reports": {
+            "items": {
+              "$ref": "#/components/schemas/LinkedReportSummary"
+            },
+            "maxItems": 20,
+            "title": "Linked Reports",
+            "type": "array"
+          },
+          "motivations": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Motivations",
+            "type": "array"
+          },
+          "reported": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reported"
+          },
+          "sectors": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Sectors",
+            "type": "array"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title"
+        ],
+        "title": "IncidentDetail",
+        "type": "object"
+      },
       "IncidentItem": {
         "description": "Single incident row in the ``/incidents`` list view.\n\n``motivations`` / ``sectors`` / ``countries`` are flattened from\nthe three N:M join tables (``incident_motivations`` /\n``incident_sectors`` / ``incident_countries``) — the aggregator\nin Group D does the grouping so the client sees a flat list per\nrow instead of three round-trips.",
         "examples": [
@@ -814,6 +1015,94 @@
         "title": "IncidentListResponse",
         "type": "object"
       },
+      "LinkedIncidentSummary": {
+        "description": "One row in ``ReportDetail.linked_incidents`` (plan D9 + D11).\n\nShallow summary only — ``{id, title, reported}``. A click\nnavigates to ``/incidents/{id}`` for the full detail. No nested\nmotivations / sectors / countries arrays here (that would\nrecursively expand per D9's \"no recursive nesting\" rule).",
+        "examples": [
+          {
+            "id": 18,
+            "reported": "2024-05-02",
+            "title": "Axie Infinity Ronin bridge exploit"
+          }
+        ],
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "reported": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reported"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title"
+        ],
+        "title": "LinkedIncidentSummary",
+        "type": "object"
+      },
+      "LinkedReportSummary": {
+        "description": "One row in ``IncidentDetail.linked_reports`` (plan D9 + D11).\n\nShallow summary only — ``{id, title, url, published, source_name}``.\nA click navigates to ``/reports/{id}`` for the full detail.",
+        "examples": [
+          {
+            "id": 42,
+            "published": "2026-03-15",
+            "source_name": "Mandiant",
+            "title": "Lazarus targets SK crypto exchanges",
+            "url": "https://mandiant.com/blog/lazarus-2026q1"
+          }
+        ],
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "published": {
+            "format": "date",
+            "title": "Published",
+            "type": "string"
+          },
+          "source_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Name"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "url",
+          "published"
+        ],
+        "title": "LinkedReportSummary",
+        "type": "object"
+      },
       "RejectRequest": {
         "description": "POST body for reject: soft-rejects the staging row.\n\n``decision_reason`` is required and non-empty after whitespace\nstripping — a reject with no reason is unsafe (audit forensics\nrequire the cause). ``notes`` is optional and audit-only.\n\nReopen (``rejected → pending``) is a future admin-only action, out\nof PR #10 scope (plan §3 Out of scope, §2.2 C).",
         "properties": {
@@ -846,6 +1135,194 @@
           "decision_reason"
         ],
         "title": "RejectRequest",
+        "type": "object"
+      },
+      "ReportDetail": {
+        "description": "Response for ``GET /api/v1/reports/{id}`` (plan D1 + D9 + D11).\n\nAll core ``ReportItem`` fields plus the free-form fields kept off\nthe list view (``summary``, ``reliability``, ``credibility``) plus\nflat tag / codename / technique id lists (each bounded by schema,\nno additional cap needed) plus the capped ``linked_incidents``\nlist (per D9 cap ``REPORT_DETAIL_INCIDENTS_CAP``; ordered by\n``incidents.reported DESC, id DESC`` to surface the newest\nincidents first when the full set exceeds the cap).\n\nD10 forbids fake or heuristic fallbacks on the similarity\nendpoint — this detail endpoint has no similarity surface, but\nthe same honesty rule applies: linked_incidents reflects the\nactual ``incident_sources`` join, never a heuristic substitute.",
+        "examples": [
+          {
+            "codenames": [
+              "Andariel"
+            ],
+            "credibility": "2",
+            "id": 42,
+            "lang": "en",
+            "linked_incidents": [
+              {
+                "id": 18,
+                "reported": "2024-05-02",
+                "title": "Axie Infinity Ronin bridge exploit"
+              }
+            ],
+            "published": "2026-03-15",
+            "reliability": "A",
+            "source_id": 7,
+            "source_name": "Mandiant",
+            "summary": "Operation targeting crypto exchanges in Q1 2026.",
+            "tags": [
+              "ransomware",
+              "finance"
+            ],
+            "techniques": [
+              "T1566",
+              "T1190"
+            ],
+            "title": "Lazarus targets South Korean crypto exchanges",
+            "tlp": "WHITE",
+            "url": "https://mandiant.com/blog/lazarus-2026q1",
+            "url_canonical": "https://mandiant.com/blog/lazarus-2026q1"
+          },
+          {
+            "codenames": [],
+            "id": 7,
+            "lang": "en",
+            "linked_incidents": [],
+            "published": "2026-01-10",
+            "tags": [],
+            "techniques": [],
+            "title": "Single report without incident link",
+            "tlp": "WHITE",
+            "url": "https://example.test/r/7",
+            "url_canonical": "https://example.test/r/7"
+          }
+        ],
+        "properties": {
+          "codenames": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Codenames",
+            "type": "array"
+          },
+          "credibility": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credibility"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "lang": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lang"
+          },
+          "linked_incidents": {
+            "items": {
+              "$ref": "#/components/schemas/LinkedIncidentSummary"
+            },
+            "maxItems": 10,
+            "title": "Linked Incidents",
+            "type": "array"
+          },
+          "published": {
+            "format": "date",
+            "title": "Published",
+            "type": "string"
+          },
+          "reliability": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reliability"
+          },
+          "source_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Id"
+          },
+          "source_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Name"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
+          },
+          "techniques": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Techniques",
+            "type": "array"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "tlp": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tlp"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          },
+          "url_canonical": {
+            "title": "Url Canonical",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "url",
+          "url_canonical",
+          "published"
+        ],
+        "title": "ReportDetail",
         "type": "object"
       },
       "ReportItem": {
@@ -1651,6 +2128,69 @@
           }
         },
         "summary": "List threat actors (offset-paginated)",
+        "tags": [
+          "actors"
+        ]
+      }
+    },
+    "/api/v1/actors/{actor_id}": {
+      "get": {
+        "description": "Shallow-joined detail view of a single threat-actor group. Returns the core group fields plus the flat codenames list. Plan D11 excludes traversal into `report_codenames` — this endpoint does NOT surface reports that mention the actor. Returns 404 when the actor id is unknown.",
+        "operationId": "get_actor_detail_endpoint_api_v1_actors__actor_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "actor_id",
+            "required": true,
+            "schema": {
+              "title": "Actor Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActorDetail"
+                }
+              }
+            },
+            "description": "Actor detail with codenames (plan D1 + D11)."
+          },
+          "401": {
+            "description": "Missing or invalid session cookie"
+          },
+          "403": {
+            "description": "Role not analyst / researcher / policy / soc / admin"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "detail": "actor not found"
+                }
+              }
+            },
+            "description": "Actor id not found"
+          },
+          "422": {
+            "description": "Invalid path parameter — non-integer actor_id."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": "rate_limit_exceeded",
+                  "message": "60 per 1 minute"
+                }
+              }
+            },
+            "description": "Rate limit exceeded — 60/min/user per-route bucket."
+          }
+        },
+        "summary": "Get one threat actor (group) with its codenames",
         "tags": [
           "actors"
         ]
@@ -2879,6 +3419,69 @@
         ]
       }
     },
+    "/api/v1/incidents/{incident_id}": {
+      "get": {
+        "description": "Shallow-joined detail view of a single incident. Plan D9 caps the `linked_reports` collection at 20 newest-published entries (ordered `published DESC, id DESC`). `motivations`, `sectors`, and `countries` are flat string lists aggregated from the three N:M join tables. Unlike the list endpoint, this detail endpoint surfaces `reported=NULL` rows (detail views do not paginate). Returns 404 when the incident id is unknown.",
+        "operationId": "get_incident_detail_endpoint_api_v1_incidents__incident_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "title": "Incident Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IncidentDetail"
+                }
+              }
+            },
+            "description": "Incident detail with shallow joins (plan D9)."
+          },
+          "401": {
+            "description": "Missing or invalid session cookie"
+          },
+          "403": {
+            "description": "Role not analyst / researcher / policy / soc / admin"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "detail": "incident not found"
+                }
+              }
+            },
+            "description": "Incident id not found"
+          },
+          "422": {
+            "description": "Invalid path parameter — non-integer incident_id."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": "rate_limit_exceeded",
+                  "message": "60 per 1 minute"
+                }
+              }
+            },
+            "description": "Rate limit exceeded — 60/min/user per-route bucket."
+          }
+        },
+        "summary": "Get one incident with flat N:M arrays and capped linked reports",
+        "tags": [
+          "incidents"
+        ]
+      }
+    },
     "/api/v1/ingest/rss/run": {
       "post": {
         "description": "§5.1 / §9.3 Trigger a manual RSS ingest run. Admin role required.",
@@ -3231,9 +3834,72 @@
         ]
       }
     },
+    "/api/v1/reports/{report_id}": {
+      "get": {
+        "description": "Shallow-joined detail view of a single report. Plan D9 caps the `linked_incidents` collection at 10 newest-reported entries; reports with > 10 incident links return only the top 10 (ordered `reported DESC NULLS LAST, id DESC`). `tags`, `codenames`, and `techniques` are flat string lists. Returns 404 when the report id is unknown.",
+        "operationId": "get_report_detail_endpoint_api_v1_reports__report_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "report_id",
+            "required": true,
+            "schema": {
+              "title": "Report Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportDetail"
+                }
+              }
+            },
+            "description": "Report detail with shallow joins (plan D9)."
+          },
+          "401": {
+            "description": "Missing or invalid session cookie"
+          },
+          "403": {
+            "description": "Role not analyst / researcher / policy / soc / admin"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "detail": "report not found"
+                }
+              }
+            },
+            "description": "Report id not found"
+          },
+          "422": {
+            "description": "Invalid path parameter — non-integer report_id. Plan D12 uniform 422 (FastAPI path-param validation)."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": "rate_limit_exceeded",
+                  "message": "60 per 1 minute"
+                }
+              }
+            },
+            "description": "Rate limit exceeded — 60/min/user read bucket (plan D2). Per-route bucket: this endpoint's drain does NOT consume the /reports list bucket."
+          }
+        },
+        "summary": "Get one report with related joins and capped linked incidents",
+        "tags": [
+          "reports"
+        ]
+      }
+    },
     "/api/v1/reports/{report_id}/similar": {
       "get": {
-        "description": "§5.2 pgvector similarity search for related reports.\n\nStub: returns 501 until Phase 3 analytics work.",
+        "description": "§5.2 pgvector similarity search for related reports.\n\nStub: returns 501 until Phase 3 slice 1 Group B (plan D2 + D8 + D10).",
         "operationId": "similar_reports_api_v1_reports__report_id__similar_get",
         "parameters": [
           {

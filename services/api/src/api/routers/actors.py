@@ -1,20 +1,32 @@
-"""Actors router — ``GET /api/v1/actors``.
+"""Actors router — /api/v1/actors/...
 
-Single-endpoint router (plan §2.3 Endpoint/Decision matrix). Offset
-pagination — plan D3 keeps actors off keyset because the group
-count is small and sort-stable under inserts. Default sort
-``name ASC, id ASC`` per plan D11 lives in the repository layer.
+Endpoints:
+- ``GET /api/v1/actors`` — offset-paginated list (PR #11 Group B).
+- ``GET /api/v1/actors/{actor_id}`` — single actor detail with
+  codenames (PR #14 Phase 3 slice 1 Group A, plan D1 + D11).
+
+Plan §2.3 matrix: offset pagination — plan D3 keeps actors off keyset
+because the group count is small and sort-stable under inserts.
+Default sort ``name ASC, id ASC`` per plan D11 lives in the
+repository layer.
 
 RBAC: all five roles (analyst / researcher / policy / soc / admin)
-read this endpoint per plan "Inherited locks" and §9.3.
+read these endpoints per plan "Inherited locks" and §9.3.
 
-Filter surface: intentionally empty (plan D5). Detail endpoint
-(``/actors/{id}``) is plan D9 deferred to Phase 3.
+Filter surface for /actors (list): intentionally empty (plan D5).
+
+Detail endpoint scope (PR #14 plan D11 lock):
+- Returns core actor fields + codenames only.
+- Does NOT traverse ``report_codenames`` to surface reports that
+  mention this actor — that surface needs its own endpoint with a
+  locked pagination + filter contract; carried to a later Phase 3
+  slice. The FE actor detail page this PR has no "recent reports"
+  panel.
 
 Rate limit (plan D2 / Group H): ``60/minute`` per user bucket via
 ``session_or_ip_key`` — same-session cookie → same bucket, no
 cookie → client-IP bucket. Scope is per-decorated-route (slowapi
-semantics), so this endpoint's bucket is independent of the
+semantics), so each actor endpoint's bucket is independent of the
 /reports / /incidents / /dashboard buckets even for the same user.
 """
 
@@ -23,13 +35,15 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, Request
+from fastapi.responses import JSONResponse, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..auth.schemas import CurrentUser
 from ..db import get_db
 from ..deps import require_role
 from ..rate_limit import get_limiter
-from ..read import repositories as read_repositories
-from ..schemas.read import ActorItem, ActorListResponse
+from ..read import detail_aggregator, repositories as read_repositories
+from ..schemas.read import ActorDetail, ActorItem, ActorListResponse
 
 router = APIRouter()
 
@@ -161,3 +175,65 @@ async def list_actors_endpoint(
         offset=offset,
         total=total,
     )
+
+
+@router.get(
+    "/{actor_id}",
+    response_model=ActorDetail,
+    summary="Get one threat actor (group) with its codenames",
+    description=(
+        "Shallow-joined detail view of a single threat-actor group. "
+        "Returns the core group fields plus the flat codenames list. "
+        "Plan D11 excludes traversal into `report_codenames` — this "
+        "endpoint does NOT surface reports that mention the actor. "
+        "Returns 404 when the actor id is unknown."
+    ),
+    responses={
+        200: {
+            "description": "Actor detail with codenames (plan D1 + D11).",
+        },
+        401: {"description": "Missing or invalid session cookie"},
+        403: {"description": "Role not analyst / researcher / policy / soc / admin"},
+        404: {
+            "description": "Actor id not found",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "actor not found"}
+                }
+            },
+        },
+        422: {
+            "description": "Invalid path parameter — non-integer actor_id.",
+        },
+        429: {
+            "description": (
+                "Rate limit exceeded — 60/min/user per-route bucket."
+            ),
+            "content": {
+                "application/json": {
+                    "example": {
+                        "error": "rate_limit_exceeded",
+                        "message": "60 per 1 minute",
+                    }
+                }
+            },
+        },
+    },
+)
+@_limiter.limit("60/minute")
+async def get_actor_detail_endpoint(
+    request: Request,
+    actor_id: int,
+    session: AsyncSession = Depends(get_db),
+    _current_user: CurrentUser = Depends(require_role(*_READ_ROLES)),
+) -> Response:
+    """Actor detail (plan D1 + D11)."""
+    detail = await detail_aggregator.get_actor_detail(
+        session, actor_id=actor_id
+    )
+    if detail is None:
+        return JSONResponse(
+            status_code=404,
+            content={"detail": "actor not found"},
+        )
+    return ActorDetail.model_validate(detail)

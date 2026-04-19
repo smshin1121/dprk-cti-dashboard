@@ -600,7 +600,295 @@ class GeoResponse(BaseModel):
     countries: list[GeoCountry] = Field(default_factory=list)
 
 
+# ---------------------------------------------------------------------------
+# Detail views — PR #14 Phase 3 slice 1 (plan D1 + D9 + D11)
+# ---------------------------------------------------------------------------
+#
+# Three read-only detail endpoints feed the detail pages:
+#
+#     GET /api/v1/reports/{id}    → ReportDetail
+#     GET /api/v1/incidents/{id}  → IncidentDetail
+#     GET /api/v1/actors/{id}     → ActorDetail
+#
+# Design contract locked in ``docs/plans/pr14-detail-views.md``:
+#
+# - **D9 Payload depth** — shallow joins only, heavy collections
+#   capped, no recursive nesting. Cap enforcement is **dual-layer**:
+#   the aggregator applies LIMIT in SQL so the DB never materializes
+#   more rows than necessary, AND this DTO declares the same ceiling
+#   via ``Field(max_length=...)`` so a bypass that forgot the LIMIT
+#   would fail validation. The SQL-layer cap is the performance guard;
+#   the DTO-layer cap is the contract guard.
+#
+# - **D11 Navigation contract** — report ↔ incident linking runs
+#   through ``incident_sources`` (migration 0001 M:N table). Linked
+#   entries in either direction are ``{id, title, ...}`` summaries,
+#   not full list-item DTOs — the page renders a link, not a second
+#   full panel. ``ActorDetail`` deliberately does NOT carry linked
+#   reports (that needs ``report_codenames`` — out of scope this PR).
+#
+# - **D10 Missing similarity fallback** — irrelevant to the 3 detail
+#   endpoints here; D10 applies only to ``/reports/{id}/similar``
+#   (Group B).
+
+# Cap constants — plan D9. Module-level so tests can reference the
+# same ceiling the DTOs + aggregator use; a single-source lock means
+# any future bump lands in exactly one place.
+REPORT_DETAIL_INCIDENTS_CAP = 10
+INCIDENT_DETAIL_REPORTS_CAP = 20
+
+
+class LinkedIncidentSummary(BaseModel):
+    """One row in ``ReportDetail.linked_incidents`` (plan D9 + D11).
+
+    Shallow summary only — ``{id, title, reported}``. A click
+    navigates to ``/incidents/{id}`` for the full detail. No nested
+    motivations / sectors / countries arrays here (that would
+    recursively expand per D9's "no recursive nesting" rule).
+    """
+
+    model_config = ConfigDict(
+        frozen=True,
+        json_schema_extra={
+            "examples": [
+                {
+                    "id": 18,
+                    "title": "Axie Infinity Ronin bridge exploit",
+                    "reported": "2024-05-02",
+                }
+            ]
+        },
+    )
+
+    id: int
+    title: str
+    reported: date | None = None
+
+
+class LinkedReportSummary(BaseModel):
+    """One row in ``IncidentDetail.linked_reports`` (plan D9 + D11).
+
+    Shallow summary only — ``{id, title, url, published, source_name}``.
+    A click navigates to ``/reports/{id}`` for the full detail.
+    """
+
+    model_config = ConfigDict(
+        frozen=True,
+        json_schema_extra={
+            "examples": [
+                {
+                    "id": 42,
+                    "title": "Lazarus targets SK crypto exchanges",
+                    "url": "https://mandiant.com/blog/lazarus-2026q1",
+                    "published": "2026-03-15",
+                    "source_name": "Mandiant",
+                }
+            ]
+        },
+    )
+
+    id: int
+    title: str
+    url: str
+    published: date
+    source_name: str | None = None
+
+
+class ReportDetail(BaseModel):
+    """Response for ``GET /api/v1/reports/{id}`` (plan D1 + D9 + D11).
+
+    All core ``ReportItem`` fields plus the free-form fields kept off
+    the list view (``summary``, ``reliability``, ``credibility``) plus
+    flat tag / codename / technique id lists (each bounded by schema,
+    no additional cap needed) plus the capped ``linked_incidents``
+    list (per D9 cap ``REPORT_DETAIL_INCIDENTS_CAP``; ordered by
+    ``incidents.reported DESC, id DESC`` to surface the newest
+    incidents first when the full set exceeds the cap).
+
+    D10 forbids fake or heuristic fallbacks on the similarity
+    endpoint — this detail endpoint has no similarity surface, but
+    the same honesty rule applies: linked_incidents reflects the
+    actual ``incident_sources`` join, never a heuristic substitute.
+    """
+
+    model_config = ConfigDict(
+        frozen=True,
+        json_schema_extra={
+            "examples": [
+                {
+                    "id": 42,
+                    "title": "Lazarus targets South Korean crypto exchanges",
+                    "url": "https://mandiant.com/blog/lazarus-2026q1",
+                    "url_canonical": "https://mandiant.com/blog/lazarus-2026q1",
+                    "published": "2026-03-15",
+                    "source_id": 7,
+                    "source_name": "Mandiant",
+                    "lang": "en",
+                    "tlp": "WHITE",
+                    "summary": "Operation targeting crypto exchanges in Q1 2026.",
+                    "reliability": "A",
+                    "credibility": "2",
+                    "tags": ["ransomware", "finance"],
+                    "codenames": ["Andariel"],
+                    "techniques": ["T1566", "T1190"],
+                    "linked_incidents": [
+                        {
+                            "id": 18,
+                            "title": "Axie Infinity Ronin bridge exploit",
+                            "reported": "2024-05-02",
+                        }
+                    ],
+                },
+                {
+                    "id": 7,
+                    "title": "Single report without incident link",
+                    "url": "https://example.test/r/7",
+                    "url_canonical": "https://example.test/r/7",
+                    "published": "2026-01-10",
+                    "source_id": None,
+                    "source_name": None,
+                    "lang": "en",
+                    "tlp": "WHITE",
+                    "summary": None,
+                    "reliability": None,
+                    "credibility": None,
+                    "tags": [],
+                    "codenames": [],
+                    "techniques": [],
+                    "linked_incidents": [],
+                },
+            ]
+        },
+    )
+
+    id: int
+    title: str
+    url: str
+    url_canonical: str
+    published: date
+    source_id: int | None = None
+    source_name: str | None = None
+    lang: str | None = None
+    tlp: str | None = None
+    summary: str | None = None
+    reliability: str | None = None
+    credibility: str | None = None
+    tags: list[str] = Field(default_factory=list)
+    codenames: list[str] = Field(default_factory=list)
+    techniques: list[str] = Field(default_factory=list)
+    # max_length mirrors REPORT_DETAIL_INCIDENTS_CAP. Pydantic
+    # validates at construction time; a bypass path that skipped the
+    # aggregator's LIMIT would surface as ValidationError here.
+    linked_incidents: Annotated[
+        list[LinkedIncidentSummary],
+        Field(default_factory=list, max_length=REPORT_DETAIL_INCIDENTS_CAP),
+    ]
+
+
+class IncidentDetail(BaseModel):
+    """Response for ``GET /api/v1/incidents/{id}`` (plan D1 + D9 + D11).
+
+    All core ``IncidentItem`` fields (including flat motivations /
+    sectors / countries arrays) plus the capped ``linked_reports``
+    list (per D9 cap ``INCIDENT_DETAIL_REPORTS_CAP``; ordered by
+    ``reports.published DESC, reports.id DESC`` to surface the newest
+    reports first when the full set exceeds the cap).
+    """
+
+    model_config = ConfigDict(
+        frozen=True,
+        json_schema_extra={
+            "examples": [
+                {
+                    "id": 18,
+                    "reported": "2024-05-02",
+                    "title": "Axie Infinity Ronin bridge exploit",
+                    "description": "620M USD bridge compromise attributed to Lazarus",
+                    "est_loss_usd": 620000000,
+                    "attribution_confidence": "HIGH",
+                    "motivations": ["financial"],
+                    "sectors": ["crypto"],
+                    "countries": ["VN", "SG"],
+                    "linked_reports": [
+                        {
+                            "id": 42,
+                            "title": "Lazarus targets SK crypto exchanges",
+                            "url": "https://mandiant.com/blog/lazarus-2026q1",
+                            "published": "2026-03-15",
+                            "source_name": "Mandiant",
+                        }
+                    ],
+                },
+                {
+                    "id": 99,
+                    "reported": None,
+                    "title": "Incident without source reports yet",
+                    "description": None,
+                    "est_loss_usd": None,
+                    "attribution_confidence": None,
+                    "motivations": [],
+                    "sectors": [],
+                    "countries": [],
+                    "linked_reports": [],
+                },
+            ]
+        },
+    )
+
+    id: int
+    reported: date | None = None
+    title: str
+    description: str | None = None
+    est_loss_usd: int | None = None
+    attribution_confidence: str | None = None
+    motivations: list[str] = Field(default_factory=list)
+    sectors: list[str] = Field(default_factory=list)
+    countries: list[str] = Field(default_factory=list)
+    linked_reports: Annotated[
+        list[LinkedReportSummary],
+        Field(default_factory=list, max_length=INCIDENT_DETAIL_REPORTS_CAP),
+    ]
+
+
+class ActorDetail(BaseModel):
+    """Response for ``GET /api/v1/actors/{id}`` (plan D1 + D11).
+
+    All core ``ActorItem`` fields plus no linked-reports collection:
+    per plan D11 out-of-scope ruling, ``ActorDetail`` does NOT
+    traverse ``report_codenames`` to surface reports that mention
+    this actor. That surface needs a dedicated endpoint whose filter
+    contract, pagination, and RBAC scope have not been locked yet —
+    carried to a later Phase 3 slice. The FE consequence: there is
+    no "recent reports for this actor" panel on the actor detail
+    page this PR.
+    """
+
+    model_config = ConfigDict(
+        frozen=True,
+        json_schema_extra={
+            "examples": [
+                {
+                    "id": 3,
+                    "name": "Lazarus Group",
+                    "mitre_intrusion_set_id": "G0032",
+                    "aka": ["APT38", "Hidden Cobra"],
+                    "description": "DPRK-attributed cyber espionage and financially motivated group",
+                    "codenames": ["Andariel", "Bluenoroff"],
+                }
+            ]
+        },
+    )
+
+    id: int
+    name: str
+    mitre_intrusion_set_id: str | None = None
+    aka: list[str] = Field(default_factory=list)
+    description: str | None = None
+    codenames: list[str] = Field(default_factory=list)
+
+
 __all__ = [
+    "ActorDetail",
     "ActorItem",
     "ActorListResponse",
     "AttackMatrixResponse",
@@ -612,8 +900,14 @@ __all__ = [
     "DashboardYearCount",
     "GeoCountry",
     "GeoResponse",
+    "INCIDENT_DETAIL_REPORTS_CAP",
+    "IncidentDetail",
     "IncidentItem",
     "IncidentListResponse",
+    "LinkedIncidentSummary",
+    "LinkedReportSummary",
+    "REPORT_DETAIL_INCIDENTS_CAP",
+    "ReportDetail",
     "ReportItem",
     "ReportListResponse",
     "TacticRef",
