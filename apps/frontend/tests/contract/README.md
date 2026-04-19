@@ -11,7 +11,7 @@ at the repo root, which the BE `contract-verify` job verifies via
 pnpm test:contract     # apps/frontend
 ```
 
-## Coverage (PR #12 D8 lock + PR #13 Group J + PR #14 Group G)
+## Coverage (PR #12 D8 lock + PR #13 Group J + PR #14 Group G + PR #15 Group F)
 
 | Endpoint                               | Interactions                          | Added in |
 |:---------------------------------------|:--------------------------------------|:---------|
@@ -24,10 +24,11 @@ pnpm test:contract     # apps/frontend
 | `GET  /api/v1/analytics/geo`           | happy with date filters (D2/D7 plain `{iso2, count}` rows; KP is a plain row) | PR #13 Group J |
 | `GET  /api/v1/reports/{id}`            | detail happy with linked_incidents (D9 cap + D11 navigation via `incident_sources`) | PR #14 Group G |
 | `GET  /api/v1/incidents/{id}`          | detail happy with linked_reports (D9 cap + D11 bidirectional `incident_sources`) | PR #14 Group G |
-| `GET  /api/v1/actors/{id}`             | detail happy (D11 out-of-scope pin: no `linked_reports`/`reports`/`recent_reports` fields) | PR #14 Group G |
+| `GET  /api/v1/actors/{id}`             | detail happy (D11 out-of-scope pin on ActorDetail: no `linked_reports`/`reports`/`recent_reports` fields on the DETAIL shape — reports surface moved to the sibling endpoint below in PR #15) | PR #14 Group G |
 | `GET  /api/v1/reports/{id}/similar`    | populated (D8 shape + D9 cap) **AND** D10 empty (`{items: []}` when source has NULL embedding — distinct interaction) | PR #14 Group G |
+| `GET  /api/v1/actors/{id}/reports`     | populated (D9 envelope reuse — `{items: eachLike(ReportItem), next_cursor: null}`; EXISTS dedup from D17) **AND** D15 empty (`{items: [], next_cursor: null}` — actor exists + zero linked reports; distinct interaction on a distinct pinned actor id so populated and empty never share state) | PR #15 Group F |
 
-Total: **13 interactions** across **10 endpoints**.
+Total: **15 interactions** across **11 endpoints**.
 
 ### Pinned-id strategy for detail + similar paths (PR #14 Group G)
 
@@ -40,13 +41,15 @@ via `ON CONFLICT (id) DO NOTHING` upserts.
 
 Constants live in `services/api/src/api/routers/pact_states.py`:
 
-| Fixture constant                     | Id     | Consumer path                           |
-|:-------------------------------------|:-------|:----------------------------------------|
-| `REPORT_DETAIL_FIXTURE_ID`           | 999001 | `/api/v1/reports/999001`                |
-| `INCIDENT_DETAIL_FIXTURE_ID`         | 999002 | `/api/v1/incidents/999002`              |
-| `ACTOR_DETAIL_FIXTURE_ID`            | 999003 | `/api/v1/actors/999003`                 |
-| `SIMILAR_POPULATED_SOURCE_ID`        | 999020 | `/api/v1/reports/999020/similar?k=10`   |
-| `SIMILAR_EMPTY_EMBEDDING_SOURCE_ID`  | 999030 | `/api/v1/reports/999030/similar?k=10`   |
+| Fixture constant                       | Id     | Consumer path                                    |
+|:---------------------------------------|:-------|:-------------------------------------------------|
+| `REPORT_DETAIL_FIXTURE_ID`             | 999001 | `/api/v1/reports/999001`                         |
+| `INCIDENT_DETAIL_FIXTURE_ID`           | 999002 | `/api/v1/incidents/999002`                       |
+| `ACTOR_DETAIL_FIXTURE_ID`              | 999003 | `/api/v1/actors/999003` + `/api/v1/actors/999003/reports` (populated) |
+| `ACTOR_WITH_NO_REPORTS_ID`             | 999004 | `/api/v1/actors/999004/reports` (D15 empty)      |
+| `ACTOR_REPORTS_FIXTURE_REPORT_IDS`     | 999050 / 999051 / 999052 | seeded reports linked to actor 999003 via codename — populate the `eachLike` on the populated actor-reports interaction |
+| `SIMILAR_POPULATED_SOURCE_ID`          | 999020 | `/api/v1/reports/999020/similar?k=10`            |
+| `SIMILAR_EMPTY_EMBEDDING_SOURCE_ID`    | 999030 | `/api/v1/reports/999030/similar?k=10`            |
 
 `ACTOR_DETAIL_FIXTURE_ID` was added in Group G specifically to
 avoid Lazarus natural-id drift — the Group C `_ensure_actor_detail_
@@ -54,6 +57,12 @@ fixture` originally aliased `_ensure_canonical_lazarus_fixture`,
 whose id was DB-sequence-assigned. Pinning a Pact-specific actor
 at 999003 makes the contract robust across state replays and
 fixture reorderings.
+
+`ACTOR_WITH_NO_REPORTS_ID` (PR #15) is intentionally a DIFFERENT
+actor from 999003 so the populated and empty actor-reports
+interactions never share provider state. Using the same actor with
+two different `.given(...)` states would risk fixture pollution
+across state replays inside one verifier run.
 
 ### Why `/auth/me 401` is not in the consumer pact
 
@@ -126,6 +135,8 @@ below).
 | `seeded actor detail fixture and an authenticated analyst session`        | Pinned-id actor at `ACTOR_DETAIL_FIXTURE_ID`=999003 (distinct-name Pact fixture group, NOT Lazarus — avoids DB-sequence drift) + 1 linked codename | PR #14 Group C (rewritten in Group G to pin the id) |
 | `seeded similar reports populated fixture and an authenticated analyst session` | Pinned-id source at `SIMILAR_POPULATED_SOURCE_ID`=999020 with embedding + 3 pinned-id neighbors (999011/012/013) with distinct embeddings — cosine kNN returns a 3-row non-empty result (self-exclusion + stable sort per D8) | PR #14 Group C |
 | `seeded similar reports empty-embedding fixture and an authenticated analyst session` | Pinned-id source at `SIMILAR_EMPTY_EMBEDDING_SOURCE_ID`=999030 with **NULL embedding** + 1 neighbor (999031) WITH embedding — BE D10 branch returns `{items: []}` despite the neighbor having embedding (regression guard against "DB-wide emptiness" collapse) | PR #14 Group C |
+| `seeded actor with linked reports fixture and an authenticated analyst session` | Reuses `ACTOR_DETAIL_FIXTURE_ID`=999003 + its `pact-actor-detail-codename` (Group G) and seeds 3 pinned reports at `ACTOR_REPORTS_FIXTURE_REPORT_IDS`=(999050/999051/999052) linked via `report_codenames`. Published dates `2026-03-15`/`2026-02-10`/`2026-01-05` exercise D16 newest-first ordering (999050 at row 0). Idempotent across state replays via `ON CONFLICT DO NOTHING` on reports and composite PK | PR #15 Group C |
+| `seeded actor with no linked reports fixture and an authenticated analyst session` | Distinct-name Pact-specific actor at `ACTOR_WITH_NO_REPORTS_ID`=999004 with 1 codename + ZERO `report_codenames` rows. Exists so the router yields 200 (NOT 404); the D15(c) branch returns `{items: [], next_cursor: null}` | PR #15 Group C |
 
 For the auth cookie: the CI `contract-verify` job POSTs
 `/_pact/provider_states` with `{"state": "an authenticated analyst

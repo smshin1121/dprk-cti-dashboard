@@ -16,20 +16,22 @@
  *   /api/v1/actors/{id}                       — detail happy [PR #14 G]
  *   /api/v1/reports/{id}/similar              — populated [PR #14 G]
  *                                              — D10 empty  [PR #14 G]
+ *   /api/v1/actors/{id}/reports               — populated [PR #15 F]
+ *                                              — D15 empty  [PR #15 F]
  *
- * Pinned-id strategy for detail + similar paths (PR #14 Group G):
+ * Pinned-id strategy for detail + similar + actor-reports paths:
  *   Detail endpoints take the resource id in the PATH. A path-param
  *   regex matcher would skate close to R3 (pact-js V3 FFI has
  *   panicked on regex matchers applied to headers; the path matcher
  *   surface is less tested). The safer approach is to literal-pin
  *   the consumer path at a known fixture id (999001/999002/999003/
- *   999020/999030), and have the BE state handler seed THAT id
+ *   999004/999020/999030), and have the BE state handler seed THAT id
  *   specifically via `ON CONFLICT (id) DO NOTHING` upserts. No
  *   regex, no sequence drift, no Lazarus-id coupling. The
  *   constants live in `services/api/src/api/routers/pact_states.py`:
  *   `REPORT_DETAIL_FIXTURE_ID` / `INCIDENT_DETAIL_FIXTURE_ID` /
- *   `ACTOR_DETAIL_FIXTURE_ID` / `SIMILAR_POPULATED_SOURCE_ID` /
- *   `SIMILAR_EMPTY_EMBEDDING_SOURCE_ID`.
+ *   `ACTOR_DETAIL_FIXTURE_ID` / `ACTOR_WITH_NO_REPORTS_ID` /
+ *   `SIMILAR_POPULATED_SOURCE_ID` / `SIMILAR_EMPTY_EMBEDDING_SOURCE_ID`.
  *
  * `/auth/me 401`:
  *   Not in this pact — pact-ruby's Verifier applies
@@ -783,6 +785,145 @@ describe('GET /api/v1/reports/{id}/similar', () => {
       const body = (await res.json()) as { items: unknown[] }
       expect(Array.isArray(body.items)).toBe(true)
       expect(body.items).toHaveLength(0)
+    })
+  })
+})
+
+// ---------------------------------------------------------------------
+// /actors/{id}/reports — populated + D15 empty (PR #15 Group F)
+// ---------------------------------------------------------------------
+//
+// Plan D1 + D9 + D14 + D15 — the PR #14 D11 carry-over (ActorDetail
+// deliberately had no `linked_reports` surface) closes here via a
+// SIBLING endpoint, not by enriching `ActorDetail`. The two
+// interactions use DISTINCT pinned ids so populated and empty never
+// share state:
+//   - populated: ACTOR_DETAIL_FIXTURE_ID=999003 (reused from Group G)
+//                + 3 reports pinned at ACTOR_REPORTS_FIXTURE_REPORT_IDS
+//                (999050/999051/999052) linked via codename. kNN over
+//                `report_codenames` produces ≥3 non-empty rows.
+//   - D15 empty: ACTOR_WITH_NO_REPORTS_ID=999004 — distinct-name
+//                Pact-specific actor with 1 codename but ZERO
+//                `report_codenames` rows. BE returns `{items: [],
+//                next_cursor: null}` — NOT 404 (the actor exists),
+//                NOT a fake "recent N" fallback. The D15(a) 404
+//                branch is NOT in this pact — pact-ruby's
+//                `custom_provider_headers` authenticates every
+//                interaction, so 404 would collide with the happy
+//                case just like /auth/me 401 did.
+//
+// D12 regression carry — the main `/actors/{id}` pact (above) still
+// asserts no reports-like surface on the ActorDetail response. This
+// pact adds a SEPARATE endpoint; the detail shape stays untouched.
+
+describe('GET /api/v1/actors/{id}/reports', () => {
+  // D14 populated — eachLike over the ReportItem shape. Matchers
+  // are type-only (integer / string / eachLike), so the fixture's
+  // actual seeded values (title "Pact fixture — actor reports #1",
+  // published "2026-03-15") satisfy the contract by virtue of being
+  // non-empty strings + valid dates.
+  it('returns populated linked reports (PR #15 Group F)', async () => {
+    provider
+      .given(
+        'seeded actor with linked reports fixture '
+          + 'and an authenticated analyst session',
+      )
+      .uponReceiving(
+        'a request for reports linked to an actor (PR #15 Group F)',
+      )
+      .withRequest({
+        method: 'GET',
+        path: '/api/v1/actors/999003/reports',
+      })
+      .willRespondWith({
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+        // D9 envelope reuse — {items, next_cursor} ONLY. No
+        // `total`, no `limit` echo. Matcher-side: eachLike on
+        // items; next_cursor literal null (final page of the
+        // seeded 3-row fixture).
+        body: like({
+          items: eachLike({
+            id: integer(999050),
+            title: string('Pact fixture — actor reports #1 (newest)'),
+            url: string('https://pact.test/actor-reports/999050'),
+            url_canonical: string(
+              'https://pact.test/actor-reports/999050',
+            ),
+            published: string('2026-03-15'),
+            source_id: integer(1),
+            source_name: string('Vendor'),
+            lang: string('en'),
+            tlp: string('WHITE'),
+          }),
+          next_cursor: null,
+        }),
+      })
+
+    await provider.executeTest(async (mockServer) => {
+      const res = await fetch(
+        `${mockServer.url}/api/v1/actors/999003/reports`,
+      )
+      expect(res.status).toBe(200)
+      const body = (await res.json()) as {
+        items: {
+          id: number
+          title: string
+          published: string
+        }[]
+        next_cursor: string | null
+      }
+      // D9 envelope — strict key set.
+      expect(Object.keys(body).sort()).toEqual(['items', 'next_cursor'])
+      expect(Array.isArray(body.items)).toBe(true)
+      expect(body.items.length).toBeGreaterThan(0)
+      // ReportItem shape — pin the core keys we render in the panel.
+      const item = body.items[0]
+      expect(item.id).toBeTypeOf('number')
+      expect(item.title).toBeTypeOf('string')
+      expect(item.published).toBeTypeOf('string')
+    })
+  })
+
+  // D15(b/c/d) empty — actor exists + has codenames + zero linked
+  // reports. Literal empty body — eachLike requires ≥1 example.
+  // Distinct pinned actor id so the empty state never collides
+  // with the populated one's seed set.
+  it('returns the D15 empty contract when no linked reports exist', async () => {
+    provider
+      .given(
+        'seeded actor with no linked reports fixture '
+          + 'and an authenticated analyst session',
+      )
+      .uponReceiving(
+        'a request for reports linked to an actor with no links (PR #15 Group F)',
+      )
+      .withRequest({
+        method: 'GET',
+        path: '/api/v1/actors/999004/reports',
+      })
+      .willRespondWith({
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+        // D15 empty — explicit literal body. D15(a) 404 NOT here;
+        // actor 999004 exists (distinct from ACTOR_DETAIL_FIXTURE_ID)
+        // so the contract is reachable without colliding with the
+        // populated interaction's state setup.
+        body: { items: [], next_cursor: null },
+      })
+
+    await provider.executeTest(async (mockServer) => {
+      const res = await fetch(
+        `${mockServer.url}/api/v1/actors/999004/reports`,
+      )
+      expect(res.status).toBe(200)
+      const body = (await res.json()) as {
+        items: unknown[]
+        next_cursor: string | null
+      }
+      expect(Array.isArray(body.items)).toBe(true)
+      expect(body.items).toHaveLength(0)
+      expect(body.next_cursor).toBeNull()
     })
   })
 })
