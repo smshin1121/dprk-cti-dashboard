@@ -643,6 +643,467 @@ async def _ensure_dashboard_fixture(session: AsyncSession) -> None:
 
 
 # ---------------------------------------------------------------------------
+# PR #14 Group C — detail + similar-reports fixture helpers
+# ---------------------------------------------------------------------------
+#
+# Four FE pact interactions land in PR #14 Group G:
+#   GET /reports/{id}            (happy)
+#   GET /incidents/{id}          (happy)
+#   GET /actors/{id}             (happy)
+#   GET /reports/{id}/similar    (happy, populated + optional D10 empty)
+#
+# Path-param discipline:
+#   pact-js V3 sends the consumer's example URL verbatim to the
+#   provider. For interactions with a path param, we pin the fixture
+#   id to a HIGH KNOWN-GOOD value (999xxx range) so (a) the consumer
+#   pact can use that exact number as its example, and (b) natural
+#   data rows the bootstrap ETL seeds can't collide with the pact
+#   fixtures. The ids are:
+#
+#     999001 — report detail fixture (source report for /reports/{id})
+#     999002 — incident detail fixture (for /incidents/{id})
+#     999011, 999012, 999013 — similar neighbors for populated state
+#     999020 — similar populated fixture source
+#     999030 — similar empty-embedding fixture source
+#     999031 — similar empty-embedding neighbor (has embedding)
+#
+# Idempotency discipline:
+#   All helpers use ``ON CONFLICT (id) DO NOTHING`` when we pin an
+#   id explicitly, OR SELECT-then-INSERT for natural-key rows
+#   (source, codenames, techniques). A second call with the same
+#   state is a no-op; a third still finds the fixture intact.
+#
+# D10 empty-embedding fixture:
+#   plan D10 locks the "no embedding → 200 + {items: []}" contract.
+#   The empty-embedding state seeds the source report without
+#   populating its vector column AND seeds ONE neighbor WITH an
+#   embedding — so the verifier sees a DB where the kNN query
+#   cannot run because ``:src.embedding IS NULL``, and the service
+#   falls into the D10 early-return branch even though the DB is
+#   not empty of embeddings elsewhere.
+#
+# Embedding format:
+#   ``reports.embedding`` is ``vector(1536)`` (migration 0001). We
+#   construct 1536-dim vectors using ``_make_embedding`` below —
+#   most slots are 0.0, a handful carry known values so three
+#   neighbors produce distinct cosine similarities against the
+#   source vector. The pact matcher only verifies SHAPE (not exact
+#   score values), so we don't pin specific similarity numbers at
+#   the pact layer — the real-PG unit-test suite verifies that
+#   path.
+
+
+# Pinned fixture ids — used by the FE pact's path-param examples
+# in Group G. Kept as module constants so Group G can import the
+# same numbers without drift.
+REPORT_DETAIL_FIXTURE_ID = 999001
+INCIDENT_DETAIL_FIXTURE_ID = 999002
+SIMILAR_POPULATED_SOURCE_ID = 999020
+SIMILAR_POPULATED_NEIGHBOR_IDS = (999011, 999012, 999013)
+SIMILAR_EMPTY_EMBEDDING_SOURCE_ID = 999030
+SIMILAR_EMPTY_EMBEDDING_NEIGHBOR_ID = 999031
+
+
+def _make_embedding(non_zero_slots: dict[int, float]) -> str:
+    """Produce a 1536-dim pgvector literal string.
+
+    Most slots are 0.0; entries in ``non_zero_slots`` override.
+    Returned form is the pgvector text-literal syntax
+    ``'[v0,v1,...,v1535]'`` that Postgres casts via ``::vector``.
+    1536 dimensions matches migration 0001's
+    ``ALTER TABLE reports ADD COLUMN embedding vector(1536)``.
+
+    Keeping this a pure string-builder (no numpy) avoids pulling a
+    heavy dep into the state-handler path that runs inside the live
+    API container.
+    """
+    values = ["0"] * 1536
+    for slot, value in non_zero_slots.items():
+        if not 0 <= slot < 1536:
+            raise ValueError(f"slot out of range: {slot}")
+        values[slot] = repr(float(value))
+    return "[" + ",".join(values) + "]"
+
+
+async def _ensure_report_detail_fixture(session: AsyncSession) -> None:
+    """Seed the fixture set that ``GET /reports/{id}`` pact uses.
+
+    One source report with every related collection a happy-path
+    matcher needs:
+      - report row (id = REPORT_DETAIL_FIXTURE_ID)
+      - source + source_name link
+      - 2 tags via report_tags (for ``tags: eachLike('tag')``)
+      - 1 codename via report_codenames (Andariel reused)
+      - 1 technique via report_techniques (T1566 reused from
+        attack_matrix fixture if present, else seeded here)
+      - 2 linked incidents via incident_sources with distinct
+        ``reported`` dates so the newest-first ordering has two
+        rows to pick from (plan D9 cap = 10, so 2 comfortably fits)
+    """
+    source_id = await _ensure_source(session)
+    lazarus_id = await _ensure_full_group(
+        session,
+        name="Lazarus Group",
+        mitre_id="G0032",
+        aka=["APT38", "Hidden Cobra"],
+        description="DPRK-attributed cyber espionage and financially motivated group",
+    )
+    andariel_id = await _ensure_codename(
+        session, name="Andariel", group_id=lazarus_id
+    )
+
+    # Insert report with pinned id — ON CONFLICT DO NOTHING so a
+    # repeat state setup is safe.
+    await session.execute(
+        text(
+            "INSERT INTO reports "
+            "(id, source_id, title, url, url_canonical, sha256_title, "
+            "published, lang, tlp, summary) "
+            "VALUES (:id, :s, :t, :u, :uc, :sh, :p, :l, :tlp, :sm) "
+            "ON CONFLICT (id) DO NOTHING"
+        ),
+        {
+            "id": REPORT_DETAIL_FIXTURE_ID,
+            "s": source_id,
+            "t": "Pact fixture — report detail source",
+            "u": "https://pact.test/reports/detail/source",
+            "uc": "https://pact.test/reports/detail/source",
+            "sh": "pact-sha-detail-source-fixture",
+            "p": date(2026, 3, 15),
+            "l": "en",
+            "tlp": "WHITE",
+            "sm": "Pact fixture body — report detail happy path.",
+        },
+    )
+
+    # 2 tags — reuse-or-insert by name, then link.
+    for tag_name in ("pact-detail-tag-a", "pact-detail-tag-b"):
+        existing = (
+            await session.execute(
+                text("SELECT id FROM tags WHERE name = :n"), {"n": tag_name}
+            )
+        ).first()
+        if existing is None:
+            row = await session.execute(
+                text(
+                    "INSERT INTO tags (name, type) VALUES (:n, :t) RETURNING id"
+                ),
+                {"n": tag_name, "t": "fixture"},
+            )
+            tag_id = int(row.scalar_one())
+        else:
+            tag_id = int(existing[0])
+        await session.execute(
+            text(
+                "INSERT INTO report_tags (report_id, tag_id) "
+                "VALUES (:r, :t) ON CONFLICT DO NOTHING"
+            ),
+            {"r": REPORT_DETAIL_FIXTURE_ID, "t": tag_id},
+        )
+
+    # 1 codename link (Andariel).
+    await session.execute(
+        text(
+            "INSERT INTO report_codenames (report_id, codename_id) "
+            "VALUES (:r, :c) ON CONFLICT DO NOTHING"
+        ),
+        {"r": REPORT_DETAIL_FIXTURE_ID, "c": andariel_id},
+    )
+
+    # 1 technique link.
+    t_1566 = await _ensure_technique(
+        session, mitre_id="T1566", name="Phishing", tactic="TA0001"
+    )
+    await _link_report_technique(
+        session, report_id=REPORT_DETAIL_FIXTURE_ID, technique_id=t_1566
+    )
+
+    # 2 linked incidents via incident_sources — distinct reported
+    # dates so D9's newest-first ordering has a deterministic answer.
+    for idx, reported_date in enumerate(
+        [date(2026, 2, 10), date(2026, 1, 20)], start=1
+    ):
+        inc_title = f"Pact fixture — report detail linked incident {idx}"
+        existing = (
+            await session.execute(
+                text("SELECT id FROM incidents WHERE title = :t"),
+                {"t": inc_title},
+            )
+        ).first()
+        if existing is not None:
+            incident_id = int(existing[0])
+        else:
+            row = await session.execute(
+                text(
+                    "INSERT INTO incidents (reported, title, description) "
+                    "VALUES (:r, :t, :d) RETURNING id"
+                ),
+                {
+                    "r": reported_date,
+                    "t": inc_title,
+                    "d": "Pact fixture incident linked to report detail",
+                },
+            )
+            incident_id = int(row.scalar_one())
+        await session.execute(
+            text(
+                "INSERT INTO incident_sources (incident_id, report_id) "
+                "VALUES (:i, :r) ON CONFLICT DO NOTHING"
+            ),
+            {"i": incident_id, "r": REPORT_DETAIL_FIXTURE_ID},
+        )
+
+
+async def _ensure_incident_detail_fixture(session: AsyncSession) -> None:
+    """Seed the fixture set that ``GET /incidents/{id}`` pact uses.
+
+    One incident with every related collection a happy-path matcher
+    needs:
+      - incident row (id = INCIDENT_DETAIL_FIXTURE_ID)
+      - 1 motivation, 1 sector, 1 country
+      - 2 linked reports via incident_sources with distinct published
+        dates so the D9 newest-first ordering has two rows to pick
+        from (cap = 20, so 2 fits)
+    """
+    source_id = await _ensure_source(session)
+
+    await session.execute(
+        text(
+            "INSERT INTO incidents (id, reported, title, description, "
+            "est_loss_usd, attribution_confidence) "
+            "VALUES (:id, :r, :t, :d, :el, :ac) "
+            "ON CONFLICT (id) DO NOTHING"
+        ),
+        {
+            "id": INCIDENT_DETAIL_FIXTURE_ID,
+            "r": date(2026, 2, 20),
+            "t": "Pact fixture — incident detail source",
+            "d": "Pact fixture incident for /incidents/{id} happy path",
+            "el": 100000,
+            "ac": "HIGH",
+        },
+    )
+    # N:M flat arrays.
+    await session.execute(
+        text(
+            "INSERT INTO incident_motivations (incident_id, motivation) "
+            "VALUES (:i, :m) ON CONFLICT DO NOTHING"
+        ),
+        {"i": INCIDENT_DETAIL_FIXTURE_ID, "m": "financial"},
+    )
+    await session.execute(
+        text(
+            "INSERT INTO incident_sectors (incident_id, sector_code) "
+            "VALUES (:i, :s) ON CONFLICT DO NOTHING"
+        ),
+        {"i": INCIDENT_DETAIL_FIXTURE_ID, "s": "crypto"},
+    )
+    await session.execute(
+        text(
+            "INSERT INTO incident_countries (incident_id, country_iso2) "
+            "VALUES (:i, :c) ON CONFLICT DO NOTHING"
+        ),
+        {"i": INCIDENT_DETAIL_FIXTURE_ID, "c": "KR"},
+    )
+
+    # 2 linked reports (newest-first ordering has a deterministic
+    # answer). Distinct url_canonicals keep this isolated from the
+    # other fixtures' reports.
+    for idx, published in enumerate(
+        [date(2026, 3, 10), date(2026, 2, 28)], start=1
+    ):
+        uc = f"https://pact.test/incidents/detail/linked-report-{idx}"
+        existing = (
+            await session.execute(
+                text("SELECT id FROM reports WHERE url_canonical = :u"),
+                {"u": uc},
+            )
+        ).first()
+        if existing is not None:
+            report_id = int(existing[0])
+        else:
+            row = await session.execute(
+                text(
+                    "INSERT INTO reports "
+                    "(source_id, title, url, url_canonical, sha256_title, "
+                    "published) "
+                    "VALUES (:s, :t, :u, :uc, :sh, :p) RETURNING id"
+                ),
+                {
+                    "s": source_id,
+                    "t": f"Pact fixture — incident detail linked report {idx}",
+                    "u": uc,
+                    "uc": uc,
+                    "sh": f"pact-sha-inc-detail-linked-{idx}",
+                    "p": published,
+                },
+            )
+            report_id = int(row.scalar_one())
+        await session.execute(
+            text(
+                "INSERT INTO incident_sources (incident_id, report_id) "
+                "VALUES (:i, :r) ON CONFLICT DO NOTHING"
+            ),
+            {"i": INCIDENT_DETAIL_FIXTURE_ID, "r": report_id},
+        )
+
+
+async def _ensure_actor_detail_fixture(session: AsyncSession) -> None:
+    """Seed the fixture that ``GET /actors/{id}`` pact uses.
+
+    Reuses the canonical Lazarus fixture — the actor detail DTO only
+    covers core group fields + codenames (plan D11: no traversal
+    into report_codenames). A single codename satisfies the
+    ``codenames: eachLike('...')`` matcher; Lazarus already has
+    Andariel via ``_ensure_canonical_lazarus_fixture``.
+
+    This helper is a thin alias for clarity in the state router;
+    any future divergence (e.g., add a second codename specifically
+    for actor detail) lands here without touching the dashboard
+    fixture path.
+    """
+    await _ensure_canonical_lazarus_fixture(session)
+
+
+async def _ensure_similar_reports_populated_fixture(
+    session: AsyncSession,
+) -> None:
+    """Seed the fixture ``GET /reports/{id}/similar`` (populated) uses.
+
+    Plan D2 + D8 shape: source report with a populated embedding +
+    3 neighbor reports with distinct embeddings so cosine kNN
+    produces 3 non-empty rows. Specific cosine values are NOT
+    pinned at the pact layer (matcher is eachLike on shape only) —
+    real-PG integration tests can pin score ordering if ever
+    needed.
+
+    Embeddings: source sits at dim 0 = 1.0; neighbors vary dim-0
+    magnitude so their cosine similarity with source is
+    monotonically decreasing. Ids pinned so the consumer pact can
+    target ``SIMILAR_POPULATED_SOURCE_ID`` deterministically.
+    """
+    source_id = await _ensure_source(session)
+
+    source_vec = _make_embedding({0: 1.0})
+    neighbor_vecs = {
+        999011: _make_embedding({0: 0.95, 1: 0.05}),
+        999012: _make_embedding({0: 0.8, 1: 0.2}),
+        999013: _make_embedding({0: 0.5, 1: 0.5}),
+    }
+
+    await session.execute(
+        text(
+            "INSERT INTO reports (id, source_id, title, url, url_canonical, "
+            "sha256_title, published, tlp, embedding) "
+            f"VALUES (:id, :s, :t, :u, :uc, :sh, :p, :tlp, "
+            f"CAST(:emb AS vector)) "
+            "ON CONFLICT (id) DO UPDATE SET embedding = EXCLUDED.embedding"
+        ),
+        {
+            "id": SIMILAR_POPULATED_SOURCE_ID,
+            "s": source_id,
+            "t": "Pact fixture — similar populated source",
+            "u": "https://pact.test/reports/similar/populated-source",
+            "uc": "https://pact.test/reports/similar/populated-source",
+            "sh": "pact-sha-similar-pop-src",
+            "p": date(2026, 3, 1),
+            "tlp": "WHITE",
+            "emb": source_vec,
+        },
+    )
+
+    for neighbor_id, vec in neighbor_vecs.items():
+        await session.execute(
+            text(
+                "INSERT INTO reports (id, source_id, title, url, url_canonical, "
+                "sha256_title, published, tlp, embedding) "
+                f"VALUES (:id, :s, :t, :u, :uc, :sh, :p, :tlp, "
+                f"CAST(:emb AS vector)) "
+                "ON CONFLICT (id) DO UPDATE SET embedding = EXCLUDED.embedding"
+            ),
+            {
+                "id": neighbor_id,
+                "s": source_id,
+                "t": f"Pact fixture — similar neighbor {neighbor_id}",
+                "u": f"https://pact.test/reports/similar/neighbor-{neighbor_id}",
+                "uc": f"https://pact.test/reports/similar/neighbor-{neighbor_id}",
+                "sh": f"pact-sha-similar-neighbor-{neighbor_id}",
+                "p": date(2026, 2, 15),
+                "tlp": "WHITE",
+                "emb": vec,
+            },
+        )
+
+
+async def _ensure_similar_reports_empty_embedding_fixture(
+    session: AsyncSession,
+) -> None:
+    """Seed the fixture for plan D10's ``source has no embedding``
+    empty-contract verification.
+
+    Two rows:
+      (a) source report with NULL embedding — the one the pact
+          interaction targets. The ``/similar`` endpoint must emit
+          ``200 + {items: []}`` against this source per D10.
+      (b) one neighbor report WITH an embedding — so the DB is not
+          empty of embeddings elsewhere. This pins the invariant
+          that "source has no embedding" is the ONLY trigger for
+          D10 empty, NOT "the whole DB has no embeddings".
+
+    If a future regression collapses D10 to "DB-wide emptiness",
+    this fixture makes the failure mode visible: the neighbor
+    remains a legitimate similarity candidate but the endpoint must
+    still return empty because the SOURCE has no vector to compare
+    against.
+    """
+    source_id_fk = await _ensure_source(session)
+
+    # Source — NULL embedding. Schema allows NULL (see migration 0001
+    # where the vector column is ADDed via ALTER without NOT NULL).
+    await session.execute(
+        text(
+            "INSERT INTO reports (id, source_id, title, url, url_canonical, "
+            "sha256_title, published, tlp, embedding) "
+            "VALUES (:id, :s, :t, :u, :uc, :sh, :p, :tlp, NULL) "
+            "ON CONFLICT (id) DO UPDATE SET embedding = NULL"
+        ),
+        {
+            "id": SIMILAR_EMPTY_EMBEDDING_SOURCE_ID,
+            "s": source_id_fk,
+            "t": "Pact fixture — similar empty-embedding source",
+            "u": "https://pact.test/reports/similar/empty-source",
+            "uc": "https://pact.test/reports/similar/empty-source",
+            "sh": "pact-sha-similar-empty-src",
+            "p": date(2026, 3, 5),
+            "tlp": "WHITE",
+        },
+    )
+
+    # Neighbor with an embedding — exists to prove the D10 contract
+    # triggers on SOURCE embedding status, not DB-wide emptiness.
+    await session.execute(
+        text(
+            "INSERT INTO reports (id, source_id, title, url, url_canonical, "
+            "sha256_title, published, tlp, embedding) "
+            "VALUES (:id, :s, :t, :u, :uc, :sh, :p, :tlp, "
+            f"CAST(:emb AS vector)) "
+            "ON CONFLICT (id) DO UPDATE SET embedding = EXCLUDED.embedding"
+        ),
+        {
+            "id": SIMILAR_EMPTY_EMBEDDING_NEIGHBOR_ID,
+            "s": source_id_fk,
+            "t": "Pact fixture — similar empty-embedding neighbor (has embedding)",
+            "u": "https://pact.test/reports/similar/empty-neighbor",
+            "uc": "https://pact.test/reports/similar/empty-neighbor",
+            "sh": "pact-sha-similar-empty-neighbor",
+            "p": date(2026, 2, 25),
+            "tlp": "WHITE",
+            "emb": _make_embedding({0: 0.9, 1: 0.1}),
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
 # Endpoint
 # ---------------------------------------------------------------------------
 
@@ -720,6 +1181,49 @@ async def provider_states(
             "seeded geo dataset and an authenticated analyst session"
         ):
             await _ensure_geo_fixture(session)
+            await session.commit()
+            await _seed_analyst_session(response, session_store)
+            continue
+
+        # PR #14 Group C — detail + similar-reports fixtures.
+        if state == (
+            "seeded report detail fixture and an authenticated analyst session"
+        ):
+            await _ensure_report_detail_fixture(session)
+            await session.commit()
+            await _seed_analyst_session(response, session_store)
+            continue
+
+        if state == (
+            "seeded incident detail fixture and an authenticated analyst session"
+        ):
+            await _ensure_incident_detail_fixture(session)
+            await session.commit()
+            await _seed_analyst_session(response, session_store)
+            continue
+
+        if state == (
+            "seeded actor detail fixture and an authenticated analyst session"
+        ):
+            await _ensure_actor_detail_fixture(session)
+            await session.commit()
+            await _seed_analyst_session(response, session_store)
+            continue
+
+        if state == (
+            "seeded similar reports populated fixture "
+            "and an authenticated analyst session"
+        ):
+            await _ensure_similar_reports_populated_fixture(session)
+            await session.commit()
+            await _seed_analyst_session(response, session_store)
+            continue
+
+        if state == (
+            "seeded similar reports empty-embedding fixture "
+            "and an authenticated analyst session"
+        ):
+            await _ensure_similar_reports_empty_embedding_fixture(session)
             await session.commit()
             await _seed_analyst_session(response, session_store)
             continue
