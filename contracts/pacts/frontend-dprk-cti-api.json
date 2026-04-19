@@ -614,6 +614,303 @@
       }
     },
     {
+      "description": "a request for search hits against \"lazarus\" (PR #17 Group F)",
+      "providerStates": [
+        {
+          "name": "seeded search populated fixture and an authenticated analyst session"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/search",
+        "query": {
+          "q": [
+            "lazarus"
+          ]
+        }
+      },
+      "response": {
+        "body": {
+          "items": [
+            {
+              "fts_rank": 0.0759,
+              "report": {
+                "id": 999060,
+                "lang": "en",
+                "published": "2026-03-15",
+                "source_id": 1,
+                "source_name": "Vendor",
+                "title": "Lazarus targets SK crypto exchanges",
+                "tlp": "WHITE",
+                "url": "https://pact.test/search/populated-999060",
+                "url_canonical": "https://pact.test/search/populated-999060"
+              },
+              "vector_rank": null
+            }
+          ],
+          "latency_ms": 42,
+          "total_hits": 3
+        },
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "matchingRules": {
+          "body": {
+            "$": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.items": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type",
+                  "min": 1
+                }
+              ]
+            },
+            "$.items[*].fts_rank": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.items[*].report": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.items[*].report.id": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "integer"
+                }
+              ]
+            },
+            "$.items[*].report.lang": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.items[*].report.published": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.items[*].report.source_id": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "integer"
+                }
+              ]
+            },
+            "$.items[*].report.source_name": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.items[*].report.title": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.items[*].report.tlp": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.items[*].report.url": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.items[*].report.url_canonical": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.latency_ms": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "integer"
+                }
+              ]
+            },
+            "$.total_hits": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "integer"
+                }
+              ]
+            }
+          }
+        },
+        "status": 200
+      }
+    },
+    {
+      "description": "a request for search hits against \"nomatchxyz123\" (PR #17 Group F)",
+      "providerStates": [
+        {
+          "name": "seeded search empty fixture and an authenticated analyst session"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/search",
+        "query": {
+          "q": [
+            "nomatchxyz123"
+          ]
+        }
+      },
+      "response": {
+        "body": {
+          "items": [],
+          "latency_ms": 12,
+          "total_hits": 0
+        },
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "matchingRules": {
+          "body": {
+            "$": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.latency_ms": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "integer"
+                }
+              ]
+            }
+          }
+        },
+        "status": 200
+      }
+    },
+    {
+      "description": "a request for search hits with blank q (PR #17 Group F)",
+      "providerStates": [
+        {
+          "name": "an authenticated analyst session"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/search",
+        "query": {
+          "q": [
+            ""
+          ]
+        }
+      },
+      "response": {
+        "body": {
+          "detail": [
+            {
+              "loc": [
+                "query"
+              ],
+              "msg": "String should have at least 1 character",
+              "type": "string_too_short"
+            }
+          ]
+        },
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "matchingRules": {
+          "body": {
+            "$": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.detail": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type",
+                  "min": 1
+                }
+              ]
+            },
+            "$.detail[*].loc": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type",
+                  "min": 1
+                }
+              ]
+            },
+            "$.detail[*].msg": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.detail[*].type": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          }
+        },
+        "status": 422
+      }
+    },
+    {
       "description": "a request for similar reports with a null-embedding source (PR #14 Group G)",
       "providerStates": [
         {

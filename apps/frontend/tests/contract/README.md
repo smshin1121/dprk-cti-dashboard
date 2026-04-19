@@ -11,7 +11,7 @@ at the repo root, which the BE `contract-verify` job verifies via
 pnpm test:contract     # apps/frontend
 ```
 
-## Coverage (PR #12 D8 lock + PR #13 Group J + PR #14 Group G + PR #15 Group F)
+## Coverage (PR #12 D8 lock + PR #13 Group J + PR #14 Group G + PR #15 Group F + PR #17 Group F)
 
 | Endpoint                               | Interactions                          | Added in |
 |:---------------------------------------|:--------------------------------------|:---------|
@@ -27,8 +27,9 @@ pnpm test:contract     # apps/frontend
 | `GET  /api/v1/actors/{id}`             | detail happy (D11 out-of-scope pin on ActorDetail: no `linked_reports`/`reports`/`recent_reports` fields on the DETAIL shape — reports surface moved to the sibling endpoint below in PR #15) | PR #14 Group G |
 | `GET  /api/v1/reports/{id}/similar`    | populated (D8 shape + D9 cap) **AND** D10 empty (`{items: []}` when source has NULL embedding — distinct interaction) | PR #14 Group G |
 | `GET  /api/v1/actors/{id}/reports`     | populated (D9 envelope reuse — `{items: eachLike(ReportItem), next_cursor: null}`; EXISTS dedup from D17) **AND** D15 empty (`{items: [], next_cursor: null}` — actor exists + zero linked reports; distinct interaction on a distinct pinned actor id so populated and empty never share state) | PR #15 Group F |
+| `GET  /api/v1/search`                  | populated with `q=lazarus` (D9 envelope `{items: eachLike(SearchHit), total_hits, latency_ms}`; `vector_rank: null` pinned LITERAL — D9 forward-compat slot for the hybrid follow-up PR) **AND** D10 empty with `q=nomatchxyz123` (literal `{items: [], total_hits: 0, latency_ms: <int>}` — distractor row 999063 exists so the empty envelope is proven to come from FTS miss, not DB emptiness) **AND** 422 with `q=` (FastAPI `Query(min_length=1)` rejects blank q before the router body runs; co-exists with happy because 422 is NOT auth-gated like `/auth/me 401` was) | PR #17 Group F |
 
-Total: **15 interactions** across **11 endpoints**.
+Total: **18 interactions** across **12 endpoints**.
 
 ### Pinned-id strategy for detail + similar paths (PR #14 Group G)
 
@@ -50,6 +51,8 @@ Constants live in `services/api/src/api/routers/pact_states.py`:
 | `ACTOR_REPORTS_FIXTURE_REPORT_IDS`     | 999050 / 999051 / 999052 | seeded reports linked to actor 999003 via codename — populate the `eachLike` on the populated actor-reports interaction |
 | `SIMILAR_POPULATED_SOURCE_ID`          | 999020 | `/api/v1/reports/999020/similar?k=10`            |
 | `SIMILAR_EMPTY_EMBEDDING_SOURCE_ID`    | 999030 | `/api/v1/reports/999030/similar?k=10`            |
+| `SEARCH_POPULATED_FIXTURE_REPORT_IDS`  | 999060 / 999061 / 999062 | seeded reports with "Lazarus" in both title and summary — populate the `eachLike` on the `GET /api/v1/search?q=lazarus` interaction (PR #17) |
+| `SEARCH_EMPTY_FIXTURE_REPORT_IDS`      | 999063 | distractor row whose title + summary avoid the pact's `nomatchxyz123` token — pins "D10 empty envelope comes from FTS miss, not DB emptiness" (PR #17) |
 
 `ACTOR_DETAIL_FIXTURE_ID` was added in Group G specifically to
 avoid Lazarus natural-id drift — the Group C `_ensure_actor_detail_
@@ -137,6 +140,8 @@ below).
 | `seeded similar reports empty-embedding fixture and an authenticated analyst session` | Pinned-id source at `SIMILAR_EMPTY_EMBEDDING_SOURCE_ID`=999030 with **NULL embedding** + 1 neighbor (999031) WITH embedding — BE D10 branch returns `{items: []}` despite the neighbor having embedding (regression guard against "DB-wide emptiness" collapse) | PR #14 Group C |
 | `seeded actor with linked reports fixture and an authenticated analyst session` | Reuses `ACTOR_DETAIL_FIXTURE_ID`=999003 + its `pact-actor-detail-codename` (Group G) and seeds 3 pinned reports at `ACTOR_REPORTS_FIXTURE_REPORT_IDS`=(999050/999051/999052) linked via `report_codenames`. Published dates `2026-03-15`/`2026-02-10`/`2026-01-05` exercise D16 newest-first ordering (999050 at row 0). Idempotent across state replays via `ON CONFLICT DO NOTHING` on reports and composite PK | PR #15 Group C |
 | `seeded actor with no linked reports fixture and an authenticated analyst session` | Distinct-name Pact-specific actor at `ACTOR_WITH_NO_REPORTS_ID`=999004 with 1 codename + ZERO `report_codenames` rows. Exists so the router yields 200 (NOT 404); the D15(c) branch returns `{items: [], next_cursor: null}` | PR #15 Group C |
+| `seeded search populated fixture and an authenticated analyst session` | 3 reports pinned at `SEARCH_POPULATED_FIXTURE_REPORT_IDS`=(999060/999061/999062) with "Lazarus" in BOTH title AND summary so `plainto_tsquery('simple','lazarus')` against `COALESCE(title,'') ' ' COALESCE(summary,'')` returns ≥3 rows. Distinct published dates (`2026-03-15`/`2026-02-10`/`2026-01-05`) give the D2 stable sort meaningful ordering room. Idempotent via `ON CONFLICT (id) DO NOTHING` | PR #17 Group C |
+| `seeded search empty fixture and an authenticated analyst session` | 1 distractor row at `SEARCH_EMPTY_FIXTURE_REPORT_IDS[0]`=999063 whose title + summary deliberately avoid the pact's `nomatchxyz123` query token. Distractor existence pins "D10 empty envelope fires on FTS miss, not DB emptiness" — regression mode a future refactor collapsing D10 to DB-wide emptiness would surface on | PR #17 Group C |
 
 For the auth cookie: the CI `contract-verify` job POSTs
 `/_pact/provider_states` with `{"state": "an authenticated analyst

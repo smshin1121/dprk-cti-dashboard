@@ -46,6 +46,7 @@ import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 
 import { useLogout } from '../features/auth/useLogout'
+import { SearchResultsSection } from '../features/search/SearchResultsSection'
 import {
   COMMAND_IDS,
   getCommandKeywords,
@@ -79,6 +80,11 @@ const NAV_PATHS: Record<
 
 export function CommandPaletteButton(): JSX.Element {
   const [open, setOpen] = useState(false)
+  // Palette-local ephemeral input — NEVER persisted to URL, local
+  // storage, or the filter store. Closing the dialog resets it to
+  // empty (see `useEffect` below), so reopening always starts fresh.
+  // Plan D18 + OI4 carry: q does not touch the router / URL state.
+  const [q, setQ] = useState('')
   const navigate = useNavigate()
   const cycleTheme = useThemeStore((s) => s.cycleMode)
   const clearFilters = useFilterStore((s) => s.clear)
@@ -99,6 +105,13 @@ export function CommandPaletteButton(): JSX.Element {
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   }, [])
+
+  // Reset q when the dialog closes so the next open starts clean.
+  // Prevents a stale query from carrying across palette opens and
+  // keeps "q is ephemeral" a provable invariant.
+  useEffect(() => {
+    if (!open) setQ('')
+  }, [open])
 
   function runCommand(id: CommandId): void {
     // Close first so the dialog's exit transition starts before the
@@ -127,6 +140,14 @@ export function CommandPaletteButton(): JSX.Element {
         })
         return
     }
+  }
+
+  function handleSelectSearchResult(reportId: number): void {
+    // Mirrors the nav-command path — close the dialog first so the
+    // exit transition starts, then navigate. Same rationale as
+    // `runCommand` above.
+    setOpen(false)
+    navigate(`/reports/${reportId}`)
   }
 
   return (
@@ -169,6 +190,8 @@ export function CommandPaletteButton(): JSX.Element {
           <Command.Input
             data-testid="cmdk-input"
             placeholder={t('shell.search.inputPlaceholder')}
+            value={q}
+            onValueChange={setQ}
             className={cn(
               'w-full border-b border-border-card bg-transparent px-4 py-3 text-sm outline-none placeholder:text-ink-subtle',
             )}
@@ -205,6 +228,18 @@ export function CommandPaletteButton(): JSX.Element {
                 </Command.Item>
               )
             })}
+
+            {/*
+              PR #17 Group E — server-backed /search results. Lives
+              as a sibling of the static `COMMAND_IDS.map(...)` above,
+              NOT mixed into it (plan D3 scope lock). Renders null
+              when q is empty, so the palette's no-query view is
+              byte-identical to its pre-PR #17 appearance.
+            */}
+            <SearchResultsSection
+              q={q}
+              onSelectResult={handleSelectSearchResult}
+            />
           </Command.List>
         </div>
       </Command.Dialog>

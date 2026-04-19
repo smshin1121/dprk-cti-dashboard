@@ -284,3 +284,77 @@ describe('queryKeys.actorReports (PR #15 Group D)', () => {
     )
   })
 })
+
+// ---------------------------------------------------------------------------
+// PR #17 Group D — queryKeys.searchHits scope lock
+// ---------------------------------------------------------------------------
+//
+// Review criterion #3 for Group D: the /search cache key must
+// contain EXACTLY `(q, filters)` where `filters` is the 3-key
+// whitelist `{date_from?, date_to?, limit?}` — no tlp / groupIds /
+// tag / source / cursor / anything else. Pinned at runtime below;
+// the type layer (`SearchFilters`) backs it structurally.
+
+describe('queryKeys.searchHits — PR #17 Group D', () => {
+  it('returns a stable readonly key structure ["search", q, filters]', () => {
+    const key = queryKeys.searchHits('lazarus', { date_from: '2026-03-01' })
+    expect(key.length).toBe(3)
+    expect(key[0]).toBe('search')
+    expect(key[1]).toBe('lazarus')
+    expect(key[2]).toEqual({ date_from: '2026-03-01' })
+  })
+
+  it('filters slot contains ONLY {date_from?, date_to?, limit?}', () => {
+    const key = queryKeys.searchHits('lazarus', {
+      date_from: '2026-03-01',
+      date_to: '2026-03-31',
+      limit: 10,
+    })
+    const filters = key[2] as Record<string, unknown>
+    expect(Object.keys(filters).sort()).toEqual([
+      'date_from',
+      'date_to',
+      'limit',
+    ])
+    // TLP / groupIds / tag / source / cursor must NOT be present —
+    // the type signature forbids them, so a runtime-injected key
+    // would only slip through via `as any` casting. The regression
+    // this pins: if a future edit widens `SearchFilters`, we want
+    // it to flip this assertion visibly.
+    for (const forbidden of [
+      'tlp',
+      'group_id',
+      'group_ids',
+      'tag',
+      'source',
+      'cursor',
+      'offset',
+    ]) {
+      expect(filters).not.toHaveProperty(forbidden)
+    }
+  })
+
+  it('identical post-debounce q + filters produce equal keys (share cache slot)', () => {
+    const a = queryKeys.searchHits('lazarus', { limit: 10 })
+    const b = queryKeys.searchHits('lazarus', { limit: 10 })
+    expect(a).toEqual(b)
+  })
+
+  it('different q opens a new cache slot', () => {
+    expect(
+      queryKeys.searchHits('lazarus', {}),
+    ).not.toEqual(queryKeys.searchHits('kimsuky', {}))
+  })
+
+  it('different limit opens a new cache slot', () => {
+    expect(
+      queryKeys.searchHits('lazarus', { limit: 10 }),
+    ).not.toEqual(queryKeys.searchHits('lazarus', { limit: 20 }))
+  })
+
+  it('does not collide with the actorReports key', () => {
+    expect(queryKeys.searchHits('lazarus', {})).not.toEqual(
+      queryKeys.actorReports(999003, {}, {}),
+    )
+  })
+})

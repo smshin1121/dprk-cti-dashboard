@@ -60,6 +60,8 @@ from api.routers.pact_states import (  # noqa: E402
     ACTOR_WITH_NO_REPORTS_ID,
     INCIDENT_DETAIL_FIXTURE_ID,
     REPORT_DETAIL_FIXTURE_ID,
+    SEARCH_EMPTY_FIXTURE_REPORT_IDS,
+    SEARCH_POPULATED_FIXTURE_REPORT_IDS,
     SIMILAR_EMPTY_EMBEDDING_NEIGHBOR_ID,
     SIMILAR_EMPTY_EMBEDDING_SOURCE_ID,
     SIMILAR_POPULATED_NEIGHBOR_IDS,
@@ -74,6 +76,8 @@ from api.routers.pact_states import (  # noqa: E402
     _ensure_incident_detail_fixture,
     _ensure_min_actors,
     _ensure_report_detail_fixture,
+    _ensure_search_empty_fixture,
+    _ensure_search_populated_fixture,
     _ensure_similar_reports_empty_embedding_fixture,
     _ensure_similar_reports_populated_fixture,
     _ensure_trend_fixture,
@@ -91,6 +95,7 @@ from api.read.detail_aggregator import (  # noqa: E402
 )
 from api.read.actor_reports import get_actor_reports  # noqa: E402
 from api.read.repositories import list_actors  # noqa: E402
+from api.read.search_service import get_search_results  # noqa: E402
 from api.read.similar_service import get_similar_reports  # noqa: E402
 
 
@@ -1059,3 +1064,188 @@ async def test_actor_without_reports_fixture_is_idempotent(
 # so it runs WITHOUT a Postgres connection. This module is
 # module-level skipped when POSTGRES_TEST_URL is unset, which would
 # hide a constant-drift regression in local dev / pre-push runs.
+
+
+# ---------------------------------------------------------------------------
+# PR #17 Group C — /search populated + empty fixture verification
+# ---------------------------------------------------------------------------
+#
+# Three concerns pinned for Group C review:
+#
+#   1. Populated seed actually satisfies the ``q=lazarus`` pact —
+#      the FTS predicate ``plainto_tsquery('simple', 'lazarus')``
+#      against ``COALESCE(title,'') || ' ' || COALESCE(summary,'')``
+#      returns ≥3 rows, per-hit fts_rank > 0, vector_rank is None.
+#   2. Empty seed reproduces D10 ``{items: []}`` for ``q=nomatchxyz123``
+#      UNDER A NON-EMPTY reports table (the distractor exists to
+#      rule out "DB empty → trivially empty envelope" as a regression
+#      that would mask a broken FTS predicate).
+#   3. Both fixtures are idempotent under repeat state setup.
+#
+# Constant-drift guard runs unconditionally in
+# ``tests/unit/test_search_service.py::TestSearchFixturePactPathLiteralAlignment``
+# so a rename of the 999060-63 ids surfaces without a live Postgres.
+
+
+async def test_search_populated_fixture_matches_lazarus_and_sorts_ties(
+    clean_pg: None, pg_session: AsyncSession
+) -> None:
+    """Populated matcher satisfaction — ``/api/v1/search?q=lazarus``
+    pact expects ``{items: eachLike(SearchHit), total_hits, latency_ms}``.
+
+    Fixture seeds 3 reports with Lazarus in both title and summary so
+    ``plainto_tsquery('simple', 'lazarus')`` matches against
+    ``COALESCE(title,'') || ' ' || COALESCE(summary,'')``. Assert:
+      - items non-empty (eachLike rejects []),
+      - every hit satisfies the SearchHit shape (report+fts_rank+
+        vector_rank=null),
+      - total_hits equals the seeded row count (3),
+      - rows sort by ``fts_rank DESC, id DESC`` — when ranks tie (all
+        three rows have similar Lazarus density), the stable tie-break
+        puts the highest id (999062) first.
+    """
+    await _ensure_search_populated_fixture(pg_session)
+    await pg_session.commit()
+
+    result = await get_search_results(
+        pg_session,
+        redis=None,
+        q="lazarus",
+        date_from=None,
+        date_to=None,
+        limit=10,
+    )
+    payload = result.payload
+
+    items = payload["items"]
+    assert len(items) >= 3, (
+        f"populated fixture produced {len(items)} hits; expected >=3 "
+        f"(the seeded {SEARCH_POPULATED_FIXTURE_REPORT_IDS})"
+    )
+    assert payload["total_hits"] >= 3
+
+    seeded_ids = set(SEARCH_POPULATED_FIXTURE_REPORT_IDS)
+    returned_ids = {hit["report"]["id"] for hit in items}
+    assert seeded_ids <= returned_ids, (
+        f"missing seeded ids — got {returned_ids}, expected superset of "
+        f"{seeded_ids}"
+    )
+
+    for hit in items:
+        # SearchHit shape: report sub-object is a ReportItem; fts_rank
+        # float > 0 (matched a real token); vector_rank is literally
+        # None (D9 forward-compat slot).
+        report = hit["report"]
+        assert isinstance(report["id"], int)
+        assert isinstance(report["title"], str) and report["title"]
+        assert isinstance(report["url"], str) and report["url"]
+        assert isinstance(report["url_canonical"], str)
+        assert report["published"] is not None
+        assert isinstance(report["source_id"], int)
+        assert isinstance(report["source_name"], str)
+        assert report["tlp"] == "WHITE"
+        assert isinstance(hit["fts_rank"], float) and hit["fts_rank"] > 0.0
+        assert hit["vector_rank"] is None, (
+            "D9 forward-compat slot violated — vector_rank must be "
+            "literally None until the follow-up hybrid PR fills it"
+        )
+
+    # Plan D2 locks ``ts_rank_cd DESC, reports.id DESC`` as stable
+    # sort but ``ts_rank_cd`` is document-length-sensitive, so three
+    # rows with similar Lazarus density may have non-equal ranks and
+    # the id tie-break only fires on true ties. The pact matcher is
+    # ``eachLike`` shape-only — it does not assert a specific row
+    # order. So this test pins the weaker invariant the pact cares
+    # about: the three seeded rows all land above any non-seeded row
+    # for this query (there are no other Lazarus rows to beat them).
+    top_three_ids = [hit["report"]["id"] for hit in items[:3]]
+    assert set(top_three_ids) == seeded_ids, (
+        f"seeded rows did not sweep the top 3 — got {top_three_ids}, "
+        f"expected exactly {seeded_ids}"
+    )
+
+
+async def test_search_empty_fixture_produces_D10_empty_against_nomatchxyz123(
+    clean_pg: None, pg_session: AsyncSession
+) -> None:
+    """Plan D10 empty-contract path — the distractor row exists so
+    the reports table is non-empty, and ``q=nomatchxyz123`` must still
+    return ``{items: [], total_hits: 0}``.
+
+    The regression this pins: if a future refactor collapses the D10
+    envelope to "empty reports table → empty envelope", this test
+    fires red because the DB has a real row and the FTS predicate is
+    doing the filtering.
+    """
+    await _ensure_search_empty_fixture(pg_session)
+    await pg_session.commit()
+
+    result = await get_search_results(
+        pg_session,
+        redis=None,
+        q="nomatchxyz123",
+        date_from=None,
+        date_to=None,
+        limit=10,
+    )
+    payload = result.payload
+
+    assert payload["items"] == [], (
+        "D10 empty-contract violated — nomatchxyz123 query returned "
+        f"{len(payload['items'])} rows. The FTS predicate must filter "
+        "the distractor row out by token miss, not by DB emptiness."
+    )
+    assert payload["total_hits"] == 0
+
+    # Sanity — the distractor row still exists (otherwise this test is
+    # vacuous). Mirror of the similar empty-embedding neighbor check.
+    distractor_exists = (
+        await pg_session.execute(
+            sa.text("SELECT 1 FROM reports WHERE id = :id"),
+            {"id": SEARCH_EMPTY_FIXTURE_REPORT_IDS[0]},
+        )
+    ).scalar()
+    assert distractor_exists == 1, (
+        "distractor row missing — empty fixture helper did not insert"
+    )
+
+
+async def test_search_populated_fixture_is_idempotent(
+    clean_pg: None, pg_session: AsyncSession
+) -> None:
+    """Idempotency — pact verifier replays state setup before every
+    interaction. Three consecutive calls must produce exactly 3 rows
+    at the pinned ids, not 9.
+    """
+    await _ensure_search_populated_fixture(pg_session)
+    await _ensure_search_populated_fixture(pg_session)
+    await _ensure_search_populated_fixture(pg_session)
+    await pg_session.commit()
+
+    for rid in SEARCH_POPULATED_FIXTURE_REPORT_IDS:
+        count = (
+            await pg_session.execute(
+                sa.text("SELECT COUNT(*) FROM reports WHERE id = :id"),
+                {"id": rid},
+            )
+        ).scalar_one()
+        assert int(count) == 1, (
+            f"report id {rid} double-inserted on repeat state setup — "
+            "ON CONFLICT (id) DO NOTHING broken"
+        )
+
+
+async def test_search_empty_fixture_is_idempotent(
+    clean_pg: None, pg_session: AsyncSession
+) -> None:
+    await _ensure_search_empty_fixture(pg_session)
+    await _ensure_search_empty_fixture(pg_session)
+    await pg_session.commit()
+
+    count = (
+        await pg_session.execute(
+            sa.text("SELECT COUNT(*) FROM reports WHERE id = :id"),
+            {"id": SEARCH_EMPTY_FIXTURE_REPORT_IDS[0]},
+        )
+    ).scalar_one()
+    assert int(count) == 1

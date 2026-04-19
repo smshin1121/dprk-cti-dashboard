@@ -8,6 +8,8 @@ import {
   toIncidentListQueryParams,
   toReportListFilters,
   toReportListQueryParams,
+  toSearchFilters,
+  toSearchQueryParams,
 } from '../listFilters'
 import type { FilterState, TlpLevel } from '../../stores/filters'
 
@@ -209,5 +211,94 @@ describe('toActorReportsQueryParams (PR #15 D2 minimal filter)', () => {
     })
     expect(out).toEqual({ date_from: '2026-01-01', date_to: '2026-12-31' })
     expect(Object.keys(out).sort()).toEqual(['date_from', 'date_to'])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// PR #17 Group D — /search filter derivation + serialization scope
+// ---------------------------------------------------------------------------
+
+describe('toSearchFilters', () => {
+  it('drops tlpLevels and groupIds off the FilterState', () => {
+    const out = toSearchFilters(
+      makeState({
+        dateFrom: '2026-01-01',
+        dateTo: '2026-12-31',
+        groupIds: [1, 2],
+        tlpLevels: ALL_TLP,
+      }),
+    )
+    expect(out).toEqual({ date_from: '2026-01-01', date_to: '2026-12-31' })
+    expect(Object.keys(out).sort()).toEqual(['date_from', 'date_to'])
+  })
+
+  it('produces an empty filter object when the filter store is empty', () => {
+    const out = toSearchFilters(makeState())
+    expect(out).toEqual({})
+  })
+})
+
+describe('toSearchQueryParams — whitelist lock', () => {
+  it('serializes only q + optional {date_from, date_to, limit}', () => {
+    const params = toSearchQueryParams('lazarus', {
+      date_from: '2026-03-01',
+      date_to: '2026-03-31',
+      limit: 25,
+    })
+    // Iterate in insertion order but compare as a sorted set to
+    // decouple from param ordering drift.
+    const pairs = Array.from(params.entries()).map(([k, v]) => `${k}=${v}`)
+    expect(pairs.sort()).toEqual([
+      'date_from=2026-03-01',
+      'date_to=2026-03-31',
+      'limit=25',
+      'q=lazarus',
+    ])
+  })
+
+  it('q comes first and no duplicate q emitted', () => {
+    const params = toSearchQueryParams('lazarus', {})
+    const keys = Array.from(params.keys())
+    expect(keys[0]).toBe('q')
+    expect(keys.filter((k) => k === 'q').length).toBe(1)
+  })
+
+  it('omits optional fields when undefined — no empty "date_from=" emitted', () => {
+    const params = toSearchQueryParams('lazarus', {})
+    expect(Array.from(params.keys()).sort()).toEqual(['q'])
+    expect(params.toString()).toBe('q=lazarus')
+  })
+
+  it('does NOT emit any disallowed keys even when cast-in by mistake', () => {
+    const params = toSearchQueryParams('lazarus', {
+      // @ts-expect-error — structural guard: SearchFilters forbids these
+      tlp: 'AMBER',
+      // @ts-expect-error — structural guard: SearchFilters forbids these
+      group_id: 3,
+      // @ts-expect-error — structural guard: SearchFilters forbids these
+      cursor: 'abc',
+      // @ts-expect-error — structural guard: SearchFilters forbids these
+      offset: 0,
+      date_from: '2026-01-01',
+    })
+    const keys = Array.from(params.keys()).sort()
+    expect(keys).toEqual(['date_from', 'q'])
+    // The runtime whitelist in `toSearchQueryParams` drops the
+    // above keys even though the type layer also rejects them —
+    // defense in depth.
+    expect(keys).not.toContain('tlp')
+    expect(keys).not.toContain('group_id')
+    expect(keys).not.toContain('cursor')
+    expect(keys).not.toContain('offset')
+  })
+
+  it('allows an empty q (the hook layer is responsible for the .trim gate)', () => {
+    // `toSearchQueryParams` is a dumb serializer — it never gates on
+    // q content. The hook layer (`useSearchHits`) owns the 422
+    // defense via `enabled: qTrimmed.length > 0`. This test pins
+    // the separation so a later reviewer does not move the gate
+    // into the serializer and accidentally couple layers.
+    const params = toSearchQueryParams('', {})
+    expect(params.toString()).toBe('q=')
   })
 })
