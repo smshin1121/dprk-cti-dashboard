@@ -850,6 +850,110 @@ class IncidentDetail(BaseModel):
     ]
 
 
+# ---------------------------------------------------------------------------
+# Similar reports — PR #14 Phase 3 slice 1 Group B (plan D2 + D8 + D10)
+# ---------------------------------------------------------------------------
+#
+# ``GET /api/v1/reports/{id}/similar?k=10`` returns a pgvector kNN
+# result against ``reports.embedding`` (migration 0001 line 97).
+#
+# D8 locked semantics:
+#   - Self-exclusion: the source report is never in the result set.
+#   - Stable sort: ``score DESC, report_id ASC`` tie-breaker so the
+#     same input produces the same ordering across runs (Pact relies
+#     on this).
+#   - k bounds: ``k ∈ [1, 50]``, default 10. Enforced at the router's
+#     ``Query(ge=SIMILAR_K_MIN, le=SIMILAR_K_MAX)``.
+#   - Cache key includes both ``report_id`` AND ``k`` (separate slots
+#     don't pollute each other).
+#
+# D10 locked empty contract (critical):
+#   - Source report has NULL embedding → ``200`` + ``{items: []}``.
+#   - kNN returns zero rows after self-exclusion → ``200`` + ``{items: []}``.
+#   - ``500`` is forbidden on this endpoint.
+#   - No fake / heuristic fallback (no "recent N" stand-in, no
+#     "shared-tag overlap"). Empty is the honest signal.
+
+SIMILAR_K_MIN = 1
+SIMILAR_K_MAX = 50
+SIMILAR_K_DEFAULT = 10
+
+
+class SimilarReportEntry(BaseModel):
+    """One row in ``SimilarReportsResponse.items`` (plan D8).
+
+    ``report`` is the shallow ``LinkedReportSummary`` used elsewhere
+    in PR #14 — same shape as the incident detail's linked reports
+    list so the FE can render both panels with one row component.
+    ``score`` is cosine similarity in ``[0, 1]`` (pgvector's
+    ``<=>`` is cosine DISTANCE; we emit ``1 - distance`` so higher
+    values mean "more similar" — matches the analyst mental model).
+    """
+
+    model_config = ConfigDict(
+        frozen=True,
+        json_schema_extra={
+            "examples": [
+                {
+                    "report": {
+                        "id": 99,
+                        "title": "Related Lazarus campaign",
+                        "url": "https://mandiant.com/blog/lazarus-2025q4",
+                        "published": "2025-12-01",
+                        "source_name": "Mandiant",
+                    },
+                    "score": 0.87,
+                }
+            ]
+        },
+    )
+
+    report: LinkedReportSummary
+    score: Annotated[float, Field(ge=0.0, le=1.0)]
+
+
+class SimilarReportsResponse(BaseModel):
+    """Response for ``GET /api/v1/reports/{id}/similar`` (plan D2 + D8 + D10).
+
+    Length bounded by ``k`` (the router enforces ``k ∈ [1, 50]``);
+    this DTO uses ``max_length=SIMILAR_K_MAX`` as the DTO-layer
+    guard so a bypass that fetched more than the cap would surface
+    as ValidationError rather than silently oversizing the response.
+    """
+
+    model_config = ConfigDict(
+        frozen=True,
+        json_schema_extra={
+            "examples": [
+                {
+                    "items": [
+                        {
+                            "report": {
+                                "id": 99,
+                                "title": "Related Lazarus campaign",
+                                "url": "https://mandiant.com/blog/lazarus-2025q4",
+                                "published": "2025-12-01",
+                                "source_name": "Mandiant",
+                            },
+                            "score": 0.87,
+                        }
+                    ]
+                },
+                # Plan D10 empty contract — no fake similarity
+                # fallback. Source has no embedding OR kNN returned
+                # zero rows after self-exclusion: both paths emit
+                # ``{items: []}`` with 200 OK.
+                {"items": []},
+            ]
+        },
+    )
+
+    items: Annotated[
+        list[SimilarReportEntry],
+        Field(default_factory=list, max_length=SIMILAR_K_MAX),
+    ]
+
+
 class ActorDetail(BaseModel):
     """Response for ``GET /api/v1/actors/{id}`` (plan D1 + D11).
 
@@ -910,6 +1014,11 @@ __all__ = [
     "ReportDetail",
     "ReportItem",
     "ReportListResponse",
+    "SIMILAR_K_DEFAULT",
+    "SIMILAR_K_MAX",
+    "SIMILAR_K_MIN",
+    "SimilarReportEntry",
+    "SimilarReportsResponse",
     "TacticRef",
     "TrendBucket",
     "TrendResponse",

@@ -1501,6 +1501,72 @@
         "title": "ReviewDecisionResponse",
         "type": "object"
       },
+      "SimilarReportEntry": {
+        "description": "One row in ``SimilarReportsResponse.items`` (plan D8).\n\n``report`` is the shallow ``LinkedReportSummary`` used elsewhere\nin PR #14 — same shape as the incident detail's linked reports\nlist so the FE can render both panels with one row component.\n``score`` is cosine similarity in ``[0, 1]`` (pgvector's\n``<=>`` is cosine DISTANCE; we emit ``1 - distance`` so higher\nvalues mean \"more similar\" — matches the analyst mental model).",
+        "examples": [
+          {
+            "report": {
+              "id": 99,
+              "published": "2025-12-01",
+              "source_name": "Mandiant",
+              "title": "Related Lazarus campaign",
+              "url": "https://mandiant.com/blog/lazarus-2025q4"
+            },
+            "score": 0.87
+          }
+        ],
+        "properties": {
+          "report": {
+            "$ref": "#/components/schemas/LinkedReportSummary"
+          },
+          "score": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Score",
+            "type": "number"
+          }
+        },
+        "required": [
+          "report",
+          "score"
+        ],
+        "title": "SimilarReportEntry",
+        "type": "object"
+      },
+      "SimilarReportsResponse": {
+        "description": "Response for ``GET /api/v1/reports/{id}/similar`` (plan D2 + D8 + D10).\n\nLength bounded by ``k`` (the router enforces ``k ∈ [1, 50]``);\nthis DTO uses ``max_length=SIMILAR_K_MAX`` as the DTO-layer\nguard so a bypass that fetched more than the cap would surface\nas ValidationError rather than silently oversizing the response.",
+        "examples": [
+          {
+            "items": [
+              {
+                "report": {
+                  "id": 99,
+                  "published": "2025-12-01",
+                  "source_name": "Mandiant",
+                  "title": "Related Lazarus campaign",
+                  "url": "https://mandiant.com/blog/lazarus-2025q4"
+                },
+                "score": 0.87
+              }
+            ]
+          },
+          {
+            "items": []
+          }
+        ],
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SimilarReportEntry"
+            },
+            "maxItems": 50,
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "title": "SimilarReportsResponse",
+        "type": "object"
+      },
       "StagingDetail": {
         "description": "Response body for ``GET /staging/{id}``.\n\nSurfaces the raw staging columns plus duplicate-match hints so the\nreviewer has enough context to decide without additional queries.\nLLM-filled columns (``summary`` / ``tags_jsonb`` / ``embedding``)\nare included when non-NULL but Phase 2 staging has them all NULL\n— Phase 4 enrichment is the trigger (plan §2.3 LLM-filled scope).",
         "properties": {
@@ -3899,8 +3965,8 @@
     },
     "/api/v1/reports/{report_id}/similar": {
       "get": {
-        "description": "§5.2 pgvector similarity search for related reports.\n\nStub: returns 501 until Phase 3 slice 1 Group B (plan D2 + D8 + D10).",
-        "operationId": "similar_reports_api_v1_reports__report_id__similar_get",
+        "description": "Cosine-similarity kNN against `reports.embedding` (migration 0001, pgvector 1536-dim). Plan D8: self-exclusion, stable `score DESC, id ASC` sort, `k ∈ [1, 50]` default 10. Plan D10: returns `200` with `{items: []}` when the source has no embedding or the kNN yields zero rows — never `500`, never a fake / heuristic fallback. 5-minute Redis cache keyed on `(report_id, k)` only.",
+        "operationId": "get_similar_reports_endpoint_api_v1_reports__report_id__similar_get",
         "parameters": [
           {
             "in": "path",
@@ -3917,6 +3983,8 @@
             "required": false,
             "schema": {
               "default": 10,
+              "maximum": 50,
+              "minimum": 1,
               "title": "K",
               "type": "integer"
             }
@@ -3926,23 +3994,45 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/SimilarReportsResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Top-k most similar reports (plan D8) OR empty list when the source has no embedding / kNN is empty (plan D10)."
+          },
+          "401": {
+            "description": "Missing or invalid session cookie"
+          },
+          "403": {
+            "description": "Role not analyst / researcher / policy / soc / admin"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "detail": "report not found"
+                }
+              }
+            },
+            "description": "Source report id not found"
+          },
+          "422": {
+            "description": "Invalid path / query param — non-integer report_id, or `k` outside [1, 50] (plan D8). Plan D12 uniform 422."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": "rate_limit_exceeded",
+                  "message": "60 per 1 minute"
+                }
+              }
+            },
+            "description": "Rate limit exceeded — 60/min/user per-route bucket."
           }
         },
-        "summary": "Similar Reports",
+        "summary": "pgvector Top-k similar reports for a given report",
         "tags": [
           "reports"
         ]
