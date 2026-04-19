@@ -16,15 +16,16 @@
  *   nested links — per D9's "no recursive nesting" rule, a linked
  *   incident row is a summary, not a full drill-through.
  *
- * SimilarReports panel is intentionally NOT mounted here — Group F
- * replaces the PR #13 stub (`features/dashboard/SimilarReports.tsx`)
- * with the live `SimilarReportsPanel` and wires it at the bottom of
- * this page. Keeping the slot open here avoids churn in Group E.
+ * `SimilarReportsPanel` (plan D2 + D8 + D10) mounts at the bottom of
+ * this page, keyed on `report.id`. The panel renders its own loading
+ * / error / D10-empty / populated states; a failing similarity fetch
+ * degrades only that panel, not the rest of the report detail.
  */
 
 import { Link, useParams } from 'react-router-dom'
 
 import { useReportDetail } from '../features/detail/useReportDetail'
+import { SimilarReportsPanel } from '../features/similar/SimilarReportsPanel'
 import { ApiError } from '../lib/api'
 import { parseDetailId } from './detailParams'
 
@@ -174,6 +175,12 @@ export function ReportDetailPage(): JSX.Element {
           </ul>
         </section>
       )}
+
+      {/* Plan D2 + D8 + D10 — live similar-reports panel, keyed on
+          `report.id`. Panel owns its own loading / error / empty /
+          populated states so a similarity failure does not cascade
+          into the rest of the detail page. */}
+      <SimilarReportsPanel reportId={report.id} />
     </section>
   )
 }

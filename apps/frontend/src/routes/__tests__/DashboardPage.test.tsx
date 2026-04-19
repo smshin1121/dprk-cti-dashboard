@@ -125,7 +125,9 @@ describe('DashboardPage — §4.2 area [B]-[F] wiring (PR #13 Group I)', () => {
     expect(screen.getByTestId('motivation-donut')).toBeInTheDocument()
     expect(screen.getByTestId('year-bar')).toBeInTheDocument()
 
-    // [E] TrendChart + GroupsMiniList + ReportFeed + SimilarReports
+    // [E] TrendChart + GroupsMiniList + ReportFeed. SimilarReports
+    // moved to ReportDetailPage in PR #14 Group F — no longer mounts
+    // here.
     await waitFor(() =>
       expect(screen.getByTestId('trend-chart')).toBeInTheDocument(),
     )
@@ -133,7 +135,21 @@ describe('DashboardPage — §4.2 area [B]-[F] wiring (PR #13 Group I)', () => {
     await waitFor(() =>
       expect(screen.getByTestId('report-feed')).toBeInTheDocument(),
     )
-    expect(screen.getByTestId('similar-reports-stub')).toBeInTheDocument()
+    // PR #14 Group F regression guard — the PR #13 stub must not
+    // reappear on the dashboard. If a future edit re-mounts it,
+    // this assertion fires red.
+    expect(
+      screen.queryByTestId('similar-reports-stub'),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByTestId('similar-reports'),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByTestId('similar-reports-empty'),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByTestId('similar-reports-loading'),
+    ).not.toBeInTheDocument()
 
     // [F] AlertsDrawer trigger
     expect(screen.getByTestId('alerts-drawer-trigger')).toBeInTheDocument()

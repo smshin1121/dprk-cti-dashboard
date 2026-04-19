@@ -10,6 +10,23 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createQueryClient } from '../../lib/queryClient'
 import { ReportDetailPage } from '../ReportDetailPage'
 
+// PR #14 Group F mounted SimilarReportsPanel at the bottom of the
+// report detail page. These tests dispatch fetch mocks by pathname
+// so the panel gets a D10 empty contract by default; tests that
+// specifically exercise the populated panel pass their own body.
+function dispatchFetch(detailResponse: Response, similarResponse?: Response) {
+  return vi.spyOn(global, 'fetch').mockImplementation(async (input) => {
+    const url = new URL(String(input), 'http://x.test')
+    if (url.pathname.endsWith('/similar')) {
+      return (
+        similarResponse ??
+        new Response(JSON.stringify({ items: [] }), { status: 200 })
+      )
+    }
+    return detailResponse.clone()
+  })
+}
+
 // Mock /incidents/:id with a sentinel so Linked-incident click
 // navigation can be verified without pulling the real page + its
 // hook's fetch wiring into this test.
@@ -66,7 +83,7 @@ describe('ReportDetailPage', () => {
   })
 
   it('renders populated detail fields + external source link', async () => {
-    const spy = vi.spyOn(global, 'fetch').mockResolvedValue(
+    const spy = dispatchFetch(
       new Response(JSON.stringify(HAPPY_BODY), { status: 200 }),
     )
     renderAt('/reports/42')
@@ -99,7 +116,7 @@ describe('ReportDetailPage', () => {
 
   // D11 — linked_incidents summaries link to /incidents/:id.
   it('renders linked_incidents with Links to /incidents/:id (D11)', async () => {
-    vi.spyOn(global, 'fetch').mockResolvedValue(
+    dispatchFetch(
       new Response(JSON.stringify(HAPPY_BODY), { status: 200 }),
     )
     renderAt('/reports/42')
@@ -118,7 +135,7 @@ describe('ReportDetailPage', () => {
   })
 
   it('does not render linked_incidents section when empty', async () => {
-    vi.spyOn(global, 'fetch').mockResolvedValue(
+    dispatchFetch(
       new Response(
         JSON.stringify({ ...HAPPY_BODY, linked_incidents: [] }),
         { status: 200 },
@@ -158,7 +175,7 @@ describe('ReportDetailPage', () => {
   })
 
   it('malformed path param (non-numeric) renders NotFound without fetching', async () => {
-    const spy = vi.spyOn(global, 'fetch').mockResolvedValue(
+    const spy = dispatchFetch(
       new Response(JSON.stringify(HAPPY_BODY), { status: 200 }),
     )
     renderAt('/reports/abc')
@@ -168,12 +185,71 @@ describe('ReportDetailPage', () => {
   })
 
   it('zero id renders NotFound without fetching', async () => {
-    const spy = vi.spyOn(global, 'fetch').mockResolvedValue(
+    const spy = dispatchFetch(
       new Response(JSON.stringify(HAPPY_BODY), { status: 200 }),
     )
     renderAt('/reports/0')
     expect(screen.getByTestId('report-detail-notfound')).toBeInTheDocument()
     await new Promise((r) => setTimeout(r, 20))
     expect(spy).not.toHaveBeenCalled()
+  })
+
+  // PR #14 Group F — SimilarReportsPanel mounts at the bottom of
+  // the detail page, keyed on report.id. The panel fires its own
+  // /similar fetch after the detail query resolves.
+  it('mounts SimilarReportsPanel with report.id after detail loads (Group F)', async () => {
+    const spy = dispatchFetch(
+      new Response(JSON.stringify(HAPPY_BODY), { status: 200 }),
+    )
+    renderAt('/reports/42')
+
+    await waitFor(() =>
+      expect(screen.getByTestId('report-detail-page')).toBeInTheDocument(),
+    )
+    // Default dispatchFetch returns `{items: []}` (D10 empty contract)
+    // for /similar, so the panel renders its empty-state card.
+    await waitFor(() =>
+      expect(screen.getByTestId('similar-reports-empty')).toBeInTheDocument(),
+    )
+    expect(screen.getByTestId('similar-reports-empty')).toHaveAttribute(
+      'data-source-report-id',
+      '42',
+    )
+    // Two fetches fire: first the detail endpoint, then the similar
+    // endpoint (panel mounts only after detail resolves).
+    const similarCalls = spy.mock.calls.filter(([input]) =>
+      String(input).endsWith('/similar?k=10'),
+    )
+    expect(similarCalls).toHaveLength(1)
+  })
+
+  // Panel renders populated state when /similar returns rows.
+  it('panel renders populated similar-reports with Links (Group F)', async () => {
+    const similarBody = {
+      items: [
+        {
+          report: {
+            id: 99,
+            title: 'Related Lazarus campaign',
+            url: 'https://mandiant.com/blog/lazarus-2025q4',
+            published: '2025-12-01',
+            source_name: 'Mandiant',
+          },
+          score: 0.87,
+        },
+      ],
+    }
+    dispatchFetch(
+      new Response(JSON.stringify(HAPPY_BODY), { status: 200 }),
+      new Response(JSON.stringify(similarBody), { status: 200 }),
+    )
+    renderAt('/reports/42')
+
+    await waitFor(() =>
+      expect(screen.getByTestId('similar-reports')).toBeInTheDocument(),
+    )
+    const row = screen.getByTestId('similar-reports-item-99')
+    const link = row.querySelector('a')
+    expect(link!.getAttribute('href')).toBe('/reports/99')
   })
 })
