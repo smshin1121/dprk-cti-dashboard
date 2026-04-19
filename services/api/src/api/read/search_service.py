@@ -218,16 +218,23 @@ async def _run_fts(
     # ``websearch_to_tsquery`` dialect-variant would support ANDs/ORs
     # but isn't worth the UX-explanation cost until analysts ask.
     #
-    # The FTS config literal is wrapped in an explicit ``CAST(... AS
-    # TEXT)`` because SQLAlchemy's ``sa.literal("simple")`` default-
-    # types to VARCHAR, and PostgreSQL's implicit cast graph only
-    # takes ONE step during function resolution. ``text → regconfig``
-    # is implicit; ``varchar → regconfig`` would require two hops
-    # (``varchar → text → regconfig``) and PG refuses, raising
-    # ``function to_tsvector(character varying, text) does not exist``.
-    # Forcing the argument to TEXT lets the single-step implicit
-    # cast succeed. Same reason applies to ``plainto_tsquery``.
-    config = sa.cast(sa.literal("simple"), sa.Text())
+    # The FTS config must arrive as ``regconfig``, not ``text`` /
+    # ``varchar``. PostgreSQL's function resolver applies AT MOST
+    # one implicit cast per argument, and the casts ``varchar →
+    # regconfig`` + ``text → regconfig`` are NOT marked implicit in
+    # a parameterized-query context: sending the config as a bind
+    # parameter typed to VARCHAR or TEXT fails with
+    # ``function to_tsvector(character varying|text, text) does not
+    # exist`` (seen on api-integration + contract-verify CI runs).
+    #
+    # Using ``sa.literal_column("'simple'::regconfig")`` injects the
+    # PG-specific ``::regconfig`` cast directly into the compiled
+    # SQL as a literal, side-stepping SQLAlchemy's bind-param type
+    # inference. Safe because 'simple' is a hardcoded constant —
+    # no user input flows into this fragment. The non-PG path never
+    # compiles this expression (see dialect gate above), so sqlite
+    # portability is not affected.
+    config = sa.literal_column("'simple'::regconfig")
     tsquery = sa.func.plainto_tsquery(config, sa.bindparam("q"))
     document = sa.func.to_tsvector(
         config,
