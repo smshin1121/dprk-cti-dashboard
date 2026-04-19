@@ -18,6 +18,9 @@
  *                                              — D10 empty  [PR #14 G]
  *   /api/v1/actors/{id}/reports               — populated [PR #15 F]
  *                                              — D15 empty  [PR #15 F]
+ *   /api/v1/search                             — populated   [PR #17 F]
+ *                                              — D10 empty   [PR #17 F]
+ *                                              — 422 blank q [PR #17 F]
  *
  * Pinned-id strategy for detail + similar + actor-reports paths:
  *   Detail endpoints take the resource id in the PATH. A path-param
@@ -924,6 +927,234 @@ describe('GET /api/v1/actors/{id}/reports', () => {
       expect(Array.isArray(body.items)).toBe(true)
       expect(body.items).toHaveLength(0)
       expect(body.next_cursor).toBeNull()
+    })
+  })
+})
+
+// ---------------------------------------------------------------------
+// /search — populated + D10 empty + 422 blank-q (PR #17 Group F)
+// ---------------------------------------------------------------------
+//
+// Plan D8 + D9 + D10 — FTS-only MVP. Three interactions pinned:
+//
+//   populated : GET /api/v1/search?q=lazarus
+//     State   : seeded search populated fixture ...
+//     Shape   : {items: eachLike(SearchHit), total_hits, latency_ms}
+//               SearchHit = {report: ReportItem, fts_rank: number,
+//                            vector_rank: LITERAL null}
+//     Notes   : vector_rank MUST be a literal null in the example
+//               (NOT wrapped in a matcher). The D9 forward-compat
+//               slot is a nullable int; the hybrid follow-up PR
+//               flips it to an integer rank without re-shaping the
+//               envelope. Pinning null here means the verifier
+//               fails red if any future BE edit writes an integer
+//               into it BEFORE the coordinated follow-up lands.
+//
+//   D10 empty : GET /api/v1/search?q=nomatchxyz123
+//     State   : seeded search empty fixture ...
+//     Shape   : explicit literal {items: [], total_hits: 0,
+//               latency_ms: <any int>}
+//     Notes   : distractor row (999063) exists in the DB so the
+//               empty envelope comes from FTS miss, not DB emptiness.
+//               eachLike cannot express empty — literal body only.
+//
+//   422       : GET /api/v1/search?q=
+//     State   : an authenticated analyst session (no seed — 422
+//               fires before DB lookup)
+//     Shape   : 422 + {detail: [...]}
+//     Notes   : FastAPI Query(min_length=1) rejects q='' before the
+//               function body runs. The FE hook's enable gate
+//               prevents blank q from hitting the wire in practice;
+//               this pact pins the server-side contract so any
+//               future BE change (e.g. relaxing min_length) that
+//               would silently accept blank q flips red.
+//
+// Why the 422 interaction co-exists with the happy ones:
+//   /auth/me 401 could NOT coexist with /auth/me 200 because
+//   `custom_provider_headers` injects the session cookie on every
+//   request, authenticating the 401 path. The 422 path is NOT
+//   auth-gated — it's parameter validation, which fires identically
+//   whether the cookie is present or absent. So the happy +
+//   422 split is contractually realizable in one pact file.
+//
+// Pinned-id strategy (consistent with PR #14/#15):
+//   Populated hits rows at SEARCH_POPULATED_FIXTURE_REPORT_IDS =
+//   (999060, 999061, 999062); empty state seeds a distractor at
+//   SEARCH_EMPTY_FIXTURE_REPORT_IDS[0] = 999063. The consumer pact
+//   does NOT hardcode those ids in the matcher examples (fts-hit
+//   ids are not FE-deterministic in general), but the state handler
+//   uses them verbatim so the integer() matcher on `report.id`
+//   succeeds against real rows.
+
+describe('GET /api/v1/search', () => {
+  it('returns populated search hits for a q that matches (PR #17 Group F)', async () => {
+    provider
+      .given(
+        'seeded search populated fixture '
+          + 'and an authenticated analyst session',
+      )
+      .uponReceiving(
+        'a request for search hits against "lazarus" (PR #17 Group F)',
+      )
+      .withRequest({
+        method: 'GET',
+        path: '/api/v1/search',
+        query: { q: 'lazarus' },
+      })
+      .willRespondWith({
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+        // D9 envelope: items + total_hits + latency_ms. eachLike
+        // over the SearchHit body; inside each hit, `report` uses
+        // like() on the ReportItem shape (matches PR #15 actor-
+        // reports style) and `vector_rank` is pinned to LITERAL
+        // null per the Group F review criterion.
+        body: like({
+          items: eachLike({
+            report: like({
+              id: integer(999060),
+              title: string('Lazarus targets SK crypto exchanges'),
+              url: string(
+                'https://pact.test/search/populated-999060',
+              ),
+              url_canonical: string(
+                'https://pact.test/search/populated-999060',
+              ),
+              published: string('2026-03-15'),
+              source_id: integer(1),
+              source_name: string('Vendor'),
+              lang: string('en'),
+              tlp: string('WHITE'),
+            }),
+            fts_rank: like(0.0759),
+            // Literal null — D9 forward-compat slot. See the
+            // describe-level doc block above for rationale.
+            vector_rank: null,
+          }),
+          total_hits: integer(3),
+          latency_ms: integer(42),
+        }),
+      })
+
+    await provider.executeTest(async (mockServer) => {
+      const url = new URL(`${mockServer.url}/api/v1/search`)
+      url.searchParams.set('q', 'lazarus')
+      const res = await fetch(url.toString())
+      expect(res.status).toBe(200)
+      const body = (await res.json()) as {
+        items: {
+          report: { id: number; title: string }
+          fts_rank: number
+          vector_rank: number | null
+        }[]
+        total_hits: number
+        latency_ms: number
+      }
+      // D9 envelope key set — strict.
+      expect(Object.keys(body).sort()).toEqual([
+        'items',
+        'latency_ms',
+        'total_hits',
+      ])
+      expect(Array.isArray(body.items)).toBe(true)
+      expect(body.items.length).toBeGreaterThan(0)
+      // SearchHit shape + vector_rank null pin.
+      const hit = body.items[0]
+      expect(hit.report.id).toBeTypeOf('number')
+      expect(hit.report.title).toBeTypeOf('string')
+      expect(hit.fts_rank).toBeTypeOf('number')
+      expect(hit.vector_rank).toBeNull()
+    })
+  })
+
+  it('returns the D10 empty envelope when q does not match (PR #17 Group F)', async () => {
+    provider
+      .given(
+        'seeded search empty fixture '
+          + 'and an authenticated analyst session',
+      )
+      .uponReceiving(
+        'a request for search hits against "nomatchxyz123" (PR #17 Group F)',
+      )
+      .withRequest({
+        method: 'GET',
+        path: '/api/v1/search',
+        query: { q: 'nomatchxyz123' },
+      })
+      .willRespondWith({
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+        // D10 empty — explicit literal empty items array. eachLike
+        // would require a non-empty example which the D10 path
+        // cannot produce. total_hits is pinned to 0 (the only
+        // meaningful value for an empty items array) and latency_ms
+        // stays a loose integer matcher because it's timing-dependent.
+        body: {
+          items: [],
+          total_hits: 0,
+          latency_ms: integer(12),
+        },
+      })
+
+    await provider.executeTest(async (mockServer) => {
+      const url = new URL(`${mockServer.url}/api/v1/search`)
+      url.searchParams.set('q', 'nomatchxyz123')
+      const res = await fetch(url.toString())
+      expect(res.status).toBe(200)
+      const body = (await res.json()) as {
+        items: unknown[]
+        total_hits: number
+        latency_ms: number
+      }
+      expect(Array.isArray(body.items)).toBe(true)
+      expect(body.items).toHaveLength(0)
+      expect(body.total_hits).toBe(0)
+      expect(body.latency_ms).toBeTypeOf('number')
+    })
+  })
+
+  it('returns 422 for a blank q (PR #17 Group F)', async () => {
+    provider
+      .given('an authenticated analyst session')
+      .uponReceiving(
+        'a request for search hits with blank q (PR #17 Group F)',
+      )
+      .withRequest({
+        method: 'GET',
+        path: '/api/v1/search',
+        query: { q: '' },
+      })
+      .willRespondWith({
+        status: 422,
+        headers: { 'Content-Type': 'application/json' },
+        // Loose shape — `{detail: eachLike({loc, msg, type})}`.
+        // FastAPI's Query(min_length=1) yields Pydantic-v2 shape
+        // (`type: 'string_too_short'`) for blank q; the custom
+        // `q.strip()` guard (value_error.blank_query) only fires
+        // on a whitespace-only q which takes a different code
+        // path. Matcher is intentionally loose so either BE
+        // implementation detail satisfies the contract without
+        // flapping red on a cosmetic msg/type tweak.
+        body: like({
+          detail: eachLike({
+            loc: eachLike('query'),
+            msg: string('String should have at least 1 character'),
+            type: string('string_too_short'),
+          }),
+        }),
+      })
+
+    await provider.executeTest(async (mockServer) => {
+      const url = new URL(`${mockServer.url}/api/v1/search`)
+      url.searchParams.set('q', '')
+      const res = await fetch(url.toString())
+      expect(res.status).toBe(422)
+      const body = (await res.json()) as {
+        detail: { loc: unknown[]; msg: string; type: string }[]
+      }
+      expect(Array.isArray(body.detail)).toBe(true)
+      expect(body.detail.length).toBeGreaterThan(0)
+      expect(body.detail[0].loc).toContain('query')
     })
   })
 })
