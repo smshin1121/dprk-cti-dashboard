@@ -12,6 +12,8 @@ import {
   reportDetailSchema,
   reportItemSchema,
   reportListResponseSchema,
+  searchHitSchema,
+  searchResponseSchema,
   similarReportsResponseSchema,
   SIMILAR_K_MAX,
   trendResponseSchema,
@@ -825,5 +827,125 @@ describe('actorReportsResponseSchema (PR #15 D9 envelope reuse)', () => {
       'mitre_intrusion_set_id',
       'name',
     ])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// PR #17 Group D — /search Zod schema pact against BE OpenAPI example
+// ---------------------------------------------------------------------------
+//
+// Review criterion #1 for Group D: `searchResponseSchema` must parse
+// the BE OpenAPI examples verbatim — both populated and D10 empty.
+// A schema tweak that flips either one surfaces here before the pact
+// verifier or the live runtime does.
+//
+// Examples copied verbatim from
+// `services/api/src/api/routers/search.py` `responses[200]` block —
+// if the BE example drifts, this test fires red and the FE schema
+// must track it in the same PR.
+
+describe('searchResponseSchema — BE OpenAPI example parity', () => {
+  const bePopulatedExample = {
+    items: [
+      {
+        report: {
+          id: 999060,
+          title: 'Lazarus targets SK crypto exchanges',
+          url: 'https://pact.test/search/lazarus-1',
+          url_canonical: 'https://pact.test/search/lazarus-1',
+          published: '2026-03-15',
+          source_id: 1,
+          source_name: 'Vendor',
+          lang: 'en',
+          tlp: 'WHITE',
+        },
+        fts_rank: 0.0759,
+        vector_rank: null,
+      },
+    ],
+    total_hits: 1,
+    latency_ms: 42,
+  }
+
+  const beEmptyExample = {
+    items: [],
+    total_hits: 0,
+    latency_ms: 12,
+  }
+
+  it('parses the BE populated example unchanged', () => {
+    const parsed = searchResponseSchema.parse(bePopulatedExample)
+    expect(parsed).toEqual(bePopulatedExample)
+  })
+
+  it('parses the BE D10 empty example unchanged', () => {
+    const parsed = searchResponseSchema.parse(beEmptyExample)
+    expect(parsed).toEqual(beEmptyExample)
+  })
+
+  it('envelope has exactly {items, total_hits, latency_ms}', () => {
+    const parsed = searchResponseSchema.parse(bePopulatedExample)
+    expect(Object.keys(parsed).sort()).toEqual([
+      'items',
+      'latency_ms',
+      'total_hits',
+    ])
+  })
+
+  it('SearchHit carries {report, fts_rank, vector_rank} — no other keys', () => {
+    const hit = bePopulatedExample.items[0]
+    const parsed = searchHitSchema.parse(hit)
+    expect(Object.keys(parsed).sort()).toEqual([
+      'fts_rank',
+      'report',
+      'vector_rank',
+    ])
+  })
+
+  it('vector_rank accepts literal null (D9 forward-compat slot)', () => {
+    const hit = {
+      report: bePopulatedExample.items[0].report,
+      fts_rank: 0.5,
+      vector_rank: null,
+    }
+    const parsed = searchHitSchema.parse(hit)
+    expect(parsed.vector_rank).toBeNull()
+  })
+
+  it('vector_rank accepts integer (hybrid follow-up forward-compat)', () => {
+    // The follow-up hybrid PR fills this with a 1-indexed rank. Zod
+    // today accepts the int without a re-shape — proves the additive
+    // upgrade path works.
+    const hit = {
+      report: bePopulatedExample.items[0].report,
+      fts_rank: 0.5,
+      vector_rank: 3,
+    }
+    const parsed = searchHitSchema.parse(hit)
+    expect(parsed.vector_rank).toBe(3)
+  })
+
+  it('rejects vector_rank as a non-integer float (int-only slot)', () => {
+    const hit = {
+      report: bePopulatedExample.items[0].report,
+      fts_rank: 0.5,
+      vector_rank: 3.5,
+    }
+    expect(() => searchHitSchema.parse(hit)).toThrow()
+  })
+
+  it('rejects missing total_hits (envelope is strict on scalar fields)', () => {
+    const { total_hits: _drop, ...withoutTotalHits } = bePopulatedExample
+    expect(() => searchResponseSchema.parse(withoutTotalHits)).toThrow()
+  })
+
+  it('searchResponseSchema is NOT aliased to reportListResponseSchema', () => {
+    // Unlike actorReportsResponseSchema (which IS reference-identical
+    // to reportListResponseSchema), /search's envelope adds rank
+    // metadata that list responses never carry, so aliasing would
+    // create a silent schema collision at any future widening of
+    // either. Regression guard — if a future edit tries to fold
+    // them together, this test flips red.
+    expect(searchResponseSchema).not.toBe(reportListResponseSchema)
   })
 })

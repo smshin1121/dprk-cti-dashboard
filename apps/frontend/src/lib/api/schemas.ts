@@ -469,6 +469,40 @@ export const reportListResponseSchema = z.object({
  */
 export const actorReportsResponseSchema = reportListResponseSchema
 
+/**
+ * `GET /api/v1/search` — PR #17 Phase 3 slice 3 Group D (plan D9).
+ *
+ * FTS-only MVP this slice. Response envelope is
+ * `{items: SearchHit[], total_hits, latency_ms}` and each hit carries
+ * `{report: ReportItem, fts_rank, vector_rank}`. The `vector_rank`
+ * slot is reserved forward-compat — literally `null` until the
+ * follow-up hybrid PR fills it with a 1-indexed vector-kNN rank (see
+ * memory `pattern_fts_first_hybrid_mvp`). The Zod type is
+ * `z.number().int().nullable()` from day one so the follow-up ships
+ * additively without a schema re-shape.
+ *
+ * Pinned against the BE OpenAPI example by
+ * `schemas.test.ts::searchResponseSchema_parses_BE_examples`. Both
+ * the populated and the D10 empty example must parse unchanged — a
+ * schema tweak that flips either one surfaces at CI time before the
+ * pact verifier runs.
+ *
+ * DO NOT alias this to `reportListResponseSchema` — `/search` hits
+ * carry rank metadata (`fts_rank` / `vector_rank`) that list-style
+ * responses do not, so the envelopes diverge at the item level.
+ */
+export const searchHitSchema = z.object({
+  report: reportItemSchema,
+  fts_rank: z.number(),
+  vector_rank: z.number().int().nullable(),
+})
+
+export const searchResponseSchema = z.object({
+  items: z.array(searchHitSchema),
+  total_hits: z.number().int(),
+  latency_ms: z.number().int(),
+})
+
 export type LinkedIncidentSummary = z.infer<typeof linkedIncidentSummarySchema>
 export type LinkedReportSummary = z.infer<typeof linkedReportSummarySchema>
 export type ReportDetail = z.infer<typeof reportDetailSchema>
@@ -476,3 +510,5 @@ export type IncidentDetail = z.infer<typeof incidentDetailSchema>
 export type ActorDetail = z.infer<typeof actorDetailSchema>
 export type SimilarReportEntry = z.infer<typeof similarReportEntrySchema>
 export type SimilarReportsResponse = z.infer<typeof similarReportsResponseSchema>
+export type SearchHit = z.infer<typeof searchHitSchema>
+export type SearchResponse = z.infer<typeof searchResponseSchema>

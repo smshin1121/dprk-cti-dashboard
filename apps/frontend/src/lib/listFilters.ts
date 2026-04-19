@@ -146,3 +146,57 @@ export function toActorReportsQueryParams(
   if (pagination.limit != null) params.append('limit', String(pagination.limit))
   return params
 }
+
+/**
+ * `/api/v1/search` — PR #17 Phase 3 slice 3 Group D (plan D8 + D13).
+ *
+ * Filter surface is MINIMAL by plan D8: date range + `limit` only.
+ * No cursor (`/search` is NOT keyset-paginated this slice), no
+ * `tag` / `source` / `tlp` / `groupIds` / nested `q`-subfilters —
+ * the `q` string lives outside this type so it can be debounced
+ * independently and so React Query cache key construction keeps
+ * the typed (`SearchFilters`) and non-typed (`q`) inputs distinct.
+ *
+ * Kept as a distinct type (not an `ActorReportsFilters` alias) so a
+ * future widening of either endpoint's filter scope cannot
+ * accidentally leak into the other's wire contract. Pinned by
+ * `listFilters.test.ts::toSearchQueryParams`.
+ */
+export interface SearchFilters {
+  date_from?: string
+  date_to?: string
+  limit?: number
+}
+
+/**
+ * Derive a `SearchFilters` from the filter store's date range. Mirror
+ * of `toActorReportsFilters` / `toReportListFilters` — date range only.
+ * Intentionally ignores `tlp` / `groupIds` / `q` on the FilterState so
+ * toggling those in the global FilterBar cannot leak into this
+ * endpoint's query-string or its React Query cache scope.
+ */
+export function toSearchFilters(
+  state: Pick<FilterState, 'dateFrom' | 'dateTo'>,
+): SearchFilters {
+  return pickDateRange(state)
+}
+
+/**
+ * Serialize a `/api/v1/search` request into `URLSearchParams`. The
+ * required `q` is appended first; the three optional filter keys
+ * (`date_from` / `date_to` / `limit`) follow. No other params ever
+ * surface — the type signature makes the whitelist enforcement
+ * structural, and the implementation below duplicates it at runtime
+ * as a defense-in-depth layer pinned by `listFilters.test.ts`.
+ */
+export function toSearchQueryParams(
+  q: string,
+  filters: SearchFilters = {},
+): URLSearchParams {
+  const params = new URLSearchParams()
+  params.append('q', q)
+  if (filters.date_from != null) params.append('date_from', filters.date_from)
+  if (filters.date_to != null) params.append('date_to', filters.date_to)
+  if (filters.limit != null) params.append('limit', String(filters.limit))
+  return params
+}

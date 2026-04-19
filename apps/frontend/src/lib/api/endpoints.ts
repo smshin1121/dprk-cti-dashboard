@@ -25,10 +25,12 @@ import {
   type ActorReportsFilters,
   type IncidentListFilters,
   type ReportListFilters,
+  type SearchFilters,
   toActorListQueryParams,
   toActorReportsQueryParams,
   toIncidentListQueryParams,
   toReportListQueryParams,
+  toSearchQueryParams,
 } from '../listFilters'
 import {
   actorDetailSchema,
@@ -40,6 +42,7 @@ import {
   geoResponseSchema,
   incidentDetailSchema,
   reportDetailSchema,
+  searchResponseSchema,
   similarReportsResponseSchema,
   SIMILAR_K_DEFAULT,
   trendResponseSchema,
@@ -53,6 +56,7 @@ import {
   type IncidentListResponse,
   type ReportDetail,
   type ReportListResponse,
+  type SearchResponse,
   type SimilarReportsResponse,
   type TrendResponse,
 } from './schemas'
@@ -281,6 +285,30 @@ export function getSimilarReports(
 ): Promise<SimilarReportsResponse> {
   const path = `/api/v1/reports/${reportId}/similar?k=${k}`
   return apiGet(path, similarReportsResponseSchema, signal)
+}
+
+/**
+ * `GET /api/v1/search` — PR #17 Phase 3 slice 3 Group D (plan D8 +
+ * D9 + D13).
+ *
+ * FTS-only MVP this slice. `q` is required and non-empty — the hook
+ * layer gates on `q.trim().length > 0` before invoking this function
+ * (blank queries would return 422 from the BE). Filter surface is
+ * `{date_from, date_to, limit}` by plan D8; `toSearchQueryParams`
+ * enforces that whitelist at runtime.
+ *
+ * Response is the `SearchResponse` envelope — per-hit `fts_rank` is
+ * a float, `vector_rank` is literally `null` this slice (D9 forward-
+ * compat slot; memory `pattern_fts_first_hybrid_mvp`). No pagination
+ * cursor — the endpoint returns at most `limit` rows in one shot.
+ */
+export function getSearchHits(
+  q: string,
+  filters: SearchFilters = {},
+  signal?: AbortSignal,
+): Promise<SearchResponse> {
+  const qs = toSearchQueryParams(q, filters).toString()
+  return apiGet(`/api/v1/search?${qs}`, searchResponseSchema, signal)
 }
 
 /**

@@ -27,6 +27,7 @@ import type {
   ActorReportsFilters,
   IncidentListFilters,
   ReportListFilters,
+  SearchFilters,
 } from './listFilters'
 
 export const queryKeys = {
@@ -114,4 +115,16 @@ export const queryKeys = {
     filters: ActorReportsFilters,
     pagination: { cursor?: string; limit?: number } = {},
   ) => ['actors', actorId, 'reports', filters, pagination] as const,
+
+  /**
+   * `/api/v1/search` — PR #17 Phase 3 slice 3 Group D (plan D8 + D13).
+   * Key scope is `(q, filters)` where `filters` =
+   * `{date_from?, date_to?, limit?}`. The `q` string is passed
+   * debounced by the hook layer (250ms) so identical post-debounce
+   * values share a cache slot; the `filters` object carries only the
+   * three whitelisted keys so TLP / groupIds / tag / source toggles
+   * can NEVER invalidate this cache. Pinned by `queryKeys.test.ts`.
+   */
+  searchHits: (q: string, filters: SearchFilters) =>
+    ['search', q, filters] as const,
 } as const
