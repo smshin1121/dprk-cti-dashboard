@@ -26,6 +26,7 @@
  */
 
 import { useTranslation } from 'react-i18next'
+import { Link } from 'react-router-dom'
 
 import { useReportsList } from '../reports/useReportsList'
 import { cn } from '../../lib/utils'
@@ -111,14 +112,16 @@ export function ReportFeed(): JSX.Element {
             data-report-id={report.id}
             className="flex flex-col gap-1 px-1 py-2 text-sm"
           >
-            <a
-              href={report.url}
-              target="_blank"
-              rel="noreferrer"
+            {/* PR #14 D11: row title navigates to the internal
+                detail page. The external URL (BE `report.url`)
+                remains reachable from `ReportDetailPage`'s
+                "Source" field. */}
+            <Link
+              to={`/reports/${report.id}`}
               className="truncate font-medium text-signal hover:underline"
             >
               {report.title}
-            </a>
+            </Link>
             <div className="flex items-center gap-3 text-xs text-ink-muted">
               <span className="font-mono">{report.published}</span>
               <span>·</span>

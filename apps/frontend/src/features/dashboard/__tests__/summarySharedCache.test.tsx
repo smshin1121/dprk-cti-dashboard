@@ -18,6 +18,7 @@
 import { QueryClientProvider } from '@tanstack/react-query'
 import { render, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
+import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createQueryClient } from '../../../lib/queryClient'
@@ -41,7 +42,12 @@ const SUMMARY_BODY = {
 function makeWrapper() {
   const client = createQueryClient()
   function Wrapper({ children }: { children: ReactNode }) {
-    return <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    // GroupsMiniList uses <Link> since PR #14 D11 cross-link.
+    return (
+      <QueryClientProvider client={client}>
+        <MemoryRouter>{children}</MemoryRouter>
+      </QueryClientProvider>
+    )
   }
   return { Wrapper, client }
 }

@@ -1,6 +1,7 @@
 import { QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
+import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createQueryClient } from '../../../lib/queryClient'
@@ -36,7 +37,13 @@ const EMPTY_BODY = { items: [], next_cursor: null }
 function makeWrapper() {
   const client = createQueryClient()
   function Wrapper({ children }: { children: ReactNode }) {
-    return <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    // MemoryRouter is required because ReportFeed rows use
+    // <Link to="/reports/:id"> per PR #14 D11 cross-link.
+    return (
+      <QueryClientProvider client={client}>
+        <MemoryRouter>{children}</MemoryRouter>
+      </QueryClientProvider>
+    )
   }
   return { client, Wrapper }
 }
@@ -100,6 +107,29 @@ describe('ReportFeed — 4 render states', () => {
     expect(screen.getByText('Example Intel')).toBeInTheDocument()
     // Null source_name falls back to dash — no crash.
     expect(screen.getAllByText('—').length).toBeGreaterThan(0)
+  })
+
+  // PR #14 D11 cross-link — row title navigates to the internal
+  // detail page (`/reports/:id`), NOT the external BE `report.url`.
+  // The external URL is reachable from `ReportDetailPage`'s
+  // "Source" field.
+  it('row title links to /reports/:id (D11 cross-link)', async () => {
+    vi.spyOn(global, 'fetch').mockImplementation(
+      () => Promise.resolve(new Response(JSON.stringify(POPULATED_BODY), { status: 200 })),
+    )
+    const { Wrapper } = makeWrapper()
+    render(<ReportFeed />, { wrapper: Wrapper })
+    expect(await screen.findByTestId('report-feed')).toBeInTheDocument()
+
+    const row101 = screen.getByTestId('report-feed-item-101')
+    const link = row101.querySelector('a')
+    expect(link).not.toBeNull()
+    expect(link!.getAttribute('href')).toBe('/reports/101')
+    // React Router's <Link> renders without target=_blank — the
+    // navigation stays in-app. The external URL from the PR #13
+    // behavior is NOT wired on this element anymore.
+    expect(link!.getAttribute('target')).not.toBe('_blank')
+    expect(link!.getAttribute('href')).not.toContain('example.test')
   })
 })
 

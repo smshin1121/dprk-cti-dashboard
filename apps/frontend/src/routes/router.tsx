@@ -5,10 +5,13 @@
  *   <RouteGate>                   (guard — redirects or blocks)
  *     <Shell>                     (layout — nav + outlet)
  *       /                         → redirect to /dashboard
- *       /dashboard                Group E wires KPI strip
- *       /reports                  Group F wires list
- *       /incidents                Group F wires list
- *       /actors                   Group F wires list
+ *       /dashboard                PR #13 Group E/I wires KPI + bottom row
+ *       /reports                  list (PR #12)
+ *       /reports/:id              report detail (PR #14 Group E)
+ *       /incidents                list (PR #12)
+ *       /incidents/:id            incident detail (PR #14 Group E)
+ *       /actors                   list (PR #12)
+ *       /actors/:id               actor detail (PR #14 Group E)
  *       *                         404 (inline, no global redirect)
  *
  * D11 policy: each protected route carries the `RouteErrorBoundary`
@@ -26,10 +29,13 @@ import {
 import { RouteErrorBoundary } from '../layout/RouteErrorBoundary'
 import { RouteGate } from '../layout/RouteGate'
 import { Shell } from '../layout/Shell'
+import { ActorDetailPage } from './ActorDetailPage'
 import { ActorsPage } from './ActorsPage'
 import { DashboardPage } from './DashboardPage'
+import { IncidentDetailPage } from './IncidentDetailPage'
 import { IncidentsPage } from './IncidentsPage'
 import { LoginPage } from './LoginPage'
+import { ReportDetailPage } from './ReportDetailPage'
 import { ReportsPage } from './ReportsPage'
 
 /**
@@ -67,13 +73,28 @@ export function buildRouter(factory: RouterFactory = createBrowserRouter) {
               errorElement: <RouteErrorBoundary />,
             },
             {
+              path: 'reports/:id',
+              element: <ReportDetailPage />,
+              errorElement: <RouteErrorBoundary />,
+            },
+            {
               path: 'incidents',
               element: <IncidentsPage />,
               errorElement: <RouteErrorBoundary />,
             },
             {
+              path: 'incidents/:id',
+              element: <IncidentDetailPage />,
+              errorElement: <RouteErrorBoundary />,
+            },
+            {
               path: 'actors',
               element: <ActorsPage />,
+              errorElement: <RouteErrorBoundary />,
+            },
+            {
+              path: 'actors/:id',
+              element: <ActorDetailPage />,
               errorElement: <RouteErrorBoundary />,
             },
             {
