@@ -1084,16 +1084,23 @@ describe('GET /api/v1/search', () => {
       .willRespondWith({
         status: 200,
         headers: { 'Content-Type': 'application/json' },
-        // D10 empty — explicit literal empty items array. eachLike
-        // would require a non-empty example which the D10 path
-        // cannot produce. total_hits is pinned to 0 (the only
-        // meaningful value for an empty items array) and latency_ms
-        // stays a loose integer matcher because it's timing-dependent.
-        body: {
+        // D10 empty — body wrapped in like() so pact-ruby applies
+        // the nested integer() matcher on latency_ms. A plain
+        // object root (without like()) makes pact-ruby compare the
+        // whole body literally, ignoring any nested matcher — which
+        // breaks on latency_ms because the actual value is timing-
+        // dependent (CI hit `Expected 12 but got 4 at $.latency_ms`
+        // on the first pass without the wrapper). Under like() the
+        // root is a type-matcher; items: [] still asserts "array
+        // type" but the verifier is lenient on array contents when
+        // the example is empty, so `actual: []` matches. total_hits
+        // stays literal 0 (the only meaningful value for an empty
+        // envelope per BE contract).
+        body: like({
           items: [],
           total_hits: 0,
           latency_ms: integer(12),
-        },
+        }),
       })
 
     await provider.executeTest(async (mockServer) => {

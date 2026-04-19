@@ -809,6 +809,14 @@
         },
         "matchingRules": {
           "body": {
+            "$": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
             "$.latency_ms": {
               "combine": "AND",
               "matchers": [
