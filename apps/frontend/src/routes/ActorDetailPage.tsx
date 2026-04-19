@@ -1,20 +1,31 @@
 /**
- * `/actors/:id` — protected actor detail view. PR #14 Group E
- * (plan D1 + D11).
+ * `/actors/:id` — protected actor detail view.
  *
- * D11 out-of-scope pin — THIS PAGE DELIBERATELY DOES NOT RENDER A
- * REPORTS SECTION. The surface for "reports that mention this actor"
- * needs to traverse `report_codenames` and has not shipped a BE
- * endpoint in PR #14 (out-of-scope this slice per plan D11). The
- * FE schema (`actorDetailSchema`) has no reports-like key and strips
- * any BE leak silently; this page holds the line at the render
- * layer by containing no linked-reports / linked-incidents rendering
- * branch at all. Adding one in a future PR requires a new BE
- * endpoint + schema field + page section landing together.
+ * History:
+ *   - PR #14 Group E: original mount (plan D1 + D11, no reports).
+ *   - PR #15 Group E: adds the `ActorLinkedReportsPanel` below the
+ *     codenames section. The panel comes from a SIBLING endpoint
+ *     (`GET /api/v1/actors/{id}/reports`, new in PR #15), NOT from
+ *     enriching the `ActorDetail` payload.
+ *
+ * D12 invariant (preserved):
+ *   `actorDetailSchema` shape is UNCHANGED. The detail fetch still
+ *   returns `{id, name, mitre_intrusion_set_id, aka, description,
+ *   codenames}` only — any BE leak of reports-like keys is stripped
+ *   at the Zod parse boundary. The new panel below renders reports
+ *   from a DIFFERENT fetch, so the two-surface architecture is
+ *   visible at both the render tree and the network tab.
+ *
+ * D18 scope:
+ *   `ActorLinkedReportsPanel` mounts INSIDE the populated branch
+ *   (after detail success). Loading / error / 404 branches do not
+ *   mount the panel — the page renders a single state at a time to
+ *   keep the reader's attention focused.
  */
 
 import { useParams } from 'react-router-dom'
 
+import { ActorLinkedReportsPanel } from '../features/actor/ActorLinkedReportsPanel'
 import { useActorDetail } from '../features/detail/useActorDetail'
 import { ApiError } from '../lib/api'
 import { parseDetailId } from './detailParams'
@@ -91,6 +102,8 @@ export function ActorDetailPage(): JSX.Element {
           <DLEntry label="Codenames" value={actor.codenames.join(', ')} />
         )}
       </dl>
+
+      <ActorLinkedReportsPanel actorId={actor.id} />
     </section>
   )
 }
