@@ -56,6 +56,8 @@ if not _PG_URL:
 
 from api.routers.pact_states import (  # noqa: E402
     ACTOR_DETAIL_FIXTURE_ID,
+    ACTOR_REPORTS_FIXTURE_REPORT_IDS,
+    ACTOR_WITH_NO_REPORTS_ID,
     INCIDENT_DETAIL_FIXTURE_ID,
     REPORT_DETAIL_FIXTURE_ID,
     SIMILAR_EMPTY_EMBEDDING_NEIGHBOR_ID,
@@ -63,6 +65,8 @@ from api.routers.pact_states import (  # noqa: E402
     SIMILAR_POPULATED_NEIGHBOR_IDS,
     SIMILAR_POPULATED_SOURCE_ID,
     _ensure_actor_detail_fixture,
+    _ensure_actor_with_no_reports_fixture,
+    _ensure_actor_with_reports_fixture,
     _ensure_attack_matrix_fixture,
     _ensure_canonical_lazarus_fixture,
     _ensure_dashboard_fixture,
@@ -85,6 +89,7 @@ from api.read.detail_aggregator import (  # noqa: E402
     get_incident_detail,
     get_report_detail,
 )
+from api.read.actor_reports import get_actor_reports  # noqa: E402
 from api.read.repositories import list_actors  # noqa: E402
 from api.read.similar_service import get_similar_reports  # noqa: E402
 
@@ -838,3 +843,219 @@ async def test_similar_empty_embedding_fixture_is_idempotent(
     # Source stays NULL across repeats — ON CONFLICT UPDATE sets
     # embedding = NULL each time.
     assert src_null is True
+
+
+# ---------------------------------------------------------------------------
+# PR #15 Group C — actor-reports populated + empty fixtures
+# ---------------------------------------------------------------------------
+#
+# Four invariants the reviewer asked to check:
+#
+#   1. 999003 populated actor-reports matcher is actually satisfied
+#      — the fixture seeds ≥3 reports linked via codename to actor
+#      999003, each row has the ReportItem shape, sort is newest-
+#      first per D16.
+#   2. 999004 empty state reproduces as 200 + {items: [], next_cursor:
+#      null} — actor exists + has codenames + zero report_codenames
+#      rows, so get_actor_reports returns ([], None, None).
+#   3. Both fixtures are idempotent — two consecutive invocations
+#      produce the same row counts.
+#   4. FE pact path literal alignment — 999003 and 999004 are the
+#      exact ids the FE consumer hardcodes; this test file imports
+#      the constants directly so a rename on either side would flag
+#      at import time. Additional explicit assertion below for
+#      safety.
+
+
+async def test_actor_with_reports_fixture_produces_non_empty_keyset_page(
+    clean_pg: None, pg_session: AsyncSession
+) -> None:
+    """Populated matcher satisfaction — ``/actors/999003/reports``
+    pact expects ``{items: eachLike(ReportItem), next_cursor}``.
+
+    Fixture must seed ≥1 non-empty row (eachLike rejects empty) with
+    the full ReportItem shape (id/title/url/url_canonical/published/
+    source_id/source_name/lang/tlp). Sort order is DESC on published
+    per plan D16 — newest fixture row lands first. The pact's
+    matchers are type-only so specific titles are not asserted, only
+    that the envelope produces at least the 3 seeded rows in
+    D16-stable order.
+    """
+    await _ensure_actor_with_reports_fixture(pg_session)
+    await pg_session.commit()
+
+    result = await get_actor_reports(
+        pg_session, actor_id=ACTOR_DETAIL_FIXTURE_ID, limit=50
+    )
+    assert result is not None, (
+        f"populated fixture actor not seeded at id={ACTOR_DETAIL_FIXTURE_ID}"
+    )
+    items, next_p, next_i = result
+
+    # eachLike pact matcher would fail on empty — pin the >=1 floor
+    # AND the exact count we seeded so a future regression that drops
+    # links fires red here before the FE pact verifier does.
+    assert len(items) >= 3, (
+        f"populated fixture produced {len(items)} rows; "
+        f"expected >=3 (the seeded {ACTOR_REPORTS_FIXTURE_REPORT_IDS})"
+    )
+    # Every item satisfies ReportItem shape — the matcher walks
+    # these keys and types.
+    for item in items:
+        assert isinstance(item["id"], int)
+        assert isinstance(item["title"], str) and item["title"]
+        assert isinstance(item["url"], str) and item["url"]
+        assert isinstance(item["url_canonical"], str)
+        # ``published`` is a ``date`` in-process; pact sees the
+        # ISO-8601 string that FastAPI serializes from it.
+        assert item["published"] is not None
+        assert isinstance(item["source_id"], int)
+        assert isinstance(item["source_name"], str)
+        assert item["tlp"] == "WHITE"
+
+    # D16 newest-first — the fixture's top pinned id (999050) has
+    # the newest date (2026-03-15), so it lands at index 0.
+    assert items[0]["id"] == ACTOR_REPORTS_FIXTURE_REPORT_IDS[0]
+
+    # Final page — fixture seeds 3 rows below the default 50 limit,
+    # so next_cursor is null.
+    assert next_p is None
+    assert next_i is None
+
+
+async def test_actor_without_reports_fixture_produces_empty_envelope(
+    clean_pg: None, pg_session: AsyncSession
+) -> None:
+    """Empty reproduction — ``/actors/999004/reports`` pact expects
+    ``{items: [], next_cursor: null}`` (literal empty body, cannot
+    use eachLike per PR #14 Group G precedent).
+
+    Actor must exist (so the router yields 200, not 404) and the
+    reports query must return ([], None, None). Mix of D15(b)
+    (no codenames — NOT what we seed here) and D15(c) (has codenames
+    but zero report_codenames — this IS what we seed). The empty
+    envelope is identical across the two branches so this single
+    test also covers the D15(c) flavor.
+    """
+    await _ensure_actor_with_no_reports_fixture(pg_session)
+    await pg_session.commit()
+
+    result = await get_actor_reports(
+        pg_session, actor_id=ACTOR_WITH_NO_REPORTS_ID, limit=50
+    )
+    # Actor exists — NOT None (None would mean router → 404).
+    assert result is not None, (
+        "D15(a)/D15(b-c) collapse regression — empty-reports actor "
+        "must return envelope, not None. Router depends on this to "
+        "yield 200 instead of 404."
+    )
+    items, next_p, next_i = result
+    assert items == []
+    assert next_p is None
+    assert next_i is None
+
+
+async def test_actor_with_reports_fixture_is_idempotent(
+    clean_pg: None, pg_session: AsyncSession
+) -> None:
+    """Idempotency — pact verifier replays state handlers inside one
+    run. Two consecutive invocations of the populated seed must not
+    double-insert the pinned reports or the composite
+    ``report_codenames`` links.
+
+    The groups insert uses ON CONFLICT (id) DO NOTHING (inherited
+    from _ensure_actor_detail_fixture), reports use the same pattern
+    on ``reports.id``, and report_codenames uses ON CONFLICT DO
+    NOTHING on its composite PK.
+    """
+    await _ensure_actor_with_reports_fixture(pg_session)
+    await _ensure_actor_with_reports_fixture(pg_session)
+    await pg_session.commit()
+
+    # One actor group row at the pinned id.
+    group_count = (
+        await pg_session.execute(
+            sa.text("SELECT COUNT(*) FROM groups WHERE id = :id"),
+            {"id": ACTOR_DETAIL_FIXTURE_ID},
+        )
+    ).scalar_one()
+    assert int(group_count) == 1
+
+    # Exactly 3 seeded reports at the pinned ids.
+    for rid in ACTOR_REPORTS_FIXTURE_REPORT_IDS:
+        row_count = (
+            await pg_session.execute(
+                sa.text(
+                    "SELECT COUNT(*) FROM reports WHERE id = :id"
+                ),
+                {"id": rid},
+            )
+        ).scalar_one()
+        assert int(row_count) == 1, (
+            f"report id {rid} double-inserted — "
+            f"ON CONFLICT (id) DO NOTHING broken"
+        )
+
+    # Exactly one link row per seeded report — composite PK
+    # collision would fire on the second invocation without the ON
+    # CONFLICT DO NOTHING on the composite PK.
+    link_count = (
+        await pg_session.execute(
+            sa.text(
+                "SELECT COUNT(*) FROM report_codenames "
+                "WHERE report_id = ANY(:ids)"
+            ),
+            {"ids": list(ACTOR_REPORTS_FIXTURE_REPORT_IDS)},
+        )
+    ).scalar_one()
+    assert int(link_count) == len(ACTOR_REPORTS_FIXTURE_REPORT_IDS)
+
+
+async def test_actor_without_reports_fixture_is_idempotent(
+    clean_pg: None, pg_session: AsyncSession
+) -> None:
+    """Idempotency for the empty-fixture seed."""
+    await _ensure_actor_with_no_reports_fixture(pg_session)
+    await _ensure_actor_with_no_reports_fixture(pg_session)
+    await pg_session.commit()
+
+    group_count = (
+        await pg_session.execute(
+            sa.text("SELECT COUNT(*) FROM groups WHERE id = :id"),
+            {"id": ACTOR_WITH_NO_REPORTS_ID},
+        )
+    ).scalar_one()
+    assert int(group_count) == 1
+
+    codename_count = (
+        await pg_session.execute(
+            sa.text(
+                "SELECT COUNT(*) FROM codenames WHERE group_id = :g"
+            ),
+            {"g": ACTOR_WITH_NO_REPORTS_ID},
+        )
+    ).scalar_one()
+    assert int(codename_count) == 1
+
+    # D15(c) invariant — zero report_codenames rows.
+    link_count = (
+        await pg_session.execute(
+            sa.text(
+                "SELECT COUNT(*) FROM report_codenames rc "
+                "JOIN codenames c ON c.id = rc.codename_id "
+                "WHERE c.group_id = :g"
+            ),
+            {"g": ACTOR_WITH_NO_REPORTS_ID},
+        )
+    ).scalar_one()
+    assert int(link_count) == 0, (
+        "empty fixture must have zero report_codenames rows — "
+        "D15(c) contract broken"
+    )
+
+
+# NOTE: the FE pact path literal alignment regression guard lives in
+# ``tests/unit/test_actor_reports.py::TestFePactPathLiteralAlignment``
+# so it runs WITHOUT a Postgres connection. This module is
+# module-level skipped when POSTGRES_TEST_URL is unset, which would
+# hide a constant-drift regression in local dev / pre-push runs.

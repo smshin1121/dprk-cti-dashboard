@@ -624,3 +624,71 @@ class TestActorIsolation:
         assert result is not None
         items, _, _ = result
         assert items == [], "Group A must not see Group B's reports"
+
+
+# ---------------------------------------------------------------------------
+# FE pact path literal alignment — runs unconditionally (no POSTGRES needed)
+# ---------------------------------------------------------------------------
+
+
+class TestFePactPathLiteralAlignment:
+    """Constant-drift guard for pinned fixture ids consumed by the FE
+    pact consumer. The FE contract hardcodes
+    ``/api/v1/actors/999003/reports`` + ``/api/v1/actors/999004/reports``
+    as LITERAL paths (no regex — memory
+    ``pattern_pact_literal_pinned_paths``). A BE rename without a
+    matching FE update would silently fail the live pact verifier.
+
+    Lives in the unit-test module so it runs unconditionally; the
+    Postgres-gated pact-state tests cover the DB-side shape.
+    """
+
+    def test_populated_actor_id_pinned_at_999003(self) -> None:
+        from api.routers.pact_states import ACTOR_DETAIL_FIXTURE_ID
+
+        assert ACTOR_DETAIL_FIXTURE_ID == 999003, (
+            "ACTOR_DETAIL_FIXTURE_ID drift — FE pact consumer "
+            "targets /api/v1/actors/999003/reports as a literal path"
+        )
+
+    def test_empty_actor_id_pinned_at_999004(self) -> None:
+        from api.routers.pact_states import ACTOR_WITH_NO_REPORTS_ID
+
+        assert ACTOR_WITH_NO_REPORTS_ID == 999004, (
+            "ACTOR_WITH_NO_REPORTS_ID drift — FE pact consumer "
+            "targets /api/v1/actors/999004/reports as a literal path"
+        )
+
+    def test_populated_fixture_seeds_three_reports(self) -> None:
+        from api.routers.pact_states import (
+            ACTOR_REPORTS_FIXTURE_REPORT_IDS,
+        )
+
+        # eachLike rejects empty arrays on the FE pact side; the BE
+        # fixture must seed >=1 row to satisfy that matcher. Three is
+        # the locked count to make newest-first ordering testable
+        # (plan D14 + D16).
+        assert len(ACTOR_REPORTS_FIXTURE_REPORT_IDS) == 3
+
+        # Pinned ids must not collide with other fixture ranges:
+        # 999001 (report detail), 999002 (incident detail),
+        # 999003 (actor detail), 999004 (empty actor), 999011-13
+        # (similar populated neighbors), 999020 (similar populated
+        # source), 999030-31 (similar empty-embedding pair).
+        reserved = {
+            999001,
+            999002,
+            999003,
+            999004,
+            999011,
+            999012,
+            999013,
+            999020,
+            999030,
+            999031,
+        }
+        for rid in ACTOR_REPORTS_FIXTURE_REPORT_IDS:
+            assert rid not in reserved, (
+                f"fixture report id {rid} collides with another "
+                f"pinned fixture — pick an id outside {reserved}"
+            )
