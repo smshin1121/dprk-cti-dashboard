@@ -126,3 +126,83 @@ describe('queryKeys.incidents', () => {
     expect(key[0]).toBe('incidents')
   })
 })
+
+// ---------------------------------------------------------------------------
+// Detail + similar keys — PR #14 Group D (plan D1 + D8 + D11)
+// ---------------------------------------------------------------------------
+//
+// These keys carry ONLY the path-param id (and k for similar). The
+// hooks built on them don't subscribe to `useFilterStore`, so
+// filter state cannot enter these cache slots — enforced both
+// structurally (no filter import in the hook files) and at the
+// type boundary (`reportDetail(id: number)` has no filter arg).
+
+describe('queryKeys.reportDetail', () => {
+  it('uses the documented ["reports", "detail", id] shape', () => {
+    const key = queryKeys.reportDetail(42)
+    expect(key).toEqual(['reports', 'detail', 42])
+  })
+
+  it('different ids produce different keys', () => {
+    expect(queryKeys.reportDetail(1)).not.toEqual(queryKeys.reportDetail(2))
+  })
+
+  it('cache key JSON contains no filter markers', () => {
+    const json = JSON.stringify(queryKeys.reportDetail(42)).toLowerCase()
+    expect(json).not.toContain('tlp')
+    expect(json).not.toContain('date_from')
+    expect(json).not.toContain('group_id')
+  })
+})
+
+describe('queryKeys.incidentDetail', () => {
+  it('uses the documented ["incidents", "detail", id] shape', () => {
+    const key = queryKeys.incidentDetail(18)
+    expect(key).toEqual(['incidents', 'detail', 18])
+  })
+
+  it('does not collide with reports detail key for the same id', () => {
+    expect(queryKeys.incidentDetail(42)).not.toEqual(queryKeys.reportDetail(42))
+  })
+})
+
+describe('queryKeys.actorDetail', () => {
+  it('uses the documented ["actors", "detail", id] shape', () => {
+    const key = queryKeys.actorDetail(3)
+    expect(key).toEqual(['actors', 'detail', 3])
+  })
+})
+
+describe('queryKeys.similarReports', () => {
+  it('uses the documented ["reports", id, "similar", k] shape', () => {
+    const key = queryKeys.similarReports(42, 10)
+    expect(key).toEqual(['reports', 42, 'similar', 10])
+  })
+
+  // D8 cache-key lock — (report_id, k) matches BE Redis key exactly.
+  // Different k opens a fresh cache slot on both sides.
+  it('different k values produce different keys for same report', () => {
+    expect(queryKeys.similarReports(42, 10)).not.toEqual(
+      queryKeys.similarReports(42, 20),
+    )
+  })
+
+  it('different report_ids produce different keys for same k', () => {
+    expect(queryKeys.similarReports(42, 10)).not.toEqual(
+      queryKeys.similarReports(43, 10),
+    )
+  })
+
+  it('does not collide with reportDetail key when id=k shape confusion', () => {
+    expect(queryKeys.similarReports(10, 10)).not.toEqual(
+      queryKeys.reportDetail(10),
+    )
+  })
+
+  it('cache key JSON contains no filter markers', () => {
+    const json = JSON.stringify(queryKeys.similarReports(42, 10)).toLowerCase()
+    expect(json).not.toContain('tlp')
+    expect(json).not.toContain('date_from')
+    expect(json).not.toContain('group_id')
+  })
+})

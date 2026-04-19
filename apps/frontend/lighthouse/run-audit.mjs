@@ -1,6 +1,11 @@
 #!/usr/bin/env node
 /**
- * PR #13 Group K — Lighthouse manual audit harness (plan D6).
+ * Lighthouse manual audit harness (plan D6).
+ *
+ * Shipped in PR #13 Group K; extended in PR #14 Group H with a
+ * per-route reports sub-directory so each detail-route audit
+ * lands its SUMMARY.md + per-theme JSONs in an isolated dir
+ * (otherwise sequential invocations overwrite each other).
  *
  * Scope:
  *   - Runs Lighthouse N times against the Vite **preview** build
@@ -13,7 +18,7 @@
  *     the FOUC script in `index.html` respects this before the
  *     React root hydrates.
  *   - Writes per-run JSON (full LH report) + a SUMMARY.md with
- *     3-run medians to `apps/frontend/lighthouse/reports/`.
+ *     3-run medians to `apps/frontend/lighthouse/reports/<subdir>/`.
  *   - **Never exits non-zero on score.** D6 explicit: "NOT a CI
  *     hard gate." The harness is purely informational; the PR
  *     reviewer reads the median table and decides acceptance.
@@ -22,18 +27,25 @@
  *   pnpm run lighthouse:audit
  *
  * Env overrides:
- *   LH_URL_BASE   — preview origin (default http://127.0.0.1:4173)
- *   LH_PATH       — target path (default /dashboard)
- *   LH_RUNS       — runs per theme (default 3 — median window)
- *   LH_THEMES     — comma list (default "light,dark")
- *   LH_TIMEOUT_MS — per-run ceiling (default 90000)
+ *   LH_URL_BASE       — preview origin (default http://127.0.0.1:4173)
+ *   LH_PATH           — target path (default /dashboard)
+ *   LH_REPORTS_SUBDIR — subdirectory under `reports/` for this run's
+ *                       artifacts (default empty → `reports/` itself).
+ *                       Use when auditing multiple routes in one
+ *                       session so each keeps its own SUMMARY.md.
+ *   LH_RUNS           — runs per theme (default 3 — median window)
+ *   LH_THEMES         — comma list (default "light,dark")
+ *   LH_TIMEOUT_MS     — per-run ceiling (default 90000)
  *
  * Prerequisites (documented in lighthouse/README.md):
  *   1. `pnpm run build`
  *   2. `pnpm run preview` (another terminal — blocks on 4173)
  *   3. BE running on :8000 AND a seeded session cookie already
- *      forwarded to the preview origin — otherwise /dashboard
+ *      forwarded to the preview origin — otherwise the RouteGate
  *      redirects to /login and the audit will measure /login.
+ *   4. For detail-route targets (PR #14): the matching
+ *      `.given(...)` provider-state POSTed to the BE before
+ *      running the audit so the pinned fixture id is reachable.
  *
  * Why programmatic (not the `lighthouse` CLI):
  *   Theme emulation needs CDP before navigation. The CLI exposes
@@ -51,10 +63,16 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const REPORTS_DIR = path.resolve(__dirname, 'reports')
 
 const URL_BASE = process.env.LH_URL_BASE ?? 'http://127.0.0.1:4173'
 const TARGET_PATH = process.env.LH_PATH ?? '/dashboard'
+// Per-route artifact isolation (PR #14 Group H). An empty subdir
+// resolves to `reports/` itself — backwards-compatible with the
+// single-target PR #13 Group K invocation. A multi-route reviewer
+// sets e.g. `LH_REPORTS_SUBDIR=reports-999001` so each target's
+// SUMMARY.md + per-theme JSONs land in their own folder.
+const REPORTS_SUBDIR = process.env.LH_REPORTS_SUBDIR ?? ''
+const REPORTS_DIR = path.resolve(__dirname, 'reports', REPORTS_SUBDIR)
 const RUNS = Number.parseInt(process.env.LH_RUNS ?? '3', 10)
 const THEMES = (process.env.LH_THEMES ?? 'light,dark').split(',').map((s) => s.trim())
 const RUN_TIMEOUT_MS = Number.parseInt(process.env.LH_TIMEOUT_MS ?? '90000', 10)
@@ -243,9 +261,12 @@ async function main() {
   }
 
   const summaryLines = [
-    '# PR #13 — Lighthouse audit summary (plan D6 manual artifact)',
+    '# Lighthouse audit summary (plan D6 manual artifact)',
     '',
     `- Target: \`${targetUrl}\` (preview build per D6 lock)`,
+    `- Reports dir: \`apps/frontend/lighthouse/reports${
+      REPORTS_SUBDIR ? `/${REPORTS_SUBDIR}` : ''
+    }\``,
     `- Runs per theme: ${RUNS}`,
     `- Captured at: ${runAt}`,
     `- Node: ${process.version}`,
@@ -272,11 +293,31 @@ async function main() {
   summaryLines.push('pnpm --filter @dprk-cti/frontend run build')
   summaryLines.push('pnpm --filter @dprk-cti/frontend run preview')
   summaryLines.push('')
-  summaryLines.push('# 2) BE on :8000 + seeded session cookie for /dashboard')
-  summaryLines.push('#    (see apps/frontend/lighthouse/README.md)')
+  summaryLines.push('# 2) BE on :8000 + provider-state seed + session cookie')
+  summaryLines.push('#    for the target route (see lighthouse/README.md for the')
+  summaryLines.push('#    Group H per-route .given(...) state table).')
   summaryLines.push('')
-  summaryLines.push('# 3) Audit')
-  summaryLines.push('pnpm --filter @dprk-cti/frontend run lighthouse:audit')
+  summaryLines.push('# 3) Re-run THIS exact audit:')
+  // Echo the actual env values used, so the SUMMARY.md is a
+  // self-sufficient reproduction recipe. The reviewer can copy-
+  // paste it without referring back to the original invocation.
+  const envPrefix = [
+    URL_BASE !== 'http://127.0.0.1:4173' ? `LH_URL_BASE=${URL_BASE}` : '',
+    TARGET_PATH !== '/dashboard' ? `LH_PATH=${TARGET_PATH}` : '',
+    REPORTS_SUBDIR ? `LH_REPORTS_SUBDIR=${REPORTS_SUBDIR}` : '',
+  ]
+    .filter((s) => s.length > 0)
+    .join(' ')
+  if (envPrefix.length > 0) {
+    summaryLines.push(
+      `${envPrefix} \\`,
+      '  pnpm --filter @dprk-cti/frontend run lighthouse:audit',
+    )
+  } else {
+    summaryLines.push(
+      'pnpm --filter @dprk-cti/frontend run lighthouse:audit',
+    )
+  }
   summaryLines.push('```')
 
   const summaryPath = path.join(REPORTS_DIR, 'SUMMARY.md')

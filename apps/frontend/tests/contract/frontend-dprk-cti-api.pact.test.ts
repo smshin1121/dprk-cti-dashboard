@@ -1,25 +1,43 @@
 /**
  * Pact consumer test — frontend ↔ dprk-cti-api.
  *
- * Plan §4 Group H + §5.3, D8 lock (PR #12) + §4 Group J (PR #13).
- * Seven endpoints total; the `/api/v1/auth/me 401` sub-case in D8
- * is covered by the FE unit test `useMe.test.tsx::surfaces
- * ApiError 401 as null cached data` (it pins the queryCache
- * onError handler end-to-end). It is NOT included in the consumer
- * pact because pact-ruby's verifier applies
- * `custom_provider_headers` (the auth cookie) to every interaction
- * in a single run, which would authenticate the 401 request and
- * fail the contract. The 401 path is a FE-side cache behavior
- * contract, not an HTTP-shape contract, so Vitest is the right
- * home.
+ * Plan §4 Group H + §5.3, D8 lock (PR #12) + §4 Group J (PR #13) +
+ * PR #14 Group G (+5 interactions for detail routes + similar).
  *
- *   /api/v1/auth/me                — happy (200)  [PR #12]
- *   /api/v1/dashboard/summary       — happy (200) with filters [PR #12]
- *   /api/v1/actors                  — first page + offset pagination [PR #12]
- *   /api/v1/auth/logout             — 204  [PR #12]
- *   /api/v1/analytics/attack_matrix — happy (200) with filters [PR #13 J]
- *   /api/v1/analytics/trend         — happy (200) with filters [PR #13 J]
- *   /api/v1/analytics/geo           — happy (200) with filters [PR #13 J]
+ *   /api/v1/auth/me                           — happy (200) [PR #12]
+ *   /api/v1/dashboard/summary                 — happy with filters [PR #12]
+ *   /api/v1/actors                            — first page + pagination [PR #12]
+ *   /api/v1/auth/logout                       — 204 [PR #12]
+ *   /api/v1/analytics/attack_matrix           — happy with filters [PR #13 J]
+ *   /api/v1/analytics/trend                   — happy with filters [PR #13 J]
+ *   /api/v1/analytics/geo                     — happy with filters [PR #13 J]
+ *   /api/v1/reports/{id}                      — detail happy [PR #14 G]
+ *   /api/v1/incidents/{id}                    — detail happy [PR #14 G]
+ *   /api/v1/actors/{id}                       — detail happy [PR #14 G]
+ *   /api/v1/reports/{id}/similar              — populated [PR #14 G]
+ *                                              — D10 empty  [PR #14 G]
+ *
+ * Pinned-id strategy for detail + similar paths (PR #14 Group G):
+ *   Detail endpoints take the resource id in the PATH. A path-param
+ *   regex matcher would skate close to R3 (pact-js V3 FFI has
+ *   panicked on regex matchers applied to headers; the path matcher
+ *   surface is less tested). The safer approach is to literal-pin
+ *   the consumer path at a known fixture id (999001/999002/999003/
+ *   999020/999030), and have the BE state handler seed THAT id
+ *   specifically via `ON CONFLICT (id) DO NOTHING` upserts. No
+ *   regex, no sequence drift, no Lazarus-id coupling. The
+ *   constants live in `services/api/src/api/routers/pact_states.py`:
+ *   `REPORT_DETAIL_FIXTURE_ID` / `INCIDENT_DETAIL_FIXTURE_ID` /
+ *   `ACTOR_DETAIL_FIXTURE_ID` / `SIMILAR_POPULATED_SOURCE_ID` /
+ *   `SIMILAR_EMPTY_EMBEDDING_SOURCE_ID`.
+ *
+ * `/auth/me 401`:
+ *   Not in this pact — pact-ruby's Verifier applies
+ *   `custom_provider_headers` (the auth cookie) to every
+ *   interaction in a single run, which authenticates the 401
+ *   request and fails the contract. The 401 path is a FE-side
+ *   cache-eviction contract covered by
+ *   `useMe.test.tsx::surfaces ApiError 401 as null cached data`.
  *
  * Plan D2 locked shapes (PR #13) — pinned in the three analytics
  * interactions below verbatim:
@@ -490,6 +508,281 @@ describe('POST /api/v1/auth/logout', () => {
         method: 'POST',
       })
       expect(res.status).toBe(204)
+    })
+  })
+})
+
+// ---------------------------------------------------------------------
+// /reports/{id} — detail view (PR #14 Group E + Group G)
+// ---------------------------------------------------------------------
+//
+// PINNED FIXTURE ID: 999001 (REPORT_DETAIL_FIXTURE_ID). The BE
+// state handler seeds this id via `ON CONFLICT (id) DO NOTHING`
+// upsert — consumer + provider agree on the exact path, no regex.
+
+describe('GET /api/v1/reports/{id}', () => {
+  it('returns the full report detail with linked_incidents (D9 + D11)', async () => {
+    provider
+      .given('seeded report detail fixture and an authenticated analyst session')
+      .uponReceiving('a request for a report detail by id (PR #14 Group G)')
+      .withRequest({
+        method: 'GET',
+        path: '/api/v1/reports/999001',
+      })
+      .willRespondWith({
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+        // Shape matchers — plan D9 payload depth. linked_incidents
+        // is eachLike on summary shape (id, title, reported). D11
+        // navigation contract: each entry is a summary only, never
+        // a full IncidentItem; recursion is forbidden per D9.
+        body: like({
+          id: integer(999001),
+          title: string('Pact fixture — report detail source'),
+          url: string('https://pact.test/reports/detail/source'),
+          url_canonical: string('https://pact.test/reports/detail/source'),
+          published: string('2026-03-15'),
+          source_id: integer(1),
+          source_name: string('pact-fixture-source'),
+          lang: string('en'),
+          tlp: string('WHITE'),
+          summary: string('Pact fixture body — report detail happy path.'),
+          tags: eachLike('pact-detail-tag-a'),
+          codenames: eachLike('Andariel'),
+          techniques: eachLike('T1566'),
+          linked_incidents: eachLike({
+            id: integer(18),
+            title: string('Pact fixture — report detail linked incident 1'),
+            reported: string('2026-02-10'),
+          }),
+        }),
+      })
+
+    await provider.executeTest(async (mockServer) => {
+      const res = await fetch(`${mockServer.url}/api/v1/reports/999001`)
+      expect(res.status).toBe(200)
+      const body = (await res.json()) as {
+        id: number
+        title: string
+        linked_incidents: { id: number; title: string }[]
+      }
+      expect(body.id).toBeTypeOf('number')
+      expect(body.title).toBeTypeOf('string')
+      expect(Array.isArray(body.linked_incidents)).toBe(true)
+      expect(body.linked_incidents.length).toBeGreaterThan(0)
+    })
+  })
+})
+
+// ---------------------------------------------------------------------
+// /incidents/{id} — detail view (PR #14 Group E + Group G)
+// ---------------------------------------------------------------------
+//
+// PINNED FIXTURE ID: 999002 (INCIDENT_DETAIL_FIXTURE_ID).
+
+describe('GET /api/v1/incidents/{id}', () => {
+  it('returns the full incident detail with linked_reports (D9 + D11)', async () => {
+    provider
+      .given('seeded incident detail fixture and an authenticated analyst session')
+      .uponReceiving('a request for an incident detail by id (PR #14 Group G)')
+      .withRequest({
+        method: 'GET',
+        path: '/api/v1/incidents/999002',
+      })
+      .willRespondWith({
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+        // D9 payload depth — flat motivations / sectors / countries
+        // + capped linked_reports (eachLike summary shape). D11
+        // navigation: linked_reports rows link to /reports/:id via
+        // incident_sources M:N bidirectionally.
+        body: like({
+          id: integer(999002),
+          title: string('Pact fixture — incident detail'),
+          reported: string('2024-05-02'),
+          description: string('Pact fixture incident description'),
+          attribution_confidence: string('HIGH'),
+          motivations: eachLike('financial'),
+          sectors: eachLike('crypto'),
+          countries: eachLike('KR'),
+          linked_reports: eachLike({
+            id: integer(42),
+            title: string('Pact fixture — incident detail linked report'),
+            url: string('https://pact.test/reports/linked/1'),
+            published: string('2026-03-15'),
+            source_name: string('pact-fixture-source'),
+          }),
+        }),
+      })
+
+    await provider.executeTest(async (mockServer) => {
+      const res = await fetch(`${mockServer.url}/api/v1/incidents/999002`)
+      expect(res.status).toBe(200)
+      const body = (await res.json()) as {
+        id: number
+        linked_reports: { id: number; url: string }[]
+      }
+      expect(body.id).toBeTypeOf('number')
+      expect(Array.isArray(body.linked_reports)).toBe(true)
+      expect(body.linked_reports.length).toBeGreaterThan(0)
+    })
+  })
+})
+
+// ---------------------------------------------------------------------
+// /actors/{id} — detail view (PR #14 Group E + Group G)
+// ---------------------------------------------------------------------
+//
+// PINNED FIXTURE ID: 999003 (ACTOR_DETAIL_FIXTURE_ID). Previously
+// the Group C fixture aliased `_ensure_canonical_lazarus_fixture`
+// which DB-assigned the Lazarus id — a consumer path like
+// `/actors/1` would break as soon as the sequence put Lazarus
+// elsewhere. Group G pins a Pact-specific actor at 999003 so the
+// contract is robust to Lazarus natural-id drift.
+
+describe('GET /api/v1/actors/{id}', () => {
+  it('returns the actor detail (D11: no linked_reports surface)', async () => {
+    provider
+      .given('seeded actor detail fixture and an authenticated analyst session')
+      .uponReceiving('a request for an actor detail by id (PR #14 Group G)')
+      .withRequest({
+        method: 'GET',
+        path: '/api/v1/actors/999003',
+      })
+      .willRespondWith({
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+        // D11 out-of-scope pin: the ActorDetail DTO has NO
+        // linked_reports / reports / recent_reports field. This
+        // pact does not mention those fields — the BE should not
+        // emit them either; FE Zod strips them if it did.
+        body: like({
+          id: integer(999003),
+          name: string('Lazarus Group'),
+          mitre_intrusion_set_id: string('G0032'),
+          aka: eachLike('APT38'),
+          description: string('DPRK-attributed actor description'),
+          codenames: eachLike('Andariel'),
+        }),
+      })
+
+    await provider.executeTest(async (mockServer) => {
+      const res = await fetch(`${mockServer.url}/api/v1/actors/999003`)
+      expect(res.status).toBe(200)
+      const body = (await res.json()) as Record<string, unknown>
+      expect(body.id).toBeTypeOf('number')
+      expect(body.name).toBeTypeOf('string')
+      // D11 regression guard at the consumer level — the provider
+      // response must not carry any reports-like surface on actor
+      // detail (pact only asserts presence of matched keys, so the
+      // consumer test pins absence explicitly).
+      expect(body).not.toHaveProperty('linked_reports')
+      expect(body).not.toHaveProperty('reports')
+      expect(body).not.toHaveProperty('recent_reports')
+    })
+  })
+})
+
+// ---------------------------------------------------------------------
+// /reports/{id}/similar — populated + D10 empty (PR #14 Group F + G)
+// ---------------------------------------------------------------------
+//
+// Two distinct interactions share one endpoint shape:
+//   - populated: SIMILAR_POPULATED_SOURCE_ID=999020 seeds source +
+//     3 neighbors with embeddings. kNN returns 3 non-empty rows.
+//   - D10 empty: SIMILAR_EMPTY_EMBEDDING_SOURCE_ID=999030 seeds
+//     source WITH NULL embedding + neighbor WITH embedding. The
+//     BE's D10 branch returns {items: []} — NOT 500, NOT a fake
+//     fallback. Splitting these into separate .given(...) states
+//     lets the verifier cleanly exercise both paths without one
+//     fixture polluting the other's cache semantics.
+
+describe('GET /api/v1/reports/{id}/similar', () => {
+  it('returns populated similar items (D8 + D9)', async () => {
+    provider
+      .given(
+        'seeded similar reports populated fixture '
+          + 'and an authenticated analyst session',
+      )
+      .uponReceiving(
+        'a request for similar reports with a populated source (PR #14 Group G)',
+      )
+      .withRequest({
+        method: 'GET',
+        path: '/api/v1/reports/999020/similar',
+        query: { k: '10' },
+      })
+      .willRespondWith({
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+        // D8 shape — items is eachLike on {report, score}. report
+        // is LinkedReportSummary; score is [0,1] per SimilarReportEntry.
+        body: like({
+          items: eachLike({
+            report: {
+              id: integer(999011),
+              title: string('Pact fixture — similar neighbor'),
+              url: string('https://pact.test/reports/similar/neighbor-1'),
+              published: string('2025-12-01'),
+              source_name: string('pact-fixture-source'),
+            },
+            score: like(0.87),
+          }),
+        }),
+      })
+
+    await provider.executeTest(async (mockServer) => {
+      const url = new URL(`${mockServer.url}/api/v1/reports/999020/similar`)
+      url.searchParams.set('k', '10')
+      const res = await fetch(url.toString())
+      expect(res.status).toBe(200)
+      const body = (await res.json()) as {
+        items: { report: { id: number }; score: number }[]
+      }
+      expect(Array.isArray(body.items)).toBe(true)
+      expect(body.items.length).toBeGreaterThan(0)
+      expect(body.items[0].report.id).toBeTypeOf('number')
+      // D8 score bounds — float in [0, 1].
+      expect(body.items[0].score).toBeGreaterThanOrEqual(0)
+      expect(body.items[0].score).toBeLessThanOrEqual(1)
+    })
+  })
+
+  // Plan D10 empty contract — source has NULL embedding → 200 +
+  // {items: []}. NOT 500. NOT a fake fallback. The consumer pact
+  // MUST match items as an empty array literal, because eachLike
+  // requires ≥1 row at verify time.
+  it('returns the D10 empty contract when source has no embedding', async () => {
+    provider
+      .given(
+        'seeded similar reports empty-embedding fixture '
+          + 'and an authenticated analyst session',
+      )
+      .uponReceiving(
+        'a request for similar reports with a null-embedding source (PR #14 Group G)',
+      )
+      .withRequest({
+        method: 'GET',
+        path: '/api/v1/reports/999030/similar',
+        query: { k: '10' },
+      })
+      .willRespondWith({
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+        // D10: explicit empty array — no matcher. eachLike would
+        // require a non-empty example which the D10 path cannot
+        // produce; asserting the literal `[]` is the contract.
+        body: { items: [] },
+      })
+
+    await provider.executeTest(async (mockServer) => {
+      const url = new URL(`${mockServer.url}/api/v1/reports/999030/similar`)
+      url.searchParams.set('k', '10')
+      const res = await fetch(url.toString())
+      expect(res.status).toBe(200)
+      const body = (await res.json()) as { items: unknown[] }
+      expect(Array.isArray(body.items)).toBe(true)
+      expect(body.items).toHaveLength(0)
     })
   })
 })

@@ -34,6 +34,7 @@
  */
 
 import { useTranslation } from 'react-i18next'
+import { Link } from 'react-router-dom'
 
 import { cn } from '../../lib/utils'
 import { useDashboardSummary } from './useDashboardSummary'
@@ -113,15 +114,24 @@ export function GroupsMiniList(): JSX.Element {
             data-testid={`groups-mini-list-item-${group.group_id}`}
             data-group-id={group.group_id}
             data-report-count={group.report_count}
-            className="flex items-center justify-between gap-3 px-1 py-2 text-sm"
+            className="px-1 py-2 text-sm"
           >
-            <span className="truncate font-medium text-ink">{group.name}</span>
-            <span className="shrink-0 rounded bg-app px-2 py-0.5 text-xs font-mono text-ink-muted">
-              {group.report_count}{' '}
-              <span className="text-ink-subtle">
-                {t('dashboard.groupsMiniList.reportsSuffix')}
+            {/* PR #14 D11: row navigates to `/actors/:id` — the
+                `top_groups` payload carries `group_id` which aligns
+                with the actor PK (groups are actor rows in this
+                schema; see `actors_table` migration 0001). */}
+            <Link
+              to={`/actors/${group.group_id}`}
+              className="flex items-center justify-between gap-3 rounded hover:text-signal focus:outline-none focus:ring-2 focus:ring-signal"
+            >
+              <span className="truncate font-medium text-ink">{group.name}</span>
+              <span className="shrink-0 rounded bg-app px-2 py-0.5 text-xs font-mono text-ink-muted">
+                {group.report_count}{' '}
+                <span className="text-ink-subtle">
+                  {t('dashboard.groupsMiniList.reportsSuffix')}
+                </span>
               </span>
-            </span>
+            </Link>
           </li>
         ))}
       </ol>

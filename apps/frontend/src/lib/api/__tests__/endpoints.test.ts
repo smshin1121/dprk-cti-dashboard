@@ -1,8 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import {
+  getActorDetail,
   getDashboardSummary,
+  getIncidentDetail,
   getMe,
+  getReportDetail,
+  getSimilarReports,
   listActors,
   listIncidents,
   listReports,
@@ -225,5 +229,118 @@ describe('listIncidents', () => {
     const parsed = new URL(String(fetchSpy.mock.calls[0][0]))
     expect(parsed.searchParams.get('date_from')).toBe('2026-01-01')
     expect(parsed.searchParams.get('cursor')).toBe('xyz')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Detail + similar endpoints — PR #14 Group D
+// ---------------------------------------------------------------------------
+
+describe('getReportDetail', () => {
+  const body = {
+    id: 42,
+    title: 'Lazarus targets SK crypto exchanges',
+    url: 'https://mandiant.com/blog/lazarus-2026q1',
+    url_canonical: 'https://mandiant.com/blog/lazarus-2026q1',
+    published: '2026-03-15',
+    source_id: 7,
+    source_name: 'Mandiant',
+    lang: 'en',
+    tlp: 'WHITE',
+    summary: null,
+    reliability: null,
+    credibility: null,
+    tags: [],
+    codenames: [],
+    techniques: [],
+    linked_incidents: [],
+  }
+
+  it('GETs /api/v1/reports/{id} with no querystring', async () => {
+    const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify(body), { status: 200 }),
+    )
+    await getReportDetail(42)
+    const url = new URL(String(fetchSpy.mock.calls[0][0]))
+    expect(url.pathname).toBe('/api/v1/reports/42')
+    expect(url.search).toBe('')
+  })
+})
+
+describe('getIncidentDetail', () => {
+  const body = {
+    id: 18,
+    reported: null,
+    title: 'Ronin bridge',
+    description: null,
+    est_loss_usd: null,
+    attribution_confidence: null,
+    motivations: [],
+    sectors: [],
+    countries: [],
+    linked_reports: [],
+  }
+
+  it('GETs /api/v1/incidents/{id} with no querystring', async () => {
+    const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify(body), { status: 200 }),
+    )
+    await getIncidentDetail(18)
+    const url = new URL(String(fetchSpy.mock.calls[0][0]))
+    expect(url.pathname).toBe('/api/v1/incidents/18')
+    expect(url.search).toBe('')
+  })
+})
+
+describe('getActorDetail', () => {
+  const body = {
+    id: 3,
+    name: 'Lazarus Group',
+    mitre_intrusion_set_id: 'G0032',
+    aka: [],
+    description: null,
+    codenames: [],
+  }
+
+  it('GETs /api/v1/actors/{id} with no querystring', async () => {
+    const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify(body), { status: 200 }),
+    )
+    await getActorDetail(3)
+    const url = new URL(String(fetchSpy.mock.calls[0][0]))
+    expect(url.pathname).toBe('/api/v1/actors/3')
+    expect(url.search).toBe('')
+  })
+})
+
+describe('getSimilarReports', () => {
+  const empty = { items: [] }
+
+  it('GETs /api/v1/reports/{id}/similar with default k=10', async () => {
+    const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify(empty), { status: 200 }),
+    )
+    await getSimilarReports(42)
+    const url = new URL(String(fetchSpy.mock.calls[0][0]))
+    expect(url.pathname).toBe('/api/v1/reports/42/similar')
+    expect(url.searchParams.get('k')).toBe('10')
+  })
+
+  it('sends caller-supplied k on the querystring', async () => {
+    const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify(empty), { status: 200 }),
+    )
+    await getSimilarReports(42, 25)
+    const url = new URL(String(fetchSpy.mock.calls[0][0]))
+    expect(url.searchParams.get('k')).toBe('25')
+  })
+
+  // D10 empty contract: helper returns {items: []} without throwing.
+  it('resolves the D10 empty contract verbatim', async () => {
+    vi.spyOn(global, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify(empty), { status: 200 }),
+    )
+    const res = await getSimilarReports(42)
+    expect(res).toEqual({ items: [] })
   })
 })

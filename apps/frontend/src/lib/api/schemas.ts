@@ -250,3 +250,179 @@ export type TrendBucket = z.infer<typeof trendBucketSchema>
 export type TrendResponse = z.infer<typeof trendResponseSchema>
 export type GeoCountry = z.infer<typeof geoCountrySchema>
 export type GeoResponse = z.infer<typeof geoResponseSchema>
+
+/**
+ * Detail views + similar reports — PR #14 Phase 3 slice 1 (Group D).
+ *
+ * Mirrors BE `services/api/src/api/schemas/read.py` for the three
+ * detail endpoints + the /similar endpoint:
+ *
+ *   GET /api/v1/reports/{id}            → ReportDetail
+ *   GET /api/v1/incidents/{id}          → IncidentDetail
+ *   GET /api/v1/actors/{id}             → ActorDetail
+ *   GET /api/v1/reports/{id}/similar    → SimilarReportsResponse
+ *
+ * Contract locks carried from `docs/plans/pr14-detail-views.md`:
+ *
+ * - **D9 payload caps** — `linked_incidents` ≤ 10,
+ *   `linked_reports` ≤ 20, `similar.items` ≤ 50. BE applies the cap
+ *   in SQL AND in the Pydantic DTO (`Field(max_length=...)`); this
+ *   FE mirror puts the same ceiling on the Zod side so a BE bypass
+ *   that oversized a response surfaces as a Zod parse error, not a
+ *   silent UI overflow.
+ *
+ * - **D11 navigation contract** — report ↔ incident linking through
+ *   `incident_sources` only. `actorDetailSchema` deliberately has
+ *   NO `linked_reports` / `reports` / `recent_reports` key: that
+ *   surface needs `report_codenames` and is out of scope this PR.
+ *   Zod default strip-mode silently drops unknown keys, so a BE
+ *   leak of such a field would be dropped before reaching the page.
+ *   Pinned by `schemas.test.ts::actorDetailSchema_strips_reports_keys`.
+ *
+ * - **D10 empty-contract honesty** — `similarReportsResponseSchema`
+ *   parses `{items: []}` successfully; the panel owns the empty
+ *   state. No fake/heuristic fallback on either side.
+ *
+ * - **D8 similar semantics** — `score ∈ [0, 1]` (cosine similarity,
+ *   emitted as `1 - distance`). `SIMILAR_K_*` constants mirror the
+ *   BE router's `Query(ge=..., le=...)` bounds.
+ */
+
+/**
+ * `LinkedIncidentSummary` — one row of `ReportDetail.linked_incidents`
+ * (plan D9 + D11). Shallow summary only: a click navigates to
+ * `/incidents/{id}` for the full detail.
+ */
+export const linkedIncidentSummarySchema = z.object({
+  id: z.number().int(),
+  title: z.string(),
+  /** ISO YYYY-MM-DD; BE `date | None`. */
+  reported: z.string().nullish(),
+})
+
+/**
+ * `LinkedReportSummary` — one row of `IncidentDetail.linked_reports`
+ * AND of `SimilarReportEntry.report` (plan D9 + D11). Shared shape
+ * so the detail page + similar-panel render with one row component.
+ * `published` is non-nullable on the BE (`date`), `source_name` is
+ * nullable.
+ */
+export const linkedReportSummarySchema = z.object({
+  id: z.number().int(),
+  title: z.string(),
+  url: z.string(),
+  /** ISO YYYY-MM-DD; BE non-nullable `date`. */
+  published: z.string(),
+  source_name: z.string().nullish(),
+})
+
+/**
+ * Similar-reports bounds (plan D8). Mirrors BE
+ * `services/api/src/api/schemas/read.py::SIMILAR_K_*` — when the BE
+ * bumps the cap, update here in the same PR. Not exported as a
+ * `z.*` schema because the bound lives at the router query-param
+ * layer; the DTO's `max_length=SIMILAR_K_MAX` is what this FE mirror
+ * enforces via `.max()`.
+ */
+export const SIMILAR_K_MIN = 1
+export const SIMILAR_K_MAX = 50
+export const SIMILAR_K_DEFAULT = 10
+
+/**
+ * `GET /api/v1/reports/{id}` — plan D1 + D9 + D11.
+ *
+ * ReportItem-equivalent flat fields plus the detail-only free-form
+ * fields (`summary` / `reliability` / `credibility`) plus flat
+ * `tags` / `codenames` / `techniques` plus the capped
+ * `linked_incidents` collection (D9 cap `REPORT_DETAIL_INCIDENTS_CAP`
+ * = 10; ordered by `incidents.reported DESC, id DESC`).
+ */
+export const reportDetailSchema = z.object({
+  id: z.number().int(),
+  title: z.string(),
+  url: z.string(),
+  url_canonical: z.string(),
+  published: z.string(),
+  source_id: z.number().int().nullish(),
+  source_name: z.string().nullish(),
+  lang: z.string().nullish(),
+  tlp: z.string().nullish(),
+  summary: z.string().nullish(),
+  reliability: z.string().nullish(),
+  credibility: z.string().nullish(),
+  tags: z.array(z.string()),
+  codenames: z.array(z.string()),
+  techniques: z.array(z.string()),
+  linked_incidents: z.array(linkedIncidentSummarySchema).max(10),
+})
+
+/**
+ * `GET /api/v1/incidents/{id}` — plan D1 + D9 + D11.
+ *
+ * IncidentItem-equivalent fields (including flat motivations /
+ * sectors / countries arrays) plus the capped `linked_reports`
+ * collection (D9 cap `INCIDENT_DETAIL_REPORTS_CAP` = 20; ordered by
+ * `reports.published DESC, reports.id DESC`).
+ */
+export const incidentDetailSchema = z.object({
+  id: z.number().int(),
+  reported: z.string().nullish(),
+  title: z.string(),
+  description: z.string().nullish(),
+  est_loss_usd: z.number().int().nullish(),
+  attribution_confidence: z.string().nullish(),
+  motivations: z.array(z.string()),
+  sectors: z.array(z.string()),
+  countries: z.array(z.string()),
+  linked_reports: z.array(linkedReportSummarySchema).max(20),
+})
+
+/**
+ * `GET /api/v1/actors/{id}` — plan D1 + D11.
+ *
+ * ActorItem-equivalent fields only. No `linked_reports` /
+ * `reports` / `recent_reports` — that surface traverses
+ * `report_codenames` and is D11 out-of-scope this PR. Zod strip-mode
+ * makes the absence enforceable: a BE leak of any reports-like key
+ * is silently dropped here, which `schemas.test.ts` pins.
+ */
+export const actorDetailSchema = z.object({
+  id: z.number().int(),
+  name: z.string(),
+  mitre_intrusion_set_id: z.string().nullish(),
+  aka: z.array(z.string()),
+  description: z.string().nullish(),
+  codenames: z.array(z.string()),
+})
+
+/**
+ * `SimilarReportEntry` — one kNN hit (plan D8).
+ *
+ * `score` is cosine similarity in `[0, 1]` (pgvector `<=>` is
+ * distance; BE emits `1 - distance`). Higher is more similar.
+ * Bound is inclusive per BE `Field(ge=0.0, le=1.0)`.
+ */
+export const similarReportEntrySchema = z.object({
+  report: linkedReportSummarySchema,
+  score: z.number().gte(0).lte(1),
+})
+
+/**
+ * `GET /api/v1/reports/{id}/similar?k=N` — plan D2 + D8 + D10.
+ *
+ * `items` length bounded by `SIMILAR_K_MAX`. Empty arrays are legal
+ * (D10: source has NULL embedding OR kNN returned zero rows → 200
+ * with `{items: []}`). The panel renders an empty-state card; no
+ * fake/heuristic fallback is injected here.
+ */
+export const similarReportsResponseSchema = z.object({
+  items: z.array(similarReportEntrySchema).max(SIMILAR_K_MAX),
+})
+
+export type LinkedIncidentSummary = z.infer<typeof linkedIncidentSummarySchema>
+export type LinkedReportSummary = z.infer<typeof linkedReportSummarySchema>
+export type ReportDetail = z.infer<typeof reportDetailSchema>
+export type IncidentDetail = z.infer<typeof incidentDetailSchema>
+export type ActorDetail = z.infer<typeof actorDetailSchema>
+export type SimilarReportEntry = z.infer<typeof similarReportEntrySchema>
+export type SimilarReportsResponse = z.infer<typeof similarReportsResponseSchema>

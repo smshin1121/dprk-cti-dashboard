@@ -55,11 +55,23 @@ if not _PG_URL:
 
 
 from api.routers.pact_states import (  # noqa: E402
+    ACTOR_DETAIL_FIXTURE_ID,
+    INCIDENT_DETAIL_FIXTURE_ID,
+    REPORT_DETAIL_FIXTURE_ID,
+    SIMILAR_EMPTY_EMBEDDING_NEIGHBOR_ID,
+    SIMILAR_EMPTY_EMBEDDING_SOURCE_ID,
+    SIMILAR_POPULATED_NEIGHBOR_IDS,
+    SIMILAR_POPULATED_SOURCE_ID,
+    _ensure_actor_detail_fixture,
     _ensure_attack_matrix_fixture,
     _ensure_canonical_lazarus_fixture,
     _ensure_dashboard_fixture,
     _ensure_geo_fixture,
+    _ensure_incident_detail_fixture,
     _ensure_min_actors,
+    _ensure_report_detail_fixture,
+    _ensure_similar_reports_empty_embedding_fixture,
+    _ensure_similar_reports_populated_fixture,
     _ensure_trend_fixture,
 )
 from api.read.analytics_aggregator import (  # noqa: E402
@@ -68,7 +80,13 @@ from api.read.analytics_aggregator import (  # noqa: E402
     compute_trend,
 )
 from api.read.dashboard_aggregator import compute_dashboard_summary  # noqa: E402
+from api.read.detail_aggregator import (  # noqa: E402
+    get_actor_detail,
+    get_incident_detail,
+    get_report_detail,
+)
 from api.read.repositories import list_actors  # noqa: E402
+from api.read.similar_service import get_similar_reports  # noqa: E402
 
 
 @pytest_asyncio.fixture(scope="module")
@@ -90,13 +108,18 @@ async def pg_session(
 @pytest_asyncio.fixture
 async def clean_pg(pg_engine: AsyncEngine) -> None:
     async with pg_engine.begin() as conn:
+        # ``incident_sources`` joined the TRUNCATE list in PR #14
+        # Group C — the detail + similar fixtures both touch this
+        # M:N table and a leaked row from a prior run would pollute
+        # the capped ``linked_incidents`` / ``linked_reports``
+        # shape tests.
         await conn.execute(
             sa.text(
                 "TRUNCATE report_tags, report_codenames, report_techniques, "
                 "reports, tags, techniques, "
                 "sources, codenames, groups, "
                 "incident_motivations, incident_sectors, "
-                "incident_countries, incidents "
+                "incident_countries, incident_sources, incidents "
                 "RESTART IDENTITY CASCADE"
             )
         )
@@ -505,3 +528,313 @@ async def test_analytics_pact_fixtures_are_idempotent(
     assert trend["buckets"]
     geo = await compute_geo(pg_session)
     assert geo["countries"]
+
+
+# ---------------------------------------------------------------------------
+# PR #14 Group C — detail + similar-reports fixture verification
+# ---------------------------------------------------------------------------
+#
+# Four concerns the user pinned for Group C review:
+#   1. similar populated matcher is actually satisfied by the fixture
+#   2. empty-embedding state reproduces D10 200 + {items: []}
+#   3. all fixtures are idempotent
+#   4. pact path-/query-params match the fixture exactly
+#
+# Each test class below targets one concern + one fixture. Tests all
+# skip locally (no POSTGRES_TEST_URL); they run in the contract-verify
+# CI job against a live uvicorn + PG.
+
+
+async def test_report_detail_fixture_satisfies_matcher_and_caps(
+    clean_pg: None, pg_session: AsyncSession
+) -> None:
+    """``/reports/{id}`` pact uses a matcher that expects every core
+    field non-null + ``tags / codenames / techniques / linked_incidents``
+    as non-empty arrays. This test hits the real detail aggregator
+    and asserts the shape.
+    """
+    await _ensure_report_detail_fixture(pg_session)
+    await pg_session.commit()
+
+    detail = await get_report_detail(
+        pg_session, report_id=REPORT_DETAIL_FIXTURE_ID
+    )
+    assert detail is not None, "fixture report not found by detail aggregator"
+    # Core fields populated — no null in fields the pact matcher
+    # declares as string/int.
+    assert detail["id"] == REPORT_DETAIL_FIXTURE_ID
+    assert detail["title"]
+    assert detail["url"] and detail["url_canonical"]
+    assert detail["published"] is not None
+    assert detail["source_id"] is not None
+    assert detail["source_name"]
+    # Related collections non-empty (matcher uses eachLike on each).
+    assert detail["tags"], "report detail fixture tags empty"
+    assert detail["codenames"], "report detail fixture codenames empty"
+    assert detail["techniques"], "report detail fixture techniques empty"
+    assert detail["linked_incidents"], (
+        "report detail fixture linked_incidents empty — incident_sources "
+        "seed path may be broken"
+    )
+    # D9 cap respected (fixture seeds 2, cap is 10).
+    assert len(detail["linked_incidents"]) == 2
+
+
+async def test_report_detail_fixture_is_idempotent(
+    clean_pg: None, pg_session: AsyncSession
+) -> None:
+    """Idempotency — the verifier replays state setup before every
+    interaction. A helper that accidentally creates a new row on
+    each call would break the pinned fixture id or explode the
+    linked_incidents capped list over time.
+    """
+    await _ensure_report_detail_fixture(pg_session)
+    await _ensure_report_detail_fixture(pg_session)
+    await _ensure_report_detail_fixture(pg_session)
+    await pg_session.commit()
+
+    detail = await get_report_detail(
+        pg_session, report_id=REPORT_DETAIL_FIXTURE_ID
+    )
+    assert detail is not None
+    # Linked-incidents count is STILL 2 (not 4 or 6) after three
+    # state setups — incident_sources ON CONFLICT held.
+    assert len(detail["linked_incidents"]) == 2
+
+
+async def test_incident_detail_fixture_satisfies_matcher_and_caps(
+    clean_pg: None, pg_session: AsyncSession
+) -> None:
+    """``/incidents/{id}`` pact mirror of the report test above."""
+    await _ensure_incident_detail_fixture(pg_session)
+    await pg_session.commit()
+
+    detail = await get_incident_detail(
+        pg_session, incident_id=INCIDENT_DETAIL_FIXTURE_ID
+    )
+    assert detail is not None
+    assert detail["id"] == INCIDENT_DETAIL_FIXTURE_ID
+    assert detail["title"]
+    assert detail["reported"] is not None
+    assert detail["motivations"], "incident fixture motivations empty"
+    assert detail["sectors"], "incident fixture sectors empty"
+    assert detail["countries"], "incident fixture countries empty"
+    assert detail["linked_reports"], (
+        "incident fixture linked_reports empty — incident_sources seed "
+        "path may be broken"
+    )
+    assert len(detail["linked_reports"]) == 2
+
+
+async def test_incident_detail_fixture_is_idempotent(
+    clean_pg: None, pg_session: AsyncSession
+) -> None:
+    await _ensure_incident_detail_fixture(pg_session)
+    await _ensure_incident_detail_fixture(pg_session)
+    await pg_session.commit()
+    detail = await get_incident_detail(
+        pg_session, incident_id=INCIDENT_DETAIL_FIXTURE_ID
+    )
+    assert detail is not None
+    assert len(detail["linked_reports"]) == 2
+
+
+async def test_actor_detail_fixture_satisfies_matcher(
+    clean_pg: None, pg_session: AsyncSession
+) -> None:
+    """``/actors/{id}`` pact — core fields + non-empty codenames. No
+    linked_reports path per plan D11.
+
+    PR #14 Group G: fixture pins ``ACTOR_DETAIL_FIXTURE_ID`` so the
+    pact consumer can target ``/actors/999003`` literally (no regex
+    path matcher, no DB-sequence drift). Matchers are shape-only
+    (like/eachLike), so the pact's example values ("Lazarus Group",
+    "Andariel") match this fixture's values ("Pact fixture actor
+    detail", "pact-actor-detail-codename") by type — integer for id,
+    string for names, arrays non-empty — not by exact value.
+    """
+    await _ensure_actor_detail_fixture(pg_session)
+    await pg_session.commit()
+
+    # Pinned id — no SELECT-by-name probe.
+    detail = await get_actor_detail(
+        pg_session, actor_id=ACTOR_DETAIL_FIXTURE_ID
+    )
+    assert detail is not None, (
+        f"actor detail fixture not seeded at id={ACTOR_DETAIL_FIXTURE_ID}"
+    )
+    # Shape — not exact value. These are the matchers the pact
+    # consumer asserts on; any fixture that satisfies the PACT
+    # eachLike/like shape satisfies this test.
+    assert isinstance(detail["id"], int)
+    assert detail["id"] == ACTOR_DETAIL_FIXTURE_ID
+    assert isinstance(detail["name"], str) and detail["name"]
+    assert isinstance(detail["mitre_intrusion_set_id"], str)
+    assert detail["aka"], "actor detail fixture aka empty"
+    assert detail["description"]
+    assert detail["codenames"], (
+        "actor detail fixture codenames empty — pinned codename link broken"
+    )
+    # D11 lock — actor detail MUST NOT expose reports-like keys.
+    for forbidden in ("linked_reports", "reports", "recent_reports"):
+        assert forbidden not in detail
+
+
+async def test_actor_detail_fixture_is_idempotent(
+    clean_pg: None, pg_session: AsyncSession
+) -> None:
+    """PR #14 Group G idempotency — state replays across a verifier
+    run MUST not double-insert the pinned actor or its codename.
+
+    The groups insert uses ``ON CONFLICT (id) DO NOTHING``; the
+    codename upsert is SELECT-first. Two consecutive calls produce
+    exactly one row each.
+    """
+    await _ensure_actor_detail_fixture(pg_session)
+    await _ensure_actor_detail_fixture(pg_session)
+    await pg_session.commit()
+
+    group_count = (
+        await pg_session.execute(
+            sa.text(
+                "SELECT COUNT(*) FROM groups WHERE id = :id"
+            ),
+            {"id": ACTOR_DETAIL_FIXTURE_ID},
+        )
+    ).scalar_one()
+    assert int(group_count) == 1
+
+    codename_count = (
+        await pg_session.execute(
+            sa.text(
+                "SELECT COUNT(*) FROM codenames WHERE group_id = :g"
+            ),
+            {"g": ACTOR_DETAIL_FIXTURE_ID},
+        )
+    ).scalar_one()
+    assert int(codename_count) == 1
+
+
+async def test_similar_populated_fixture_produces_non_empty_knn(
+    clean_pg: None, pg_session: AsyncSession
+) -> None:
+    """Plan D8 populated path — source + 3 neighbors, all with
+    embeddings. The live kNN against the seeded source must return
+    a non-empty ``items`` (3 neighbors minus self = 3 rows).
+    Self-exclusion invariant: ``SIMILAR_POPULATED_SOURCE_ID`` never
+    appears in the result.
+    """
+    await _ensure_similar_reports_populated_fixture(pg_session)
+    await pg_session.commit()
+
+    result = await get_similar_reports(
+        pg_session, source_report_id=SIMILAR_POPULATED_SOURCE_ID, k=10
+    )
+    assert result.found is True
+    assert result.items, (
+        "similar populated fixture produced empty items — kNN not hitting "
+        "seeded embeddings or _make_embedding(...) malformed"
+    )
+    # Self-exclusion (plan D8a).
+    ids = [row["report"]["id"] for row in result.items]
+    assert SIMILAR_POPULATED_SOURCE_ID not in ids
+    # Neighbors present (may be subset; matcher is eachLike on shape).
+    assert set(ids) & set(SIMILAR_POPULATED_NEIGHBOR_IDS), (
+        "similar populated fixture returned unexpected ids — expected "
+        f"overlap with {SIMILAR_POPULATED_NEIGHBOR_IDS}"
+    )
+    # Score shape (float in [0, 1]).
+    for row in result.items:
+        assert 0.0 <= row["score"] <= 1.0
+
+
+async def test_similar_populated_fixture_is_idempotent(
+    clean_pg: None, pg_session: AsyncSession
+) -> None:
+    """Three state setups → same 4 rows (1 source + 3 neighbors).
+    ON CONFLICT DO UPDATE holds.
+    """
+    await _ensure_similar_reports_populated_fixture(pg_session)
+    await _ensure_similar_reports_populated_fixture(pg_session)
+    await _ensure_similar_reports_populated_fixture(pg_session)
+    await pg_session.commit()
+
+    count = (
+        await pg_session.execute(
+            sa.text(
+                "SELECT COUNT(*) FROM reports WHERE id IN ("
+                ":src, :n1, :n2, :n3)"
+            ),
+            {
+                "src": SIMILAR_POPULATED_SOURCE_ID,
+                "n1": SIMILAR_POPULATED_NEIGHBOR_IDS[0],
+                "n2": SIMILAR_POPULATED_NEIGHBOR_IDS[1],
+                "n3": SIMILAR_POPULATED_NEIGHBOR_IDS[2],
+            },
+        )
+    ).scalar_one()
+    assert int(count) == 4
+
+
+async def test_similar_empty_embedding_fixture_produces_D10_empty(
+    clean_pg: None, pg_session: AsyncSession
+) -> None:
+    """Plan D10 empty-contract path. Source exists but has NULL
+    embedding; one neighbor exists WITH an embedding. The service
+    must return ``{items: []}`` — not a fake fallback using the
+    neighbor as a "most similar" substitute.
+
+    This test is the regression guard the user called out for
+    Group C review — if a future refactor collapses the D10 check
+    to "DB-wide emptiness", this fixture (DB has embeddings
+    elsewhere) would trick the check and return the neighbor, and
+    this test fires red.
+    """
+    await _ensure_similar_reports_empty_embedding_fixture(pg_session)
+    await pg_session.commit()
+
+    result = await get_similar_reports(
+        pg_session,
+        source_report_id=SIMILAR_EMPTY_EMBEDDING_SOURCE_ID,
+        k=10,
+    )
+    # 200 on the endpoint lifts to found=True at service layer.
+    assert result.found is True
+    assert result.items == [], (
+        "D10 empty-contract violated — source has no embedding yet the "
+        "service returned similar rows. Possible regression: the check "
+        "collapsed to 'DB-wide emptiness' instead of 'source NULL'."
+    )
+    # Sanity — the neighbor with an embedding still EXISTS in the DB
+    # (otherwise the regression guard is vacuous).
+    neighbor_exists = (
+        await pg_session.execute(
+            sa.text(
+                "SELECT embedding IS NOT NULL FROM reports WHERE id = :id"
+            ),
+            {"id": SIMILAR_EMPTY_EMBEDDING_NEIGHBOR_ID},
+        )
+    ).scalar()
+    assert neighbor_exists is True, (
+        "fixture setup error — empty-embedding neighbor lost its embedding"
+    )
+
+
+async def test_similar_empty_embedding_fixture_is_idempotent(
+    clean_pg: None, pg_session: AsyncSession
+) -> None:
+    await _ensure_similar_reports_empty_embedding_fixture(pg_session)
+    await _ensure_similar_reports_empty_embedding_fixture(pg_session)
+    await pg_session.commit()
+
+    src_null = (
+        await pg_session.execute(
+            sa.text(
+                "SELECT embedding IS NULL FROM reports WHERE id = :id"
+            ),
+            {"id": SIMILAR_EMPTY_EMBEDDING_SOURCE_ID},
+        )
+    ).scalar()
+    # Source stays NULL across repeats — ON CONFLICT UPDATE sets
+    # embedding = NULL each time.
+    assert src_null is True

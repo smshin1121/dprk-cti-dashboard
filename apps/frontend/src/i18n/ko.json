@@ -74,11 +74,6 @@
       "title": "최신 보고서",
       "empty": "현재 필터에 해당하는 보고서가 없습니다."
     },
-    "similarReports": {
-      "title": "유사 보고서",
-      "placeholder": "보고서 상세 보기가 활성화되면 표시됩니다.",
-      "phaseNote": "Phase 3 예정 — 상세 뷰 연동 후 제공됩니다."
-    },
     "alerts": {
       "trigger": "알림",
       "title": "알림",

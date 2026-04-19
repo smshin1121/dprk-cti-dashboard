@@ -1,11 +1,13 @@
 /**
- * /dashboard — protected landing. PR #13 Group I wiring.
+ * /dashboard — protected landing. PR #13 Group I wiring; PR #14
+ * Group F removes the SimilarReports stub (migrated to a live panel
+ * on `ReportDetailPage`).
  *
  * Layout mirrors design doc §4.2 areas [B] → [F]:
  *   [B] KPIStrip                                (top, full width)
  *   [C] WorldMap                                (left column, large)
  *   [D] AttackHeatmap + MotivationDonut + YearBar
- *   [E] TrendChart + GroupsMiniList + ReportFeed + SimilarReports
+ *   [E] TrendChart + GroupsMiniList + ReportFeed (full-width)
  *   [F] AlertsDrawer                            (trigger floats in header row)
  *
  * Every panel is self-contained and renders its own loading /
@@ -19,8 +21,12 @@
  *   - AttackHeatmap consumes `useAttackMatrix()`.
  *   - TrendChart consumes `useTrend()`.
  *   - ReportFeed consumes `useReportsList()` (PR #12 hook).
- *   - SimilarReports is a Phase 3 stub (no data plumbing).
  *   - AlertsDrawer is a Phase 4 static shell (no data plumbing).
+ *
+ * Similar-reports surface: lives on `ReportDetailPage`, not here.
+ * The dashboard has no "selected report" context, so "similar to
+ * what?" has no anchor at this scope; the panel is keyed on the
+ * detail route's path-param id instead.
  */
 
 import { AlertsDrawer } from '../features/dashboard/AlertsDrawer'
@@ -29,7 +35,6 @@ import { GroupsMiniList } from '../features/dashboard/GroupsMiniList'
 import { KPIStrip } from '../features/dashboard/KPIStrip'
 import { MotivationDonut } from '../features/dashboard/MotivationDonut'
 import { ReportFeed } from '../features/dashboard/ReportFeed'
-import { SimilarReports } from '../features/dashboard/SimilarReports'
 import { TrendChart } from '../features/dashboard/TrendChart'
 import { WorldMap } from '../features/dashboard/WorldMap'
 import { YearBar } from '../features/dashboard/YearBar'
@@ -69,15 +74,15 @@ export function DashboardPage(): JSX.Element {
         <YearBar />
       </div>
 
-      {/* [E] bottom grid — trend + groups + feed + similar */}
+      {/* [E] bottom grid — trend + groups (row 1), feed full-width
+          (row 2). SimilarReports moved to ReportDetailPage in
+          PR #14 Group F; the remaining ReportFeed slot spans full
+          width so the layout stays balanced. */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <TrendChart />
         <GroupsMiniList />
       </div>
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <ReportFeed />
-        <SimilarReports />
-      </div>
+      <ReportFeed />
     </section>
   )
 }

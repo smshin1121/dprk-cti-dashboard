@@ -1,5 +1,11 @@
 """Incidents router — ``GET /api/v1/incidents`` (PR #11 Group D).
 
+Endpoints:
+- ``GET /api/v1/incidents`` — keyset-paginated list (PR #11 Group D).
+- ``GET /api/v1/incidents/{incident_id}`` — single incident detail
+  with flat motivations/sectors/countries and capped linked_reports
+  list (PR #14 Phase 3 slice 1 Group A; plan D1 + D9 + D11).
+
 Plan §2.3 matrix:
 - keyset cursor ``(reported DESC, id DESC)`` (D3 / D11)
 - filters: ``date_from`` / ``date_to``, ``motivation[]`` / ``sector[]``
@@ -30,9 +36,9 @@ from ..auth.schemas import CurrentUser
 from ..db import get_db
 from ..deps import require_role
 from ..rate_limit import get_limiter
-from ..read import repositories as read_repositories
+from ..read import detail_aggregator, repositories as read_repositories
 from ..read.pagination import CursorDecodeError, decode_cursor, encode_cursor
-from ..schemas.read import IncidentItem, IncidentListResponse
+from ..schemas.read import IncidentDetail, IncidentItem, IncidentListResponse
 
 router = APIRouter()
 
@@ -240,3 +246,67 @@ async def list_incidents_endpoint(
         items=[IncidentItem.model_validate(row) for row in rows],
         next_cursor=next_cursor,
     )
+
+
+@router.get(
+    "/{incident_id}",
+    response_model=IncidentDetail,
+    summary="Get one incident with flat N:M arrays and capped linked reports",
+    description=(
+        "Shallow-joined detail view of a single incident. Plan D9 caps "
+        "the `linked_reports` collection at 20 newest-published entries "
+        "(ordered `published DESC, id DESC`). `motivations`, `sectors`, "
+        "and `countries` are flat string lists aggregated from the three "
+        "N:M join tables. Unlike the list endpoint, this detail endpoint "
+        "surfaces `reported=NULL` rows (detail views do not paginate). "
+        "Returns 404 when the incident id is unknown."
+    ),
+    responses={
+        200: {
+            "description": "Incident detail with shallow joins (plan D9).",
+        },
+        401: {"description": "Missing or invalid session cookie"},
+        403: {"description": "Role not analyst / researcher / policy / soc / admin"},
+        404: {
+            "description": "Incident id not found",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "incident not found"}
+                }
+            },
+        },
+        422: {
+            "description": "Invalid path parameter — non-integer incident_id.",
+        },
+        429: {
+            "description": (
+                "Rate limit exceeded — 60/min/user per-route bucket."
+            ),
+            "content": {
+                "application/json": {
+                    "example": {
+                        "error": "rate_limit_exceeded",
+                        "message": "60 per 1 minute",
+                    }
+                }
+            },
+        },
+    },
+)
+@_limiter.limit("60/minute")
+async def get_incident_detail_endpoint(
+    request: Request,
+    incident_id: int,
+    session: AsyncSession = Depends(get_db),
+    _current_user: CurrentUser = Depends(require_role(*_READ_ROLES)),
+) -> Response:
+    """Incident detail with linked reports (plan D1 + D9 + D11)."""
+    detail = await detail_aggregator.get_incident_detail(
+        session, incident_id=incident_id
+    )
+    if detail is None:
+        return JSONResponse(
+            status_code=404,
+            content={"detail": "incident not found"},
+        )
+    return IncidentDetail.model_validate(detail)
