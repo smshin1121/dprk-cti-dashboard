@@ -3,12 +3,15 @@ import { describe, expect, it } from 'vitest'
 import {
   actorDetailSchema,
   actorListResponseSchema,
+  actorReportsResponseSchema,
   attackMatrixResponseSchema,
   currentUserSchema,
   dashboardSummarySchema,
   geoResponseSchema,
   incidentDetailSchema,
   reportDetailSchema,
+  reportItemSchema,
+  reportListResponseSchema,
   similarReportsResponseSchema,
   SIMILAR_K_MAX,
   trendResponseSchema,
@@ -683,5 +686,144 @@ describe('similarReportsResponseSchema', () => {
       ],
     }
     expect(() => similarReportsResponseSchema.parse(bad)).toThrow(/published/i)
+  })
+})
+
+// PR #15 Group D — actor-reports response schema. Plan D9 reuse of
+// ReportListResponse verbatim; actorReportsResponseSchema must be
+// reference-identical to reportListResponseSchema.
+describe('actorReportsResponseSchema (PR #15 D9 envelope reuse)', () => {
+  const beHappyExample = {
+    items: [
+      {
+        id: 999050,
+        title: 'Pact fixture — actor reports #1 (newest)',
+        url: 'https://pact.test/actor-reports/999050',
+        url_canonical: 'https://pact.test/actor-reports/999050',
+        published: '2026-03-15',
+        source_id: 1,
+        source_name: 'Vendor A',
+        lang: 'en',
+        tlp: 'WHITE',
+      },
+    ],
+    next_cursor: null,
+  }
+
+  // D15(b/c/d) — 200 + empty envelope. Panel-friendly shape:
+  // passes straight through to the empty-state card.
+  const beEmptyExample = { items: [], next_cursor: null }
+
+  // D9 reference-identity proof — "reuse ReportListResponse
+  // verbatim" means actorReportsResponseSchema IS the same Zod
+  // object, not a structural copy.
+  it('is reference-identical to reportListResponseSchema (D9 alias)', () => {
+    expect(actorReportsResponseSchema).toBe(reportListResponseSchema)
+  })
+
+  it('parses the populated BE example verbatim', () => {
+    const parsed = actorReportsResponseSchema.parse(beHappyExample)
+    expect(parsed.items).toHaveLength(1)
+    expect(parsed.items[0].id).toBe(999050)
+    expect(parsed.next_cursor).toBeNull()
+  })
+
+  // Plan D9 envelope — NO `total`, NO `limit` echo. If a future BE
+  // edit accidentally adds total/limit, the strip-mode drops them
+  // silently (consistent with PR #14 Group D D11 defensive pattern).
+  it('D9 envelope has no total or limit key (keyset only)', () => {
+    const parsed = actorReportsResponseSchema.parse({
+      ...beHappyExample,
+      total: 999,
+      limit: 50,
+    })
+    expect(parsed).not.toHaveProperty('total')
+    expect(parsed).not.toHaveProperty('limit')
+    expect(Object.keys(parsed).sort()).toEqual(['items', 'next_cursor'])
+  })
+
+  // Plan D8/D15 — empty is first-class. No .min(1), no eachLike
+  // equivalent; the panel handles the empty-state render.
+  it('parses the D15 empty contract (panel-friendly)', () => {
+    expect(actorReportsResponseSchema.parse(beEmptyExample)).toEqual(
+      beEmptyExample,
+    )
+  })
+
+  it('accepts a populated next_cursor string (paginated non-final page)', () => {
+    const withCursor = {
+      items: beHappyExample.items,
+      next_cursor: 'MjAyNi0wMy0xNXw5OTkwNTA',
+    }
+    const parsed = actorReportsResponseSchema.parse(withCursor)
+    expect(parsed.next_cursor).toBe('MjAyNi0wMy0xNXw5OTkwNTA')
+  })
+
+  it('accepts optional / nullish item fields (BE Optional[str] round-trip)', () => {
+    const withNulls = {
+      items: [
+        {
+          ...beHappyExample.items[0],
+          source_id: null,
+          source_name: null,
+          lang: null,
+          tlp: null,
+        },
+      ],
+      next_cursor: null,
+    }
+    const parsed = actorReportsResponseSchema.parse(withNulls)
+    expect(parsed.items[0].source_id).toBeNull()
+    expect(parsed.items[0].source_name).toBeNull()
+  })
+
+  it('rejects items with non-integer id', () => {
+    const bad = {
+      items: [{ ...beHappyExample.items[0], id: 'not-a-number' }],
+      next_cursor: null,
+    }
+    expect(() => actorReportsResponseSchema.parse(bad)).toThrow()
+  })
+
+  it('rejects items missing required title', () => {
+    const { title: _omitted, ...restItem } = beHappyExample.items[0]
+    const bad = { items: [restItem], next_cursor: null }
+    expect(() => reportItemSchema.parse(restItem)).toThrow(/title/i)
+    expect(() => actorReportsResponseSchema.parse(bad)).toThrow(/title/i)
+  })
+
+  // D12 regression — the actor-reports schema must NOT affect the
+  // actor-detail schema. Parsing an ActorDetail response through
+  // actorDetailSchema still strips every reports-like key, so the
+  // "sibling endpoint" architecture is structurally honored.
+  it('D12 regression — actorDetailSchema strip-mode invariant unchanged', () => {
+    const leakyDetail = {
+      id: 999003,
+      name: 'Pact fixture actor detail',
+      mitre_intrusion_set_id: 'G9003',
+      aka: ['pact-fixture-alias-1'],
+      description: 'leak-proof detail',
+      codenames: ['pact-actor-detail-codename'],
+      // Simulate a BE accident leaking actor-reports-shaped data
+      // onto the ActorDetail endpoint. It MUST still be stripped;
+      // otherwise the D11 "no reports traversal on detail" contract
+      // would be violated.
+      linked_reports: [{ id: 999050, title: 'leak' }],
+      reports: [{ id: 999051 }],
+      recent_reports: [{ id: 999052 }],
+    }
+    const parsed = actorDetailSchema.parse(leakyDetail)
+    expect(parsed).not.toHaveProperty('linked_reports')
+    expect(parsed).not.toHaveProperty('reports')
+    expect(parsed).not.toHaveProperty('recent_reports')
+    // Everything in the PR #14 locked shape is still present.
+    expect(Object.keys(parsed).sort()).toEqual([
+      'aka',
+      'codenames',
+      'description',
+      'id',
+      'mitre_intrusion_set_id',
+      'name',
+    ])
   })
 })

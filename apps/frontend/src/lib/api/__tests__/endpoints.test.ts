@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import {
   getActorDetail,
+  getActorReports,
   getDashboardSummary,
   getIncidentDetail,
   getMe,
@@ -342,5 +343,99 @@ describe('getSimilarReports', () => {
     )
     const res = await getSimilarReports(42)
     expect(res).toEqual({ items: [] })
+  })
+})
+
+// PR #15 Group D — getActorReports endpoint helper. Plan D1 + D2 +
+// D9 lock pinned: path contains actorId, querystring is date/cursor/
+// limit only, response reuses ReportListResponse envelope.
+describe('getActorReports', () => {
+  const populated = {
+    items: [
+      {
+        id: 999050,
+        title: 'fixture',
+        url: 'https://x.test/1',
+        url_canonical: 'https://x.test/1',
+        published: '2026-03-15',
+        source_id: 1,
+        source_name: 'Vendor',
+        lang: 'en',
+        tlp: 'WHITE',
+      },
+    ],
+    next_cursor: null,
+  }
+
+  const empty = { items: [], next_cursor: null }
+
+  it('GETs /api/v1/actors/{id}/reports with no querystring when no filters/pagination', async () => {
+    const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify(empty), { status: 200 }),
+    )
+    await getActorReports(999003)
+    const url = new URL(String(fetchSpy.mock.calls[0][0]))
+    expect(url.pathname).toBe('/api/v1/actors/999003/reports')
+    expect(url.search).toBe('')
+  })
+
+  it('sends date_from + date_to + cursor + limit on the querystring', async () => {
+    const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify(populated), { status: 200 }),
+    )
+    await getActorReports(
+      999003,
+      { date_from: '2026-01-01', date_to: '2026-12-31' },
+      { cursor: 'MjAyNi0wMy0xNXw5OTkwNTA', limit: 50 },
+    )
+    const url = new URL(String(fetchSpy.mock.calls[0][0]))
+    expect(url.pathname).toBe('/api/v1/actors/999003/reports')
+    expect(url.searchParams.get('date_from')).toBe('2026-01-01')
+    expect(url.searchParams.get('date_to')).toBe('2026-12-31')
+    expect(url.searchParams.get('cursor')).toBe(
+      'MjAyNi0wMy0xNXw5OTkwNTA',
+    )
+    expect(url.searchParams.get('limit')).toBe('50')
+  })
+
+  // D9 envelope — response is ReportListResponse-shaped. No total,
+  // no limit echo; Zod strips any such leak silently.
+  it('resolves the BE envelope verbatim ({items, next_cursor} only)', async () => {
+    vi.spyOn(global, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify(populated), { status: 200 }),
+    )
+    const res = await getActorReports(999003)
+    expect(res.items).toHaveLength(1)
+    expect(res.items[0].id).toBe(999050)
+    expect(res.next_cursor).toBeNull()
+    expect(Object.keys(res).sort()).toEqual(['items', 'next_cursor'])
+  })
+
+  // D15(b/c/d) — 200 + empty envelope passes through to the panel.
+  it('resolves the D15 empty contract (panel-friendly shape)', async () => {
+    vi.spyOn(global, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify(empty), { status: 200 }),
+    )
+    const res = await getActorReports(999004)
+    expect(res).toEqual({ items: [], next_cursor: null })
+  })
+
+  // D2 lock — wire surface is path-param + date + cursor + limit
+  // only. No TLP / groupIds / q / tag / source fields reach the
+  // querystring because `ActorReportsFilters` has no such fields.
+  it('never emits TLP / groupIds / q / tag / source on the wire', async () => {
+    const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify(empty), { status: 200 }),
+    )
+    await getActorReports(
+      999003,
+      // @ts-expect-error — ActorReportsFilters has no such fields;
+      // the runtime serializer MUST ignore them even if a caller bypasses
+      // the type system.
+      { tlpLevels: ['AMBER'], groupIds: [3], q: 'x', tag: ['t'], source: ['s'] },
+      {},
+    )
+    const url = new URL(String(fetchSpy.mock.calls[0][0]))
+    expect(url.search).toBe('')
   })
 })

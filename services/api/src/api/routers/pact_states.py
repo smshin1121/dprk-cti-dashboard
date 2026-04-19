@@ -709,6 +709,18 @@ INCIDENT_DETAIL_FIXTURE_ID = 999002
 # example values keep Lazarus-shaped content so human review of a
 # failing verifier log is still readable.
 ACTOR_DETAIL_FIXTURE_ID = 999003
+# PR #15 Group C — actor with NO linked reports. Distinct id so the
+# pact consumer can target ``/actors/999004/reports`` literally and
+# the D15(b/c/d) 200-empty interaction does not share state with the
+# populated interaction (which reuses ACTOR_DETAIL_FIXTURE_ID=999003
+# via _ensure_actor_with_reports_fixture).
+ACTOR_WITH_NO_REPORTS_ID = 999004
+# PR #15 Group C — pinned report ids linked to actor 999003 via the
+# existing ``pact-actor-detail-codename`` (seeded by _ensure_actor_
+# detail_fixture). Three reports with distinct ``published`` dates
+# give the matcher a stable newest-first ordering (plan D16) and
+# ensure the list isn't padded to exactly one row.
+ACTOR_REPORTS_FIXTURE_REPORT_IDS = (999050, 999051, 999052)
 SIMILAR_POPULATED_SOURCE_ID = 999020
 SIMILAR_POPULATED_NEIGHBOR_IDS = (999011, 999012, 999013)
 SIMILAR_EMPTY_EMBEDDING_SOURCE_ID = 999030
@@ -1011,6 +1023,154 @@ async def _ensure_actor_detail_fixture(session: AsyncSession) -> None:
     )
 
 
+async def _ensure_actor_with_reports_fixture(session: AsyncSession) -> None:
+    """Seed the fixture ``GET /actors/{id}/reports`` populated pact uses.
+
+    Plan D14 (PR #15) — extends the PR #14 Group G actor detail
+    fixture. Reuses the pinned actor at ``ACTOR_DETAIL_FIXTURE_ID``
+    (999003) + its codename ``pact-actor-detail-codename``, then
+    seeds three pinned reports (``ACTOR_REPORTS_FIXTURE_REPORT_IDS``)
+    linked via ``report_codenames``. Three rows give the pact's
+    ``eachLike`` matcher a stable non-empty set and the D16
+    newest-first ordering has three distinct ``published`` dates so
+    the order is deterministic across replays.
+
+    The consumer pact is a LITERAL path interaction
+    ``GET /api/v1/actors/999003/reports`` with a response body
+    ``{items: eachLike(ReportItem), next_cursor: null}`` — plan D9
+    envelope shape. Matchers are type-only, so the exact titles /
+    urls here satisfy the pact by virtue of being non-empty strings
+    with the right shape.
+
+    Idempotent: every insert uses ``ON CONFLICT (id) DO NOTHING``
+    (groups + reports) or ``ON CONFLICT DO NOTHING`` on the
+    composite PK (``report_codenames``). Two consecutive invocations
+    produce exactly one row per pinned id across all three reports.
+    The underlying actor-detail seed is also idempotent (proven by
+    ``test_actor_detail_fixture_is_idempotent`` from PR #14 Group G).
+    """
+    # Ensure the actor + its codename land first (idempotent).
+    await _ensure_actor_detail_fixture(session)
+    source_id = await _ensure_source(session)
+
+    # Look up the actor's codename id. Single row per
+    # ``_ensure_actor_detail_fixture`` invariant.
+    codename_id = (
+        await session.execute(
+            text(
+                "SELECT id FROM codenames "
+                "WHERE group_id = :g AND name = :n"
+            ),
+            {
+                "g": ACTOR_DETAIL_FIXTURE_ID,
+                "n": "pact-actor-detail-codename",
+            },
+        )
+    ).scalar_one()
+
+    # Three reports with distinct published dates so the DESC sort
+    # is stable across replays (plan D16). Dates chosen inside a
+    # wide window so default date filters don't drop them.
+    report_seed_data = [
+        (
+            ACTOR_REPORTS_FIXTURE_REPORT_IDS[0],
+            date(2026, 3, 15),
+            "Pact fixture — actor reports #1 (newest)",
+        ),
+        (
+            ACTOR_REPORTS_FIXTURE_REPORT_IDS[1],
+            date(2026, 2, 10),
+            "Pact fixture — actor reports #2",
+        ),
+        (
+            ACTOR_REPORTS_FIXTURE_REPORT_IDS[2],
+            date(2026, 1, 5),
+            "Pact fixture — actor reports #3 (oldest)",
+        ),
+    ]
+
+    for report_id, published, title in report_seed_data:
+        await session.execute(
+            text(
+                "INSERT INTO reports "
+                "(id, source_id, title, url, url_canonical, sha256_title, "
+                "published, lang, tlp) "
+                "VALUES (:id, :s, :t, :u, :uc, :sh, :p, :l, :tlp) "
+                "ON CONFLICT (id) DO NOTHING"
+            ),
+            {
+                "id": report_id,
+                "s": source_id,
+                "t": title,
+                "u": f"https://pact.test/actor-reports/{report_id}",
+                "uc": f"https://pact.test/actor-reports/{report_id}",
+                "sh": f"pact-sha-actor-reports-{report_id}",
+                "p": published,
+                "l": "en",
+                "tlp": "WHITE",
+            },
+        )
+        await session.execute(
+            text(
+                "INSERT INTO report_codenames "
+                "(report_id, codename_id) "
+                "VALUES (:r, :c) "
+                "ON CONFLICT DO NOTHING"
+            ),
+            {"r": report_id, "c": codename_id},
+        )
+
+
+async def _ensure_actor_with_no_reports_fixture(
+    session: AsyncSession,
+) -> None:
+    """Seed the fixture ``GET /actors/{id}/reports`` EMPTY pact uses.
+
+    Plan D14 / D15(b or c) — distinct actor at pinned id
+    ``ACTOR_WITH_NO_REPORTS_ID`` (999004) with ONE codename and
+    ZERO ``report_codenames`` rows. The actor exists (so
+    ``_actor_exists`` returns True and the endpoint yields 200) but
+    the reports query returns an empty envelope (plan D8). Distinct
+    from ``ACTOR_DETAIL_FIXTURE_ID`` so the populated and empty
+    pact interactions never share state.
+
+    ``groups.name`` is UNIQUE (migration 0001 line 37), so the name
+    differs from every other pinned fixture to avoid
+    pinned-id-vs-unique-name conflict (memory
+    ``pitfall_pinned_id_vs_unique_name``). The codename is also
+    distinct from Group G's ``pact-actor-detail-codename``.
+
+    Idempotent: ``ON CONFLICT (id) DO NOTHING`` on groups +
+    SELECT-first codename upsert via ``_ensure_codename``.
+    """
+    await session.execute(
+        text(
+            "INSERT INTO groups "
+            "(id, name, mitre_intrusion_set_id, aka, description) "
+            "VALUES (:id, :n, :m, :aka, :d) "
+            "ON CONFLICT (id) DO NOTHING"
+        ),
+        {
+            "id": ACTOR_WITH_NO_REPORTS_ID,
+            "n": "Pact fixture actor with no reports",
+            "m": "G9004",
+            "aka": ["pact-empty-alias"],
+            "d": (
+                "Pact fixture — actor WITH codenames but WITHOUT "
+                "any report_codenames rows. Exists for the empty "
+                "GET /actors/{id}/reports interaction."
+            ),
+        },
+    )
+    # One codename, zero report_codenames rows — the D15(c) branch
+    # (codenames present but no reports mention them via the join).
+    await _ensure_codename(
+        session,
+        name="pact-empty-actor-codename",
+        group_id=ACTOR_WITH_NO_REPORTS_ID,
+    )
+
+
 async def _ensure_similar_reports_populated_fixture(
     session: AsyncSession,
 ) -> None:
@@ -1270,6 +1430,30 @@ async def provider_states(
             "and an authenticated analyst session"
         ):
             await _ensure_similar_reports_empty_embedding_fixture(session)
+            await session.commit()
+            await _seed_analyst_session(response, session_store)
+            continue
+
+        # PR #15 Group C — actor-reports populated + empty fixtures.
+        # Populated reuses ACTOR_DETAIL_FIXTURE_ID=999003 so the pact
+        # path ``/api/v1/actors/999003/reports`` hits a pre-seeded
+        # actor with ≥3 linked reports. Empty uses the separate
+        # ACTOR_WITH_NO_REPORTS_ID=999004 so state isolation between
+        # the two interactions holds (plan D14).
+        if state == (
+            "seeded actor with linked reports fixture "
+            "and an authenticated analyst session"
+        ):
+            await _ensure_actor_with_reports_fixture(session)
+            await session.commit()
+            await _seed_analyst_session(response, session_store)
+            continue
+
+        if state == (
+            "seeded actor with no linked reports fixture "
+            "and an authenticated analyst session"
+        ):
+            await _ensure_actor_with_no_reports_fixture(session)
             await session.commit()
             await _seed_analyst_session(response, session_store)
             continue

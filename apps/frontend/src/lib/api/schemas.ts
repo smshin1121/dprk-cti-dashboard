@@ -419,6 +419,56 @@ export const similarReportsResponseSchema = z.object({
   items: z.array(similarReportEntrySchema).max(SIMILAR_K_MAX),
 })
 
+/**
+ * `GET /api/v1/actors/{id}/reports` — plan D9 envelope reuse.
+ *
+ * PR #15 Phase 3 slice 2 Group D. Zod mirror of the BE
+ * `ReportListResponse` envelope: `{items: ReportItem[], next_cursor:
+ * string | null}` — NO `total`, NO `limit` echo (keyset envelope,
+ * per plan D9). Runtime parse happens here; the existing types-only
+ * `ReportItem` / `ReportListResponse` interfaces (kept from PR #12
+ * for the `/reports` + `/incidents` list surfaces) stay untouched in
+ * this PR.
+ *
+ * `actorReportsResponseSchema` is **reference-identical** to
+ * `reportListResponseSchema` — the alias makes the call-site name
+ * match the endpoint ("actor reports") while the single underlying
+ * schema means a future widening of the envelope touches one place.
+ * Pinned by `schemas.test.ts::actorReportsResponseSchema_equals_
+ * reportListResponseSchema`.
+ *
+ * Empty-response contract (plan D8 / D15 b-c-d): `{items: [],
+ * next_cursor: null}` parses successfully — no `.min(1)` guard, no
+ * `eachLike`-style non-empty requirement. The consuming panel
+ * renders an empty-state card; this layer forwards the BE shape
+ * through verbatim.
+ */
+export const reportItemSchema = z.object({
+  id: z.number().int(),
+  title: z.string(),
+  url: z.string(),
+  url_canonical: z.string(),
+  // BE `date` serializes as ISO-8601 string "YYYY-MM-DD".
+  published: z.string(),
+  source_id: z.number().int().nullish(),
+  source_name: z.string().nullish(),
+  lang: z.string().nullish(),
+  tlp: z.string().nullish(),
+})
+
+export const reportListResponseSchema = z.object({
+  items: z.array(reportItemSchema),
+  next_cursor: z.string().nullable(),
+})
+
+/**
+ * Alias — same schema reference as `reportListResponseSchema`. The
+ * FE call site reads as `actorReportsResponseSchema` which keeps the
+ * endpoint intent readable; the identity means there's no second
+ * envelope to drift.
+ */
+export const actorReportsResponseSchema = reportListResponseSchema
+
 export type LinkedIncidentSummary = z.infer<typeof linkedIncidentSummarySchema>
 export type LinkedReportSummary = z.infer<typeof linkedReportSummarySchema>
 export type ReportDetail = z.infer<typeof reportDetailSchema>

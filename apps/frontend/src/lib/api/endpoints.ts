@@ -22,15 +22,18 @@ import {
 } from '../dashboardFilters'
 import {
   type ActorListPagination,
+  type ActorReportsFilters,
   type IncidentListFilters,
   type ReportListFilters,
   toActorListQueryParams,
+  toActorReportsQueryParams,
   toIncidentListQueryParams,
   toReportListQueryParams,
 } from '../listFilters'
 import {
   actorDetailSchema,
   actorListResponseSchema,
+  actorReportsResponseSchema,
   attackMatrixResponseSchema,
   currentUserSchema,
   dashboardSummarySchema,
@@ -227,6 +230,37 @@ export function getActorDetail(
   signal?: AbortSignal,
 ): Promise<ActorDetail> {
   return apiGet(`/api/v1/actors/${id}`, actorDetailSchema, signal)
+}
+
+/**
+ * `GET /api/v1/actors/{id}/reports` — PR #15 Phase 3 slice 2 Group D
+ * (plan D1 + D2 + D9 + D15).
+ *
+ * Keyset-paginated — reuses `ReportListResponse` envelope (plan D9
+ * lock, `actorReportsResponseSchema` is a reference-identical alias).
+ * Filter surface is date range + cursor + limit only (plan D2); no
+ * `q` / `tag` / `source` / `tlp` reach this wire because the
+ * `ActorReportsFilters` type has no such fields.
+ *
+ * The `actorId` lives in the URL path (not the query string). 404 on
+ * unknown actor surfaces as `ApiError` via `apiGet`; the hook layer
+ * guards `actorId > 0` before calling so we never fire a 404-prone
+ * request on mount for a missing path param.
+ *
+ * Empty branches (plan D15 b/c/d) return 200 + `{items: [],
+ * next_cursor: null}` which parses cleanly through the schema.
+ */
+export function getActorReports(
+  actorId: number,
+  filters: ActorReportsFilters = {},
+  pagination: { cursor?: string; limit?: number } = {},
+  signal?: AbortSignal,
+): Promise<ReportListResponse> {
+  const qs = toActorReportsQueryParams(filters, pagination).toString()
+  const path = qs.length > 0
+    ? `/api/v1/actors/${actorId}/reports?${qs}`
+    : `/api/v1/actors/${actorId}/reports`
+  return apiGet(path, actorReportsResponseSchema, signal)
 }
 
 /**

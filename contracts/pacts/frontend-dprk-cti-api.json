@@ -465,6 +465,155 @@
       }
     },
     {
+      "description": "a request for reports linked to an actor (PR #15 Group F)",
+      "providerStates": [
+        {
+          "name": "seeded actor with linked reports fixture and an authenticated analyst session"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/actors/999003/reports"
+      },
+      "response": {
+        "body": {
+          "items": [
+            {
+              "id": 999050,
+              "lang": "en",
+              "published": "2026-03-15",
+              "source_id": 1,
+              "source_name": "Vendor",
+              "title": "Pact fixture — actor reports #1 (newest)",
+              "tlp": "WHITE",
+              "url": "https://pact.test/actor-reports/999050",
+              "url_canonical": "https://pact.test/actor-reports/999050"
+            }
+          ],
+          "next_cursor": null
+        },
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "matchingRules": {
+          "body": {
+            "$": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.items": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type",
+                  "min": 1
+                }
+              ]
+            },
+            "$.items[*].id": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "integer"
+                }
+              ]
+            },
+            "$.items[*].lang": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.items[*].published": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.items[*].source_id": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "integer"
+                }
+              ]
+            },
+            "$.items[*].source_name": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.items[*].title": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.items[*].tlp": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.items[*].url": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.items[*].url_canonical": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          }
+        },
+        "status": 200
+      }
+    },
+    {
+      "description": "a request for reports linked to an actor with no links (PR #15 Group F)",
+      "providerStates": [
+        {
+          "name": "seeded actor with no linked reports fixture and an authenticated analyst session"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/actors/999004/reports"
+      },
+      "response": {
+        "body": {
+          "items": [],
+          "next_cursor": null
+        },
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
       "description": "a request for similar reports with a null-embedding source (PR #14 Group G)",
       "providerStates": [
         {

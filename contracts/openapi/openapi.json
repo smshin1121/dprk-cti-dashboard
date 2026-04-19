@@ -2262,6 +2262,173 @@
         ]
       }
     },
+    "/api/v1/actors/{actor_id}/reports": {
+      "get": {
+        "description": "Returns the reports linked to this actor via the `report_codenames` M:N join. Envelope is identical to `GET /api/v1/reports` (plan D9 — `{items, next_cursor}`; no `total`, no `limit` echo). Sort is `published DESC, id DESC` with a keyset cursor over `(published, id)` (plan D16). Dedup via EXISTS — a report linked via multiple codenames appears once (plan D17). Plan D15 empty contract: actor exists but has no codenames / codenames have no linked reports / date filter excludes all → `200` with `{items: [], next_cursor: null}`. Plan D12 regression: the `/api/v1/actors/{id}` detail endpoint shape is UNCHANGED by this PR — reports come from this sibling endpoint only.",
+        "operationId": "list_actor_reports_endpoint_api_v1_actors__actor_id__reports_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "actor_id",
+            "required": true,
+            "schema": {
+              "title": "Actor Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "date_from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Date From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "date_to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Date To"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "empty": {
+                    "summary": "Actor exists but has no linked reports (D15 b/c/d)",
+                    "value": {
+                      "items": []
+                    }
+                  },
+                  "populated": {
+                    "summary": "Actor with 3 linked reports, final page",
+                    "value": {
+                      "items": [
+                        {
+                          "id": 42,
+                          "lang": "en",
+                          "published": "2026-03-15",
+                          "source_id": 7,
+                          "source_name": "Mandiant",
+                          "title": "Lazarus targets South Korean crypto exchanges",
+                          "tlp": "WHITE",
+                          "url": "https://mandiant.com/blog/lazarus-2026q1",
+                          "url_canonical": "https://mandiant.com/blog/lazarus-2026q1"
+                        }
+                      ]
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ReportListResponse"
+                }
+              }
+            },
+            "description": "One keyset page of reports that mention this actor. `next_cursor` is `null` on the final page. Empty pages (D15 b/c/d) return an empty items array with the same envelope."
+          },
+          "401": {
+            "description": "Missing or invalid session cookie"
+          },
+          "403": {
+            "description": "Authenticated role is not analyst / researcher / policy / soc / admin"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "detail": "actor not found"
+                }
+              }
+            },
+            "description": "Actor id not found (D15(a)). Distinct from the 200 empty envelope returned when the actor exists but has no linked reports — analysts rely on the status code to tell 'unknown actor' from 'known-but-empty'."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "detail": [
+                    {
+                      "loc": [
+                        "query",
+                        "cursor"
+                      ],
+                      "msg": "cursor is not valid base64",
+                      "type": "value_error.malformed_cursor"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "Invalid query parameter — `cursor` malformed, `limit` out of range, or `date_from` / `date_to` not ISO-format. Plan D12 — no silent ignore."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": "rate_limit_exceeded",
+                  "message": "60 per 1 minute"
+                }
+              }
+            },
+            "description": "Rate limit exceeded — 60/min/user per-route bucket (plan D6). Bucket is independent of `/actors`, `/actors/{id}` detail, and `/reports` — draining one does not consume the others."
+          }
+        },
+        "summary": "List reports that mention this actor (keyset-paginated)",
+        "tags": [
+          "actors"
+        ]
+      }
+    },
     "/api/v1/alerts": {
       "get": {
         "description": "§5.5 Alerts feed (paginated).\n\nStub: returns 501 for consistency with all other protected endpoints.\nThe verify_token dependency would raise 501 before this handler runs\nanyway, so returning a fake 200 body here was misleading.\n\nIntended shape (for future implementation):\n    {\"items\": list[AlertDTO], \"total\": int, \"page\": int, \"limit\": int}",

@@ -24,6 +24,7 @@ import type {
 import type { DashboardSummaryFilters } from './dashboardFilters'
 import type {
   ActorListPagination,
+  ActorReportsFilters,
   IncidentListFilters,
   ReportListFilters,
 } from './listFilters'
@@ -98,4 +99,19 @@ export const queryKeys = {
    */
   similarReports: (reportId: number, k: number) =>
     ['reports', reportId, 'similar', k] as const,
+
+  /**
+   * `/api/v1/actors/{id}/reports` — PR #15 Phase 3 slice 2 Group D
+   * (plan D2 + D13). Key scope is `(actorId, filters, pagination)`
+   * where `filters` = `{date_from?, date_to?}` and `pagination` =
+   * `{cursor?, limit?}`. NO TLP, NO groupIds, NO q/tag/source —
+   * `ActorReportsFilters` type has no such fields by construction,
+   * so a future FilterBar toggle on TLP / group selection CANNOT
+   * invalidate this cache. Pinned by `queryKeys.test.ts`.
+   */
+  actorReports: (
+    actorId: number,
+    filters: ActorReportsFilters,
+    pagination: { cursor?: string; limit?: number } = {},
+  ) => ['actors', actorId, 'reports', filters, pagination] as const,
 } as const

@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 
 import {
   toActorListQueryParams,
+  toActorReportsFilters,
+  toActorReportsQueryParams,
   toIncidentListFilters,
   toIncidentListQueryParams,
   toReportListFilters,
@@ -151,5 +153,61 @@ describe('toActorListQueryParams', () => {
     for (const key of params.keys()) {
       expect(key.toLowerCase()).not.toContain('tlp')
     }
+  })
+})
+
+// PR #15 Group D — ActorReportsFilters + query-param serializer.
+describe('toActorReportsQueryParams (PR #15 D2 minimal filter)', () => {
+  it('emits date_from + date_to + cursor + limit when all present', () => {
+    const params = toActorReportsQueryParams(
+      { date_from: '2026-01-01', date_to: '2026-12-31' },
+      { cursor: 'MjAyNi0wMy0xNXw5OTkwNTA', limit: 50 },
+    )
+    expect(params.get('date_from')).toBe('2026-01-01')
+    expect(params.get('date_to')).toBe('2026-12-31')
+    expect(params.get('cursor')).toBe('MjAyNi0wMy0xNXw5OTkwNTA')
+    expect(params.get('limit')).toBe('50')
+  })
+
+  it('empty filters + empty pagination → empty querystring (BE defaults apply)', () => {
+    expect(toActorReportsQueryParams({}, {}).toString()).toBe('')
+  })
+
+  // D2 filter lock — no q / tag / source / tlp / groupIds reach the
+  // wire because `ActorReportsFilters` has no such fields. Passing
+  // them forces a compile error AND a runtime drop.
+  it('ignores FilterBar state outside date range — D2 lock', () => {
+    // @ts-expect-error — FilterState fields don't belong here
+    const params = toActorReportsQueryParams(
+      {
+        date_from: '2026-01-01',
+        tlpLevels: ['AMBER'],
+        groupIds: [3],
+        q: 'lazarus',
+        tag: ['ransomware'],
+        source: ['mandiant'],
+      },
+      {},
+    )
+    expect(params.get('date_from')).toBe('2026-01-01')
+    expect(params.has('group_id')).toBe(false)
+    expect(params.has('q')).toBe(false)
+    expect(params.has('tag')).toBe(false)
+    expect(params.has('source')).toBe(false)
+    for (const key of params.keys()) {
+      expect(key.toLowerCase()).not.toContain('tlp')
+    }
+  })
+
+  it('toActorReportsFilters mirrors pickDateRange — dateFrom/dateTo only', () => {
+    // @ts-expect-error — extra FilterState fields must not pollute the result
+    const out = toActorReportsFilters({
+      dateFrom: '2026-01-01',
+      dateTo: '2026-12-31',
+      groupIds: [3],
+      tlpLevels: ['AMBER'],
+    })
+    expect(out).toEqual({ date_from: '2026-01-01', date_to: '2026-12-31' })
+    expect(Object.keys(out).sort()).toEqual(['date_from', 'date_to'])
   })
 })

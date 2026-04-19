@@ -879,6 +879,14 @@ SIMILAR_K_MAX = 50
 SIMILAR_K_DEFAULT = 10
 
 
+# PR #15 plan D2 — /actors/{id}/reports keyset-paginated list. Limits
+# mirror /reports (PR #11 D3) so the two endpoints share one rate-of-
+# ingest ceiling. Default 50 matches the other list endpoints.
+ACTOR_REPORTS_LIMIT_MIN = 1
+ACTOR_REPORTS_LIMIT_MAX = 200
+ACTOR_REPORTS_LIMIT_DEFAULT = 50
+
+
 class SimilarReportEntry(BaseModel):
     """One row in ``SimilarReportsResponse.items`` (plan D8).
 
@@ -992,6 +1000,9 @@ class ActorDetail(BaseModel):
 
 
 __all__ = [
+    "ACTOR_REPORTS_LIMIT_DEFAULT",
+    "ACTOR_REPORTS_LIMIT_MAX",
+    "ACTOR_REPORTS_LIMIT_MIN",
     "ActorDetail",
     "ActorItem",
     "ActorListResponse",

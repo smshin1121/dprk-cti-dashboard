@@ -7,7 +7,11 @@ attaches the JSON reports to the PR conversation.
 
 Shipped in PR #13 Group K with `/dashboard` as the only target.
 PR #14 Group H added three detail routes + a per-route reports
-sub-directory so each route keeps its own SUMMARY.md.
+sub-directory so each route keeps its own SUMMARY.md. PR #15
+Group G adds one more target — `/actors/999003` replayed against
+the PR #15 Group C **populated actor-reports** provider state so
+the reviewer sees `ActorDetailPage` with the `ActorLinkedReportsPanel`
+populated, not empty.
 
 ## What the harness does
 
@@ -40,18 +44,29 @@ server.** D6 locks this: dev-mode HMR bundles over-report or
 under-report depending on the runner, and would mask real
 regressions.
 
-| Route               | Target path                 | Required provider-state (`.given(...)`)                                  | Pinned fixture id | Added in        |
-|:--------------------|:----------------------------|:-------------------------------------------------------------------------|:------------------|:----------------|
-| Dashboard           | `/dashboard`                | `seeded actors with at least 100 rows and an authenticated session`      | —                 | PR #13 Group K  |
-| Report detail       | `/reports/999001`           | `seeded report detail fixture and an authenticated analyst session`      | 999001            | PR #14 Group H  |
-| Incident detail     | `/incidents/999002`         | `seeded incident detail fixture and an authenticated analyst session`    | 999002            | PR #14 Group H  |
-| Actor detail        | `/actors/999003`            | `seeded actor detail fixture and an authenticated analyst session`       | 999003            | PR #14 Group H  |
+| Route                        | Target path                 | Required provider-state (`.given(...)`)                                            | Pinned fixture id(s)            | Added in        |
+|:-----------------------------|:----------------------------|:-----------------------------------------------------------------------------------|:--------------------------------|:----------------|
+| Dashboard                    | `/dashboard`                | `seeded actors with at least 100 rows and an authenticated session`                | —                               | PR #13 Group K  |
+| Report detail                | `/reports/999001`           | `seeded report detail fixture and an authenticated analyst session`                | 999001                          | PR #14 Group H  |
+| Incident detail              | `/incidents/999002`         | `seeded incident detail fixture and an authenticated analyst session`              | 999002                          | PR #14 Group H  |
+| Actor detail (empty panel)   | `/actors/999003`            | `seeded actor detail fixture and an authenticated analyst session`                 | 999003                          | PR #14 Group H  |
+| Actor detail with linked reports | `/actors/999003`        | `seeded actor with linked reports fixture and an authenticated analyst session`    | 999003 + 999050 / 999051 / 999052 | PR #15 Group G  |
 
-Pinned fixture ids come from Group C (report / incident / similar)
-and Group G (actor — re-pinned to eliminate Lazarus natural-id
-drift). Full id registry lives in
+The PR #15 target reuses the **same path** `/actors/999003` as
+the PR #14 row but runs against a **different provider state**.
+That state seeds three reports (`ACTOR_REPORTS_FIXTURE_REPORT_IDS
+= 999050 / 999051 / 999052`) linked to actor 999003 via
+`report_codenames`, so the new `ActorLinkedReportsPanel` renders
+its populated branch instead of the D15 empty card. Running both
+targets captures any regression where mounting the panel degrades
+the detail-page scores.
+
+Pinned fixture ids come from Group C (report / incident /
+similar), PR #14 Group G (actor — re-pinned to eliminate Lazarus
+natural-id drift), and PR #15 Group C (new reports pinned at
+999050 / 999051 / 999052). Full id registry lives in
 `apps/frontend/tests/contract/README.md` under "Pinned-id strategy
-for detail + similar paths".
+for detail + similar + actor-reports paths".
 
 ## Prerequisites
 
@@ -87,6 +102,7 @@ for detail + similar paths".
      "seeded report detail fixture and an authenticated analyst session"
      "seeded incident detail fixture and an authenticated analyst session"
      "seeded actor detail fixture and an authenticated analyst session"
+     "seeded actor with linked reports fixture and an authenticated analyst session"
    )
    for state in "${STATES[@]}"; do
      curl -sS -X POST http://127.0.0.1:8000/_pact/provider_states \
@@ -95,6 +111,12 @@ for detail + similar paths".
        -c session.cookies -b session.cookies >/dev/null
    done
    ```
+
+   All five states are idempotent on the DB; the fifth state
+   (PR #15 Group C) overlaps the fourth's actor seed by design — it
+   reuses `ACTOR_DETAIL_FIXTURE_ID=999003` and only ADDS the three
+   `report_codenames` links, so seeding both in one session is
+   safe and leaves the cookie jar intact.
 
    Then import `session.cookies` into the browser profile used by
    the headless Chrome the audit launches OR attach it via a
@@ -112,10 +134,13 @@ pnpm --filter @dprk-cti/frontend run lighthouse:audit
 
 Writes to `reports/`. Useful for a `/dashboard`-only smoke.
 
-### All Group H targets (PR #14)
+### All targets (PR #14 Group H + PR #15 Group G)
 
-Loop over the four routes; each invocation lands in its own
-sub-directory so SUMMARY.md + per-theme JSONs don't overwrite:
+Loop over the five targets; each invocation lands in its own
+sub-directory so `SUMMARY.md` + per-theme JSONs don't overwrite.
+The two `/actors/999003` targets share a path but not a subdir —
+the reviewer sees both the empty-panel (PR #14) and the populated-
+panel (PR #15) audits side by side.
 
 ```bash
 TARGETS=(
@@ -123,6 +148,7 @@ TARGETS=(
   "reports-999001:/reports/999001"
   "incidents-999002:/incidents/999002"
   "actors-999003:/actors/999003"
+  "actors-999003-linked-reports:/actors/999003"
 )
 for entry in "${TARGETS[@]}"; do
   subdir="${entry%%:*}"
@@ -131,6 +157,15 @@ for entry in "${TARGETS[@]}"; do
     pnpm --filter @dprk-cti/frontend run lighthouse:audit
 done
 ```
+
+**Ordering note**: run `actors-999003` BEFORE `actors-999003-linked-reports`.
+Once the PR #15 Group C populated state seeds the three
+`report_codenames` rows, the PR #14 "empty panel" audit can still
+produce the populated shape because the DB state persists between
+audit runs. Reviewer can either (a) tear down the linked-reports
+rows between runs, or (b) accept that both audits measure the
+populated state if the empty-panel variant already shipped
+artifacts in a prior PR #14 reviewer run.
 
 Result layout:
 
@@ -142,7 +177,8 @@ apps/frontend/lighthouse/reports/
 │   └── dark-run1.json  .. dark-run3.json
 ├── reports-999001/   … same shape
 ├── incidents-999002/ … same shape
-└── actors-999003/    … same shape
+├── actors-999003/    … same shape (empty panel state)
+└── actors-999003-linked-reports/ … same shape (populated panel state)
 ```
 
 ### Env overrides

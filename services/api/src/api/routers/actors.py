@@ -38,12 +38,24 @@ from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import JSONResponse, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from datetime import date
+
 from ..auth.schemas import CurrentUser
 from ..db import get_db
 from ..deps import require_role
 from ..rate_limit import get_limiter
-from ..read import detail_aggregator, repositories as read_repositories
-from ..schemas.read import ActorDetail, ActorItem, ActorListResponse
+from ..read import actor_reports, detail_aggregator, repositories as read_repositories
+from ..read.pagination import CursorDecodeError, decode_cursor, encode_cursor
+from ..schemas.read import (
+    ACTOR_REPORTS_LIMIT_DEFAULT,
+    ACTOR_REPORTS_LIMIT_MAX,
+    ACTOR_REPORTS_LIMIT_MIN,
+    ActorDetail,
+    ActorItem,
+    ActorListResponse,
+    ReportItem,
+    ReportListResponse,
+)
 
 router = APIRouter()
 
@@ -237,3 +249,202 @@ async def get_actor_detail_endpoint(
             content={"detail": "actor not found"},
         )
     return ActorDetail.model_validate(detail)
+
+
+@router.get(
+    "/{actor_id}/reports",
+    response_model=ReportListResponse,
+    summary="List reports that mention this actor (keyset-paginated)",
+    description=(
+        "Returns the reports linked to this actor via the "
+        "`report_codenames` M:N join. Envelope is identical to "
+        "`GET /api/v1/reports` (plan D9 — `{items, next_cursor}`; "
+        "no `total`, no `limit` echo). Sort is `published DESC, id "
+        "DESC` with a keyset cursor over `(published, id)` (plan D16). "
+        "Dedup via EXISTS — a report linked via multiple codenames "
+        "appears once (plan D17). Plan D15 empty contract: actor "
+        "exists but has no codenames / codenames have no linked "
+        "reports / date filter excludes all → `200` with `{items: "
+        "[], next_cursor: null}`. Plan D12 regression: the "
+        "`/api/v1/actors/{id}` detail endpoint shape is UNCHANGED by "
+        "this PR — reports come from this sibling endpoint only."
+    ),
+    responses={
+        200: {
+            "description": (
+                "One keyset page of reports that mention this actor. "
+                "`next_cursor` is `null` on the final page. Empty "
+                "pages (D15 b/c/d) return an empty items array with "
+                "the same envelope."
+            ),
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "populated": {
+                            "summary": "Actor with 3 linked reports, final page",
+                            "value": {
+                                "items": [
+                                    {
+                                        "id": 42,
+                                        "title": "Lazarus targets South Korean crypto exchanges",
+                                        "url": "https://mandiant.com/blog/lazarus-2026q1",
+                                        "url_canonical": "https://mandiant.com/blog/lazarus-2026q1",
+                                        "published": "2026-03-15",
+                                        "source_id": 7,
+                                        "source_name": "Mandiant",
+                                        "lang": "en",
+                                        "tlp": "WHITE",
+                                    }
+                                ],
+                                "next_cursor": None,
+                            },
+                        },
+                        "empty": {
+                            "summary": "Actor exists but has no linked reports (D15 b/c/d)",
+                            "value": {"items": [], "next_cursor": None},
+                        },
+                    }
+                }
+            },
+        },
+        401: {"description": "Missing or invalid session cookie"},
+        403: {
+            "description": (
+                "Authenticated role is not analyst / researcher / policy "
+                "/ soc / admin"
+            )
+        },
+        404: {
+            "description": (
+                "Actor id not found (D15(a)). Distinct from the 200 "
+                "empty envelope returned when the actor exists but "
+                "has no linked reports — analysts rely on the status "
+                "code to tell 'unknown actor' from 'known-but-empty'."
+            ),
+            "content": {
+                "application/json": {
+                    "example": {"detail": "actor not found"}
+                }
+            },
+        },
+        422: {
+            "description": (
+                "Invalid query parameter — `cursor` malformed, "
+                "`limit` out of range, or `date_from` / `date_to` "
+                "not ISO-format. Plan D12 — no silent ignore."
+            ),
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": [
+                            {
+                                "loc": ["query", "cursor"],
+                                "msg": "cursor is not valid base64",
+                                "type": "value_error.malformed_cursor",
+                            }
+                        ]
+                    }
+                }
+            },
+        },
+        429: {
+            "description": (
+                "Rate limit exceeded — 60/min/user per-route bucket "
+                "(plan D6). Bucket is independent of `/actors`, "
+                "`/actors/{id}` detail, and `/reports` — draining one "
+                "does not consume the others."
+            ),
+            "content": {
+                "application/json": {
+                    "example": {
+                        "error": "rate_limit_exceeded",
+                        "message": "60 per 1 minute",
+                    }
+                }
+            },
+        },
+    },
+)
+@_limiter.limit("60/minute")
+async def list_actor_reports_endpoint(
+    request: Request,
+    actor_id: int,
+    date_from: Annotated[date | None, Query()] = None,
+    date_to: Annotated[date | None, Query()] = None,
+    cursor: Annotated[str | None, Query()] = None,
+    limit: Annotated[
+        int,
+        Query(ge=ACTOR_REPORTS_LIMIT_MIN, le=ACTOR_REPORTS_LIMIT_MAX),
+    ] = ACTOR_REPORTS_LIMIT_DEFAULT,
+    session: AsyncSession = Depends(get_db),
+    _current_user: CurrentUser = Depends(require_role(*_READ_ROLES)),
+) -> Response:
+    """Reports-mentioning-this-actor list (plan D1 + D6 + D9 + D15–D17).
+
+    Contract notes:
+
+    - **D15(a) 404 vs 200-empty split.** The read module's
+      ``_actor_exists`` pre-check runs first; on None return, the
+      router surfaces 404 with the same ``{"detail": "actor not
+      found"}`` body as ``GET /actors/{id}``. Empty-envelope responses
+      (200 + ``{items: [], next_cursor: null}``) cover the other
+      three empty branches (no codenames / no report_codenames /
+      filter excludes all) — no silent conflation.
+    - **Cursor codec reuse.** ``decode_cursor`` / ``encode_cursor``
+      from ``api.read.pagination`` — identical to ``/reports`` list.
+      Malformed cursor → 422 with the same FastAPI-shaped error body
+      (``type: value_error.malformed_cursor``) so FE branches on one
+      status for both endpoints.
+    - **FastAPI Query bounds** reject ``limit`` out of range and
+      malformed ISO dates at the 422 layer before this handler runs.
+    """
+    cursor_published: date | None = None
+    cursor_id: int | None = None
+    if cursor is not None:
+        try:
+            decoded = decode_cursor(cursor)
+        except CursorDecodeError as exc:
+            return JSONResponse(
+                status_code=422,
+                content={
+                    "detail": [
+                        {
+                            "loc": ["query", "cursor"],
+                            "msg": str(exc),
+                            "type": "value_error.malformed_cursor",
+                        }
+                    ]
+                },
+            )
+        cursor_published = decoded.sort_value
+        cursor_id = decoded.last_id
+
+    result = await actor_reports.get_actor_reports(
+        session,
+        actor_id=actor_id,
+        date_from=date_from,
+        date_to=date_to,
+        cursor_published=cursor_published,
+        cursor_id=cursor_id,
+        limit=limit,
+    )
+
+    # D15(a) — missing actor. Distinct status from the 200-empty
+    # branches so analysts can tell "unknown actor" from "known
+    # actor with no evidence yet".
+    if result is None:
+        return JSONResponse(
+            status_code=404,
+            content={"detail": "actor not found"},
+        )
+
+    rows, next_published, next_id = result
+
+    next_cursor: str | None = None
+    if next_published is not None and next_id is not None:
+        next_cursor = encode_cursor(next_published, next_id)
+
+    return ReportListResponse(
+        items=[ReportItem.model_validate(row) for row in rows],
+        next_cursor=next_cursor,
+    )
