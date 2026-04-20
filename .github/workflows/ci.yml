@@ -186,6 +186,19 @@ jobs:
       - run: uv sync --project services/${{ matrix.service }} --no-install-project
       - run: uv run --project services/${{ matrix.service }} python -c "print('ok')"
 
+  # -------------------------------------------------------------------------
+  # api-tests — PR #11 + Group D extensions (PR #19a scope=a)
+  #
+  # PR #19a Group D: the api side of the embed-on-ingest wiring
+  # (services/api/src/api/embedding_client.py,
+  # services/api/src/api/embedding_writer.py,
+  # services/api/tests/unit/test_embedding_client.py,
+  # services/api/tests/unit/test_embedding_writer.py,
+  # services/api/tests/integration/test_review_embedding.py)
+  # is picked up by auto-discovery under ``testpaths`` with NO CI
+  # command change. New modules reach 100% coverage; total api
+  # coverage stays above the 70% gate.
+  # -------------------------------------------------------------------------
   api-tests:
     runs-on: ubuntu-latest
     steps:
@@ -218,6 +231,26 @@ jobs:
           path: services/api/coverage.xml
           if-no-files-found: warn
 
+  # -------------------------------------------------------------------------
+  # worker-tests — PR #6 + Group D extensions
+  #
+  # PR #19a Group D: NO command change required to pick up the new
+  # embed-on-ingest + backfill test surface. All five new test files
+  # (test_embedding_client.py, test_embedding_writer.py,
+  # test_bootstrap_embedding.py, test_backfill.py, test_backfill_cli.py)
+  # live under ``services/worker/tests/{unit,integration}/`` and are
+  # auto-discovered via ``testpaths = ["tests"]`` in
+  # services/worker/pyproject.toml. The ``--cov=src/worker/bootstrap``
+  # flag already covers the three new production modules
+  # (embedding_client.py, embedding_writer.py, backfill.py). Local run
+  # measured bootstrap coverage at 96% (70% gate preserved with 26%
+  # headroom).
+  #
+  # Signal separation is preserved: the ``python-services (worker)``
+  # matrix step stays a pure import-tree smoke (``uv sync + print('ok')``)
+  # that fires red on a broken dep graph BEFORE pytest gets a chance,
+  # which is a different signal from broken test logic.
+  # -------------------------------------------------------------------------
   worker-tests:
     runs-on: ubuntu-latest
     steps:

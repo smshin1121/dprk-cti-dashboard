@@ -100,12 +100,20 @@ class PromoteOutcome:
     already had a row and this promote attached to it rather than
     inserting — the router does not need to distinguish, but the
     audit diff captures it for forensics.
+
+    ``title`` and ``summary`` carry the just-inserted report text so
+    the router can hand them to the embedding writer without a second
+    SELECT (PR #19a Group B). Defaults preserve backward compatibility
+    with any caller that constructs ``PromoteOutcome`` without the
+    new fields (e.g. the spy in ``test_review_route.py``).
     """
 
     staging_id: int
     report_id: int
     attached_existing: bool
     reviewer_sub: str
+    title: str = ""
+    summary: str | None = None
 
 
 @dataclass(frozen=True)
@@ -178,6 +186,12 @@ async def _lock_and_load_staging(
             staging_table.c.title,
             staging_table.c.lang,
             staging_table.c.published,
+            # ``summary`` feeds the OI1 embed-text composition
+            # (title + summary) in PR #19a Group B. Column stays
+            # NULL in Phase 2 ingests until LLM enrichment lands
+            # (Phase 4); OI1 handles NULL by falling back to
+            # title-only.
+            staging_table.c.summary,
             staging_table.c.reviewed_by,
             staging_table.c.reviewed_at,
         )
@@ -469,6 +483,8 @@ async def promote_staging_row(
         report_id=report_id,
         attached_existing=attached_existing,
         reviewer_sub=reviewer_sub,
+        title=report_fields["title"],
+        summary=row.summary,
     )
 
 

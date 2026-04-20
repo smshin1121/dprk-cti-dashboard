@@ -46,6 +46,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import logging
 import os
 import sys
 from pathlib import Path
@@ -67,6 +68,11 @@ from worker.bootstrap.audit import (
     new_audit_meta,
     write_run_audit,
 )
+from worker.bootstrap.embedding_client import (
+    LlmProxyEmbeddingClient,
+    PermanentEmbeddingError,
+)
+from worker.bootstrap.embedding_writer import embed_report
 from worker.bootstrap.errors import (
     DeadLetterEntry,
     DeadLetterWriter,
@@ -81,7 +87,12 @@ from worker.bootstrap.schemas import (
     ReportRow,
     RowValidationError,
 )
-from worker.bootstrap.upsert import upsert_actor, upsert_incident, upsert_report
+from worker.bootstrap.upsert import (
+    UpsertAction,
+    upsert_actor,
+    upsert_incident,
+    upsert_report,
+)
 
 
 __all__ = [
@@ -94,6 +105,16 @@ __all__ = [
 _PACKAGE_DIR = Path(__file__).resolve().parents[0]
 _DEFAULT_ERRORS_PATH = Path("artifacts/bootstrap_errors.jsonl")
 _DATABASE_URL_ENV_VAR = "BOOTSTRAP_DATABASE_URL"
+
+# PR #19a Group C — env vars consumed by the backfill-embeddings
+# subcommand. DATABASE_URL env fallback is shared with the ingest
+# subcommand above. Token is read from env only (never a CLI flag).
+_BACKFILL_SUBCOMMAND = "backfill-embeddings"
+_LLM_PROXY_URL_ENV_VAR = "LLM_PROXY_URL"
+_LLM_PROXY_INTERNAL_TOKEN_ENV_VAR = "LLM_PROXY_INTERNAL_TOKEN"
+_LLM_PROXY_TIMEOUT_ENV_VAR = "LLM_PROXY_EMBEDDING_TIMEOUT_SECONDS"
+
+_embed_logger = logging.getLogger("worker.bootstrap.cli.embedding")
 
 
 def _default_aliases_path() -> Path:
@@ -206,6 +227,7 @@ async def _process_one_row(
     aliases: AliasDictionary,
     *,
     audit_buffer: AuditBuffer | None = None,
+    embedding_client: LlmProxyEmbeddingClient | None = None,
 ) -> None:
     """Dispatch one loader row to the matching upsert path.
 
@@ -215,13 +237,56 @@ async def _process_one_row(
     When ``audit_buffer`` is provided, the composite upsert functions
     append row-level audit events for each nested audited entity they
     touch (D3 scope: groups, sources, codenames, reports, incidents).
+
+    When ``embedding_client`` is provided AND the row is a freshly
+    inserted report, calls ``embed_report`` to populate
+    ``reports.embedding`` (PR #19a Group B). Enrichment never blocks
+    the ingest gate — transient failures are swallowed inside
+    ``embed_report``; permanent failures are caught here, logged at
+    ERROR, and suppressed so the per-row savepoint retains the
+    INSERT. Row persists with ``embedding IS NULL`` and becomes a
+    backfill-CLI candidate.
     """
     if row_sheet == "Actors":
         validated = ActorRow(**row_data)
         await upsert_actor(session, validated, aliases, audit_buffer=audit_buffer)
     elif row_sheet == "Reports":
         validated = ReportRow(**row_data)
-        await upsert_report(session, validated, aliases, audit_buffer=audit_buffer)
+        report_outcome = await upsert_report(
+            session, validated, aliases, audit_buffer=audit_buffer
+        )
+        if (
+            embedding_client is not None
+            and report_outcome.action is UpsertAction.INSERTED
+        ):
+            # Bootstrap workbook columns are Published / Author /
+            # Title / URL / Tags — no summary. The reports.summary
+            # column stays NULL for bootstrap inserts, so the OI1
+            # composition rule resolves to title-only here. When the
+            # promote path (api side) embeds, summary is populated
+            # from staging.summary per PR #10.
+            try:
+                await embed_report(
+                    session,
+                    report_id=report_outcome.id,
+                    title=validated.title,
+                    summary=None,
+                    client=embedding_client,
+                )
+            except PermanentEmbeddingError as exc:
+                # Plan C4 loud branch — must swallow here so the per-
+                # row savepoint does not roll back the INSERT. The
+                # row stays with ``embedding IS NULL`` and is picked
+                # up by the backfill CLI on the next run.
+                _embed_logger.error(
+                    "embedding.permanent",
+                    extra={
+                        "event": "embedding.permanent",
+                        "report_id": report_outcome.id,
+                        "upstream_status": exc.upstream_status,
+                        "reason": exc.reason,
+                    },
+                )
     elif row_sheet == "Incidents":
         validated = IncidentRow(**row_data)
         await upsert_incident(session, validated, audit_buffer=audit_buffer)
@@ -239,6 +304,7 @@ async def run_bootstrap(
     limit: int | None,
     stdout: TextIO,
     audit_meta: AuditMeta | None = None,
+    embedding_client: LlmProxyEmbeddingClient | None = None,
 ) -> ExitDecision:
     """Run the full Bootstrap ETL pipeline against ``session``.
 
@@ -353,6 +419,7 @@ async def run_bootstrap(
                             wb_row.data,
                             aliases,
                             audit_buffer=audit_buffer,
+                            embedding_client=embedding_client,
                         )
                 except (RowValidationError, ValueError) as exc:
                     failures += 1
@@ -579,14 +646,171 @@ async def _main_async(args: argparse.Namespace) -> int:
         await engine.dispose()
 
 
+def build_backfill_parser() -> argparse.ArgumentParser:
+    """Construct the argparse parser for the ``backfill-embeddings``
+    subcommand (PR #19a Group C).
+
+    The subcommand is dispatched from ``main()`` when ``argv[0]`` is
+    ``backfill-embeddings``. This parser sees argv WITHOUT that
+    leading token.
+    """
+    from worker.bootstrap.backfill import (
+        DEFAULT_SLEEP_SECONDS,
+        MAX_BATCH_SIZE,
+    )
+
+    parser = argparse.ArgumentParser(
+        prog=f"python -m worker.bootstrap {_BACKFILL_SUBCOMMAND}",
+        description=(
+            "Populate reports.embedding for rows where it is currently "
+            "NULL, using the llm-proxy embedding endpoint (PR #18). "
+            "Idempotent — rows already populated are never re-embedded."
+        ),
+    )
+    parser.add_argument(
+        "--database-url",
+        type=str,
+        default=None,
+        help=(
+            f"SQLAlchemy async URL. Falls back to ${_DATABASE_URL_ENV_VAR}. "
+            "Required."
+        ),
+    )
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=MAX_BATCH_SIZE,
+        help=(
+            f"Texts per llm-proxy request (1..{MAX_BATCH_SIZE}). "
+            f"Defaults to {MAX_BATCH_SIZE}, matching PR #18's max."
+        ),
+    )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Optional total-row cap. No limit by default.",
+    )
+    parser.add_argument(
+        "--sleep-seconds",
+        type=float,
+        default=DEFAULT_SLEEP_SECONDS,
+        help=(
+            f"Delay between batches (float, >= 0). Default "
+            f"{DEFAULT_SLEEP_SECONDS}s ≈ 30 req/min ceiling matching "
+            f"PR #18's locked bucket. On 429 the backfill honors "
+            f"Retry-After (capped) instead of this value."
+        ),
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help=(
+            "Select candidate rows and print the scanned count "
+            "without calling llm-proxy or issuing any UPDATE."
+        ),
+    )
+    return parser
+
+
+async def _backfill_main_async(args: argparse.Namespace) -> int:
+    """Async inner body for the ``backfill-embeddings`` subcommand.
+
+    Returns the process exit code — 0 on success, 1 on configuration
+    error. A run that hits upstream failures still exits 0 as long as
+    the backfill itself completed; individual row failures surface
+    via the logged ``BackfillCounts`` summary, not the exit code.
+    """
+    import httpx
+
+    from worker.bootstrap.backfill import run_embedding_backfill
+    from worker.bootstrap.embedding_client import LlmProxyEmbeddingClient
+
+    database_url = args.database_url or os.environ.get(_DATABASE_URL_ENV_VAR)
+    if not database_url:
+        sys.stderr.write(
+            f"error: --database-url or ${_DATABASE_URL_ENV_VAR} is "
+            "required\n"
+        )
+        return 1
+
+    if not args.dry_run:
+        llm_proxy_url = os.environ.get(_LLM_PROXY_URL_ENV_VAR, "")
+        token = os.environ.get(_LLM_PROXY_INTERNAL_TOKEN_ENV_VAR, "")
+        if not llm_proxy_url or not token:
+            sys.stderr.write(
+                f"error: ${_LLM_PROXY_URL_ENV_VAR} and "
+                f"${_LLM_PROXY_INTERNAL_TOKEN_ENV_VAR} are both required "
+                "for non-dry-run invocations\n"
+            )
+            return 1
+        timeout_seconds = float(
+            os.environ.get(_LLM_PROXY_TIMEOUT_ENV_VAR, "10.0")
+        )
+    else:
+        # dry-run — no llm-proxy contact; pass dummy values.
+        llm_proxy_url = "http://dry-run.local"
+        token = "dry-run-unused-token"
+        timeout_seconds = 10.0
+
+    engine = create_async_engine(database_url)
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    http_client = httpx.AsyncClient(timeout=httpx.Timeout(timeout_seconds))
+    try:
+        client = LlmProxyEmbeddingClient(
+            base_url=llm_proxy_url,
+            internal_token=token,
+            client=http_client,
+            timeout_seconds=timeout_seconds,
+        )
+        async with session_factory() as session:
+            counts = await run_embedding_backfill(
+                session,
+                client=client,
+                batch_size=args.batch_size,
+                limit=args.limit,
+                dry_run=args.dry_run,
+            )
+        sys.stdout.write(
+            f"backfill complete: "
+            f"scanned={counts.scanned} "
+            f"embedded={counts.embedded} "
+            f"already_populated={counts.already_populated} "
+            f"skipped_transient={counts.skipped_transient} "
+            f"skipped_permanent={counts.skipped_permanent} "
+            f"dry_run_skipped={counts.dry_run_skipped}\n"
+        )
+        return 0
+    except ValueError as exc:
+        sys.stderr.write(f"error: {exc}\n")
+        return 1
+    finally:
+        await http_client.aclose()
+        await engine.dispose()
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Synchronous CLI entry point.
 
     Returns the process exit code instead of calling ``sys.exit`` so
     tests can assert on the return value directly.
+
+    Dispatches on the first argv token:
+      - ``backfill-embeddings``: routes to the PR #19a backfill CLI.
+      - anything else (or absent): the historical PR #6 ingest CLI.
+
+    This dispatch preserves backward compatibility with existing CI
+    and docs that invoke ``python -m worker.bootstrap --workbook=...``
+    directly — the first token is ``--workbook``, which falls through
+    to the ingest parser unchanged.
     """
+    argv_list: list[str] = list(argv) if argv is not None else sys.argv[1:]
+    if argv_list and argv_list[0] == _BACKFILL_SUBCOMMAND:
+        parser = build_backfill_parser()
+        args = parser.parse_args(argv_list[1:])
+        return asyncio.run(_backfill_main_async(args))
     parser = build_parser()
-    args = parser.parse_args(argv)
+    args = parser.parse_args(argv_list)
     return asyncio.run(_main_async(args))
 
 

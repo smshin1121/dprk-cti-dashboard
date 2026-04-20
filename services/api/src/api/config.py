@@ -89,6 +89,16 @@ class Settings(BaseSettings):
     rate_limit_enabled: bool = True
     rate_limit_storage_url: str = ""
 
+    # PR #19a Group B — llm-proxy embedding client config.
+    # Both empty means: embedding disabled. The promote route will
+    # skip the embed step entirely (see api.deps.get_embedding_client)
+    # and ingest/promote UX is unaffected. Populating BOTH activates
+    # the embed-on-ingest pathway added in PR #19a.
+    # Token is read from env only — never logged or echoed.
+    llm_proxy_url: str = ""
+    llm_proxy_internal_token: str = ""
+    llm_proxy_embedding_timeout_seconds: float = 10.0
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

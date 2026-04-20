@@ -14,6 +14,7 @@ Endpoints:
 
 from __future__ import annotations
 
+import logging
 from datetime import date
 from typing import Annotated
 
@@ -24,7 +25,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth.schemas import CurrentUser
 from ..db import get_db
-from ..deps import require_role
+from ..deps import get_embedding_client, require_role
+from ..embedding_client import (
+    LlmProxyEmbeddingClient,
+    PermanentEmbeddingError,
+)
+from ..embedding_writer import embed_report
 from ..rate_limit import get_limiter
 from ..promote import service as promote_service
 from ..promote.errors import (
@@ -57,6 +63,9 @@ from ..schemas.review import (
 )
 
 router = APIRouter()
+
+
+_embed_logger = logging.getLogger("api.routers.reports.embedding")
 
 
 # RBAC lock per plan §2.1 D5 / design doc §9.3 — review/promote is
@@ -467,6 +476,9 @@ async def review_staging(
     payload: ReviewDecisionRequest = Body(...),
     session: AsyncSession = Depends(get_db),
     current_user: CurrentUser = Depends(require_role(*ALLOWED_REVIEWER_ROLES)),
+    embedding_client: LlmProxyEmbeddingClient | None = Depends(
+        get_embedding_client
+    ),
 ) -> Response:
     """§5.3 / §9.3 Approve or reject a staging row.
 
@@ -501,6 +513,34 @@ async def review_staging(
                     reviewer_sub=current_user.sub,
                     reviewer_notes=payload.notes,
                 )
+                # PR #19a Group B — embed-on-promote.
+                # Must live INSIDE this ``async with session.begin()``
+                # block so the UPDATE participates in the same
+                # transaction as the INSERT. PermanentEmbeddingError
+                # is caught here to keep the tx-commit path intact
+                # (C4 lock): the analyst approve UX must not regress
+                # because llm-proxy's contract drifted. Transient
+                # failures are swallowed inside ``embed_report`` and
+                # therefore never reach this layer.
+                if embedding_client is not None:
+                    try:
+                        await embed_report(
+                            session,
+                            report_id=outcome.report_id,
+                            title=outcome.title,
+                            summary=outcome.summary,
+                            client=embedding_client,
+                        )
+                    except PermanentEmbeddingError as exc:
+                        _embed_logger.error(
+                            "embedding.permanent",
+                            extra={
+                                "event": "embedding.permanent",
+                                "report_id": outcome.report_id,
+                                "upstream_status": exc.upstream_status,
+                                "reason": exc.reason,
+                            },
+                        )
                 return ReviewDecisionResponse(
                     staging_id=outcome.staging_id,
                     report_id=outcome.report_id,
