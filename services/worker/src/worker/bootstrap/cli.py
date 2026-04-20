@@ -46,6 +46,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import logging
 import os
 import sys
 from pathlib import Path
@@ -67,6 +68,11 @@ from worker.bootstrap.audit import (
     new_audit_meta,
     write_run_audit,
 )
+from worker.bootstrap.embedding_client import (
+    LlmProxyEmbeddingClient,
+    PermanentEmbeddingError,
+)
+from worker.bootstrap.embedding_writer import embed_report
 from worker.bootstrap.errors import (
     DeadLetterEntry,
     DeadLetterWriter,
@@ -81,7 +87,12 @@ from worker.bootstrap.schemas import (
     ReportRow,
     RowValidationError,
 )
-from worker.bootstrap.upsert import upsert_actor, upsert_incident, upsert_report
+from worker.bootstrap.upsert import (
+    UpsertAction,
+    upsert_actor,
+    upsert_incident,
+    upsert_report,
+)
 
 
 __all__ = [
@@ -94,6 +105,8 @@ __all__ = [
 _PACKAGE_DIR = Path(__file__).resolve().parents[0]
 _DEFAULT_ERRORS_PATH = Path("artifacts/bootstrap_errors.jsonl")
 _DATABASE_URL_ENV_VAR = "BOOTSTRAP_DATABASE_URL"
+
+_embed_logger = logging.getLogger("worker.bootstrap.cli.embedding")
 
 
 def _default_aliases_path() -> Path:
@@ -206,6 +219,7 @@ async def _process_one_row(
     aliases: AliasDictionary,
     *,
     audit_buffer: AuditBuffer | None = None,
+    embedding_client: LlmProxyEmbeddingClient | None = None,
 ) -> None:
     """Dispatch one loader row to the matching upsert path.
 
@@ -215,13 +229,56 @@ async def _process_one_row(
     When ``audit_buffer`` is provided, the composite upsert functions
     append row-level audit events for each nested audited entity they
     touch (D3 scope: groups, sources, codenames, reports, incidents).
+
+    When ``embedding_client`` is provided AND the row is a freshly
+    inserted report, calls ``embed_report`` to populate
+    ``reports.embedding`` (PR #19a Group B). Enrichment never blocks
+    the ingest gate — transient failures are swallowed inside
+    ``embed_report``; permanent failures are caught here, logged at
+    ERROR, and suppressed so the per-row savepoint retains the
+    INSERT. Row persists with ``embedding IS NULL`` and becomes a
+    backfill-CLI candidate.
     """
     if row_sheet == "Actors":
         validated = ActorRow(**row_data)
         await upsert_actor(session, validated, aliases, audit_buffer=audit_buffer)
     elif row_sheet == "Reports":
         validated = ReportRow(**row_data)
-        await upsert_report(session, validated, aliases, audit_buffer=audit_buffer)
+        report_outcome = await upsert_report(
+            session, validated, aliases, audit_buffer=audit_buffer
+        )
+        if (
+            embedding_client is not None
+            and report_outcome.action is UpsertAction.INSERTED
+        ):
+            # Bootstrap workbook columns are Published / Author /
+            # Title / URL / Tags — no summary. The reports.summary
+            # column stays NULL for bootstrap inserts, so the OI1
+            # composition rule resolves to title-only here. When the
+            # promote path (api side) embeds, summary is populated
+            # from staging.summary per PR #10.
+            try:
+                await embed_report(
+                    session,
+                    report_id=report_outcome.id,
+                    title=validated.title,
+                    summary=None,
+                    client=embedding_client,
+                )
+            except PermanentEmbeddingError as exc:
+                # Plan C4 loud branch — must swallow here so the per-
+                # row savepoint does not roll back the INSERT. The
+                # row stays with ``embedding IS NULL`` and is picked
+                # up by the backfill CLI on the next run.
+                _embed_logger.error(
+                    "embedding.permanent",
+                    extra={
+                        "event": "embedding.permanent",
+                        "report_id": report_outcome.id,
+                        "upstream_status": exc.upstream_status,
+                        "reason": exc.reason,
+                    },
+                )
     elif row_sheet == "Incidents":
         validated = IncidentRow(**row_data)
         await upsert_incident(session, validated, audit_buffer=audit_buffer)
@@ -239,6 +296,7 @@ async def run_bootstrap(
     limit: int | None,
     stdout: TextIO,
     audit_meta: AuditMeta | None = None,
+    embedding_client: LlmProxyEmbeddingClient | None = None,
 ) -> ExitDecision:
     """Run the full Bootstrap ETL pipeline against ``session``.
 
@@ -353,6 +411,7 @@ async def run_bootstrap(
                             wb_row.data,
                             aliases,
                             audit_buffer=audit_buffer,
+                            embedding_client=embedding_client,
                         )
                 except (RowValidationError, ValueError) as exc:
                     failures += 1
