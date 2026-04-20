@@ -22,6 +22,12 @@ OI locks (§2.1): OI1=A (with whitespace refinement), OI2=A, OI3=A, OI4=B (sleep
 
 D3/D9 refined (see §2): INSERT commits before llm-proxy is contacted — two-transaction boundary makes fail-open behavior fall out naturally.
 
+**Scope expansion (locked 2026-04-20 pre-Group-B):** PR #19a covers BOTH production insertion paths into `reports` — `services/worker/src/worker/bootstrap/upsert.py::upsert_report` (bootstrap workbook loader, historical) AND `services/api/src/api/promote/service.py` (staging→reports promotion, live hot path). Without the api side, steady-state ingest (RSS/TAXII→staging→analyst-approve→promote) would land every new report with `embedding IS NULL` and depend entirely on the backfill CLI — defeating "embed-on-ingest".
+
+**Architecture (Y, locked):** `upsert_report()` and `promote_service()` signatures are **unchanged**. Each service owns a thin `embedding_writer.py` orchestrator (service-local, not shared — session/config/logging contracts differ, cross-service import would couple unrelated deployables). Callers invoke the orchestrator AFTER their existing INSERT+commit step; enrichment never participates in the ingest transaction.
+
+See §9 for Group B pre-landing criteria (in-commit test assertions pinning these locks).
+
 ---
 
 ## 1. Goal
@@ -265,3 +271,114 @@ Ordering rationale:
 - `services/worker/src/worker/bootstrap/upsert.py` — current report insert path
 - `services/worker/src/worker/bootstrap/cli.py` — existing argparse / DB session pattern
 - `services/worker/src/worker/bootstrap/tables.py` — sqlite-local schema caveat (no pgvector column)
+- `services/api/src/api/promote/service.py` — staging→reports promotion (live hot path, PR #10)
+
+---
+
+## 9. Group B — pre-landing review criteria (LOCKED 2026-04-20)
+
+Declared **before** implementation. Each criterion becomes an in-commit
+assertion: concrete tests (or test classes) inside the Group B commit pin
+the promise. Matches the pre-landing-criteria pattern from PRs #14 / #15 /
+#17 / #18 (four consecutive Codex R1 CLEAN outright).
+
+### 9.1 Architectural choices locked
+
+- **Scope = a:** both production `reports` INSERT paths covered — worker
+  bootstrap loader (historical) AND api promote service (live hot path).
+  Rejecting "worker only" because steady-state ingest flows through the
+  promote route and would otherwise land every new row with
+  `embedding IS NULL`.
+- **Architecture = Y:** separate service-local `embedding_writer.py`
+  orchestrators. `upsert_report()` (worker) and the promote service
+  function (api) keep their existing signatures unchanged. Rejecting
+  "inline in upsert_report" because the existing contract explicitly
+  disclaims transaction ownership (`upsert.py` docstring L19-22) — an
+  inline `flush()`/`commit()` would silently mutate that contract for one
+  function only.
+- **Module layout = 2 service-local writers, not shared:**
+  - `services/worker/src/worker/bootstrap/embedding_writer.py` (NEW)
+  - `services/api/src/api/embedding_writer.py` (NEW)
+  Cross-service import was rejected: session factory, logging conventions,
+  and config resolution all differ between worker and api, and a shared
+  module would pin those couplings for every future change.
+
+### 9.2 Criteria (pinned as in-commit test assertions)
+
+- **C1 — No signature drift.** `upsert_report(session, row, aliases, *, audit_buffer=None)`
+  (worker) and the promote service entry point (api) keep their existing
+  signatures and behavior unchanged. All pre-PR-#19a unit + integration
+  tests pass without modification. sqlite-memory tests preserve their
+  exact row counts, audit event lists, and `UpsertOutcome` / promote
+  response shapes. A "signature guard" test greps the source of each
+  function to fail loudly on any added parameter.
+
+- **C2 — Service-local orchestrators with pinned shape.** Each service
+  exports:
+
+      async def embed_report(
+          session: AsyncSession,
+          *,
+          report_id: int,
+          title: str,
+          summary: str | None,
+          client: LlmProxyEmbeddingClient,
+      ) -> EmbedWriteOutcome
+
+  Shared contract across both writers:
+  - **Dialect guard:** `session.get_bind().dialect.name != "postgresql"`
+    → return `EmbedWriteOutcome.SKIPPED_SQLITE` without invoking the
+    client. Pinned by a sqlite-backed test that spies on the client and
+    asserts zero calls.
+  - **Text composition (OI1):** `title + "\n\n" + summary` when `summary`
+    is non-null and `summary.strip() != ""`, else `title` alone. Pinned
+    by 3 unit tests (summary present / null / whitespace-only).
+  - **SQL text pinned by literal match:**
+    `UPDATE reports SET embedding = CAST(:vec AS vector) WHERE id = :id AND embedding IS NULL`
+    — test captures executed SQL and asserts the exact fragments
+    `WHERE id = :id AND embedding IS NULL` and `CAST(:vec AS vector)`.
+  - **Vector serialization:** pgvector text literal `[0.1,0.2,...]`.
+    No `pgvector` Python package dependency added.
+
+- **C3 — Null-guarded UPDATE, rowcount pinned.**
+  - Happy path: `rowcount == 1` → `EmbedWriteOutcome.EMBEDDED`.
+  - Re-run with the same `report_id` after a prior successful write:
+    null-guard matches zero rows → `rowcount == 0` →
+    `EmbedWriteOutcome.ALREADY_POPULATED`. No overwrite of existing
+    vectors. Ever.
+  - Pinned by a PG-dialect-simulating test that runs `embed_report` twice
+    on the same `report_id` with two different stub vectors; asserts the
+    second call returns `ALREADY_POPULATED` and the DB still holds the
+    first vector.
+
+- **C4 — Enrichment never blocks the ingest/promote gate.** Both callers
+  (worker `_process_one_row` + api promote route) wrap the `embed_report()`
+  call in a try-catch that swallows every embedding error class. Neither
+  path ever rolls back the `reports` INSERT on embedding failure.
+  - `TransientEmbeddingError` (429/502/503/504/timeout): caught
+    **inside** `embed_report()`, logged at **WARN** via
+    `logger.warning("embedding.transient", extra=...)`, metric
+    `embedding.transient_count` incremented, returns
+    `EmbedWriteOutcome.SKIPPED_TRANSIENT`. Caller sees no exception.
+  - `PermanentEmbeddingError` (422 / dimension mismatch / malformed 2xx):
+    propagates **out** of `embed_report()`. Caller catches, logs at
+    **ERROR** via `logger.error("embedding.permanent", extra=...)`,
+    metric `embedding.permanent_count` incremented, continues.
+  - Both paths leave the report row persisted with `embedding IS NULL` —
+    becomes a backfill-CLI candidate on the next run.
+  - Pinned by 4 integration tests per service (8 total): happy /
+    transient / permanent for both worker bootstrap AND api promote,
+    plus a "promote response unchanged on permanent-failure" test
+    asserting the analyst UX does not regress on llm-proxy contract drift.
+  - **Rationale:** PR #19a is retrieval enrichment, not a promote gate.
+    Coupling analyst-approve UX availability to llm-proxy schema stability
+    would turn a retrieval-layer upgrade into an ingest-layer liability.
+
+### 9.3 Out of scope for Group B
+
+- Backfill CLI (Group C).
+- CI wiring changes (Group D).
+- pgvector coercion helpers beyond the CAST-from-text-literal used in
+  the UPDATE — no `pgvector` pip dep, no SQLAlchemy custom type for
+  now. If needed in PR #19b, revisit.
+- `staging.embedding` — still deliberately untouched (plan D1).
