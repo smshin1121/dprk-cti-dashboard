@@ -6,18 +6,26 @@ both sides of the session forward (Redis TTL + re-signed cookie), and
 returns a :class:`CurrentUser`.
 
 ``require_role`` is a dependency factory for endpoint-level RBAC checks.
+
+``get_embedding_client`` returns the process-scoped llm-proxy embedding
+client when ``LLM_PROXY_URL`` + ``LLM_PROXY_INTERNAL_TOKEN`` env vars
+are both populated, or ``None`` when either is empty (embedding
+disabled — the promote route skips the embed step entirely).
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable, Coroutine
+from functools import lru_cache
 from typing import Any
 
+import httpx
 from fastapi import Depends, HTTPException, Request, Response
 
 from .auth.schemas import CurrentUser
 from .auth.session import SessionStore, get_session_store, set_session_cookie
 from .config import get_settings
+from .embedding_client import LlmProxyEmbeddingClient
 
 
 async def verify_token(
@@ -90,3 +98,55 @@ def require_role(
         return user
 
     return _dependency
+
+
+# ---------------------------------------------------------------------------
+# Embedding client (PR #19a Group B)
+# ---------------------------------------------------------------------------
+#
+# The embedding client has a per-process httpx.AsyncClient that the
+# ``get_embedding_client`` dependency returns on every request. The
+# transport client is cached via ``lru_cache`` so connection pooling
+# works across requests. Unit tests override the dep via
+# ``app.dependency_overrides[get_embedding_client] = ...`` without
+# touching this cache.
+#
+# When ``LLM_PROXY_URL`` or ``LLM_PROXY_INTERNAL_TOKEN`` is empty,
+# the dependency returns ``None`` — the promote router then skips the
+# embed step entirely. This is the "feature disabled" default and
+# keeps existing dev / test setups (where llm-proxy isn't wired) from
+# needing config changes.
+
+
+@lru_cache(maxsize=1)
+def _embedding_http_client() -> httpx.AsyncClient:
+    """Lazily build the shared httpx.AsyncClient for the embedding path.
+
+    Lifetime is process-scoped. FastAPI lifespan teardown will close
+    it indirectly when the process exits; we do not rely on explicit
+    shutdown because an ``AsyncClient`` with an httpx transport closes
+    cleanly on GC in practice.
+    """
+    settings = get_settings()
+    return httpx.AsyncClient(
+        timeout=httpx.Timeout(settings.llm_proxy_embedding_timeout_seconds),
+    )
+
+
+def get_embedding_client() -> LlmProxyEmbeddingClient | None:
+    """Return the llm-proxy embedding client, or ``None`` if disabled.
+
+    Enabled when BOTH ``LLM_PROXY_URL`` and
+    ``LLM_PROXY_INTERNAL_TOKEN`` are non-empty. The promote router
+    reads the return value and skips embedding on ``None`` without
+    error (C4 — enrichment never blocks promote).
+    """
+    settings = get_settings()
+    if not settings.llm_proxy_url or not settings.llm_proxy_internal_token:
+        return None
+    return LlmProxyEmbeddingClient(
+        base_url=settings.llm_proxy_url,
+        internal_token=settings.llm_proxy_internal_token,
+        client=_embedding_http_client(),
+        timeout_seconds=settings.llm_proxy_embedding_timeout_seconds,
+    )
