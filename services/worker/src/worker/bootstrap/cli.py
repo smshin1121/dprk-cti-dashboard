@@ -48,6 +48,7 @@ import argparse
 import asyncio
 import logging
 import os
+import platform
 import sys
 from pathlib import Path
 from typing import Sequence, TextIO
@@ -789,6 +790,22 @@ async def _backfill_main_async(args: argparse.Namespace) -> int:
         await engine.dispose()
 
 
+def _run_async(coro):  # noqa: ANN001
+    """Run an async coroutine, using SelectorEventLoop on Windows.
+
+    Mirrors ``worker.ingest.cli._run_async``. Python's default
+    ProactorEventLoop on Windows is incompatible with psycopg's
+    async connection machinery and crashes on the first real query;
+    both entry points in this module open an async engine against
+    postgres, so both must force SelectorEventLoop on Windows.
+    """
+    if platform.system() == "Windows":
+        import selectors  # noqa: F401
+        loop_factory = asyncio.SelectorEventLoop
+        return asyncio.run(coro, loop_factory=loop_factory)
+    return asyncio.run(coro)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Synchronous CLI entry point.
 
@@ -808,10 +825,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     if argv_list and argv_list[0] == _BACKFILL_SUBCOMMAND:
         parser = build_backfill_parser()
         args = parser.parse_args(argv_list[1:])
-        return asyncio.run(_backfill_main_async(args))
+        return _run_async(_backfill_main_async(args))
     parser = build_parser()
     args = parser.parse_args(argv_list)
-    return asyncio.run(_main_async(args))
+    return _run_async(_main_async(args))
 
 
 if __name__ == "__main__":  # pragma: no cover — module entry path

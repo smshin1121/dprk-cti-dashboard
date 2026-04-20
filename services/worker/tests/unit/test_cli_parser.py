@@ -9,6 +9,8 @@ coverage on ``cli.py`` stays meaningful even though production's
 
 from __future__ import annotations
 
+import asyncio
+import platform
 from pathlib import Path
 
 import pytest
@@ -18,6 +20,7 @@ from worker.bootstrap.cli import (
     _DEFAULT_ERRORS_PATH,
     _is_sqlite_memory_url,
     _resolve_dead_letter_path,
+    _run_async,
     build_parser,
     main,
 )
@@ -218,3 +221,65 @@ def test_main_dry_run_with_explicit_sqlite_memory_url_provisions_schema(
     # Exits 2 on the stress fixture (exceeds 5%), not 1 (CLI
     # refused) and not a "no such table" runtime error.
     assert exit_code in (0, 2)
+
+
+# ---------------------------------------------------------------------------
+# _run_async event-loop policy parity with worker.ingest.cli._run_async
+# ---------------------------------------------------------------------------
+
+
+def test_run_async_applies_selector_loop_on_windows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """On Windows, both CLI entry points must pass
+    ``loop_factory=asyncio.SelectorEventLoop`` through to
+    ``asyncio.run`` so psycopg's async connection machinery is not
+    wired onto a ProactorEventLoop (which crashes on the first query).
+
+    Regression guard for the original PR #19a gap: the new
+    backfill-embeddings subcommand called the bare ``asyncio.run``
+    directly, diverging from ``worker.ingest.cli._run_async``.
+    """
+    captured: dict[str, object] = {}
+
+    def fake_run(coro, **kwargs):  # noqa: ANN001, ANN003
+        captured["loop_factory"] = kwargs.get("loop_factory")
+        coro.close()
+        return "sentinel"
+
+    monkeypatch.setattr(platform, "system", lambda: "Windows")
+    monkeypatch.setattr(asyncio, "run", fake_run)
+
+    async def _noop() -> None:
+        return None
+
+    result = _run_async(_noop())
+
+    assert result == "sentinel"
+    assert captured["loop_factory"] is asyncio.SelectorEventLoop
+
+
+def test_run_async_omits_loop_factory_on_non_windows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """On non-Windows platforms, ``_run_async`` must NOT inject a
+    ``loop_factory`` kwarg — the stdlib default is correct there and
+    forcing SelectorEventLoop would silently disable uvloop / other
+    opt-ins downstream."""
+    captured: dict[str, object] = {}
+
+    def fake_run(coro, **kwargs):  # noqa: ANN001, ANN003
+        captured["kwargs"] = dict(kwargs)
+        coro.close()
+        return "sentinel"
+
+    monkeypatch.setattr(platform, "system", lambda: "Linux")
+    monkeypatch.setattr(asyncio, "run", fake_run)
+
+    async def _noop() -> None:
+        return None
+
+    result = _run_async(_noop())
+
+    assert result == "sentinel"
+    assert captured["kwargs"] == {}
