@@ -21,7 +21,7 @@ import logging
 import time
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field, field_validator
 from redis.asyncio import Redis
 
@@ -146,27 +146,30 @@ def _rate_limit_expression() -> str:
 # Route
 # ---------------------------------------------------------------------------
 
+# Literal int codes so this dict does not drag in a starlette-
+# version-coupled ``status.HTTP_*`` attribute (several of which are
+# deprecated on newer starlette). The wire format is what matters.
 _ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
-    status.HTTP_422_UNPROCESSABLE_ENTITY: {
+    422: {
         "description": (
             "Invalid request — empty texts list, empty / whitespace-only "
             "text, null text, or batch over the max."
         )
     },
-    status.HTTP_429_TOO_MANY_REQUESTS: {
+    429: {
         "description": (
             "Rate limit exceeded. Either local bucket "
             "(``rate_limit_exceeded`` body) or upstream-bubbled "
             "(``upstream rate limit`` body)."
         )
     },
-    status.HTTP_502_BAD_GATEWAY: {
+    502: {
         "description": "Upstream provider returned 5xx or a malformed response."
     },
-    status.HTTP_503_SERVICE_UNAVAILABLE: {
+    503: {
         "description": "Service configuration gap discovered at runtime."
     },
-    status.HTTP_504_GATEWAY_TIMEOUT: {
+    504: {
         "description": "Local client deadline hit; upstream never responded."
     },
 }
@@ -175,7 +178,7 @@ _ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
 @router.post(
     "",
     response_model=EmbeddingResponse,
-    status_code=status.HTTP_200_OK,
+    status_code=200,
     responses=_ERROR_RESPONSES,
     summary="Generate embeddings for 1..N texts.",
 )
