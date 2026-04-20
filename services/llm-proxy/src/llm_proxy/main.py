@@ -3,8 +3,29 @@ import os
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
-from .routers import provider
+from .config import get_settings
+from .error_handlers import register_exception_handlers
+from .rate_limit import get_limiter
+from .routers import embedding, provider
 from .telemetry import setup_telemetry
+
+# ---------------------------------------------------------------------------
+# Startup fail-closed (plan D3 Draft v2).
+#
+# Evaluating ``get_settings()`` here — at import time, before
+# ``FastAPI(...)`` is constructed — forces both Settings validators
+# to run BEFORE uvicorn starts accepting requests. Any validation
+# failure (``provider=openai`` with empty ``OPENAI_API_KEY`` OR
+# ``provider=mock`` with ``APP_ENV=prod``) raises ``ValidationError``
+# out of this import and the process dies without binding the port.
+#
+# Without this eager call the validators would only run on the
+# first request (when ``Depends(get_settings)`` evaluates), which
+# means a misconfigured prod pod would stay alive and respond 503
+# per request — the plan locks "refuses to boot", not "first-request
+# fail".
+# ---------------------------------------------------------------------------
+get_settings()
 
 # ---------------------------------------------------------------------------
 # Internal shared-secret guard.
@@ -63,7 +84,17 @@ async def require_internal_token(request: Request, call_next) -> Response:
     return await call_next(request)
 
 
+# PR #18 Group C: slowapi limiter + D7 / D5 exception handlers.
+# ``app.state.limiter`` is read by slowapi's decorator machinery at
+# request time; registering the handlers here covers every D7
+# branch (502 / 504 / 429 / 422 / 503) plus the local 429 from
+# ``RateLimitExceeded``.
+app.state.limiter = get_limiter()
+register_exception_handlers(app)
+
+
 app.include_router(provider.router, prefix="/api/v1/provider", tags=["provider"])
+app.include_router(embedding.router, prefix="/api/v1/embedding", tags=["embedding"])
 
 
 @app.get("/healthz", tags=["ops"])
