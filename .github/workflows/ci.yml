@@ -277,6 +277,74 @@ jobs:
           path: services/worker/coverage.xml
           if-no-files-found: warn
 
+  # -------------------------------------------------------------------------
+  # llm-proxy-tests — PR #18 Group E
+  #
+  # Runs the first-ever llm-proxy test suite (201 tests: 171 unit +
+  # 30 integration). Kept as a DEDICATED job (not folded into the
+  # python-services matrix) for three reasons:
+  #
+  # 1. The ``python-services`` matrix job stays a cheap import smoke
+  #    (uv sync + ``python -c "print('ok')"``, ~30s). That signal is
+  #    valuable on its own — a broken dep tree or import graph turns
+  #    it red before pytest ever has a chance to run. Keeping it
+  #    separate means one job's dependency-drift failure does not
+  #    mask the other's test-logic failure.
+  # 2. Coverage gating (``--cov-fail-under``) only makes sense for
+  #    the tests job, not the import smoke. Mixing them would either
+  #    impose coverage on the smoke (meaningless) or skip coverage
+  #    on the tests (defeats the point).
+  # 3. Future matrix-additions to python-services (a new service
+  #    with no tests yet, e.g. "scheduler" scaffold) would otherwise
+  #    need an opt-out flag to skip the tests step. Dedicated job
+  #    keeps the matrix row-shape uniform.
+  #
+  # NO redis service block. llm-proxy's test setup forces
+  # ``APP_ENV=test`` (via conftest.py module-level setdefault +
+  # belt-and-braces job env) which (a) pins slowapi storage to
+  # ``memory://`` and (b) every cache test uses
+  # ``fakeredis.aioredis.FakeRedis`` via dependency override. The
+  # job is therefore self-contained and fast (~3s suite + sync).
+  # -------------------------------------------------------------------------
+  llm-proxy-tests:
+    runs-on: ubuntu-latest
+    env:
+      # Pinned at the job level as belt-and-braces for the
+      # conftest's ``os.environ.setdefault`` — if an inherited CI
+      # env somehow set APP_ENV=prod, the module-level setdefault
+      # in conftest.py would NOT override it and the eager
+      # ``get_settings()`` in main.py would fail the import with
+      # the prod-mock ValidationError (correct behavior, wrong
+      # failure surface for a test run).
+      APP_ENV: test
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Sync llm-proxy dev dependencies
+        working-directory: services/llm-proxy
+        # ``dev`` is declared under ``[project.optional-dependencies]``
+        # in pyproject.toml, so ``--all-extras`` pulls pytest,
+        # pytest-asyncio, pytest-cov, and fakeredis.
+        run: uv sync --all-extras
+      - name: Run pytest with coverage gate
+        working-directory: services/llm-proxy
+        run: |
+          uv run pytest \
+            --cov=src/llm_proxy \
+            --cov-report=term-missing \
+            --cov-report=xml:coverage.xml \
+            --cov-fail-under=80
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: llm-proxy-coverage-xml
+          path: services/llm-proxy/coverage.xml
+          if-no-files-found: warn
+
   db-migrations:
     runs-on: ubuntu-latest
     services:
