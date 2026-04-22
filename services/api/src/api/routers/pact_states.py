@@ -1281,6 +1281,34 @@ async def _ensure_search_populated_fixture(session: AsyncSession) -> None:
             },
         )
 
+    # PR #19b OI6 = B — stamp deterministic 1536-dim embeddings onto
+    # the populated fixture rows so the hybrid /search path places
+    # them in the vector-kNN top-N during pact verification. Without
+    # this, vector_rank would come back null and the consumer's
+    # ``integer()`` matcher on vector_rank would fail.
+    #
+    # Null-guard: only UPDATE rows whose ``embedding`` is still NULL
+    # so a repeat state setup is a no-op (idempotent, same posture as
+    # the INSERT ON CONFLICT DO NOTHING above).
+    #
+    # Orthogonal one-hot style vectors give each row a distinct
+    # cosine-distance profile, so vector_rank remains deterministic
+    # regardless of the embedding-client's query vector (any non-zero
+    # query vector yields a stable ordering across the 3 rows).
+    for i, (report_id, _published, _title, _summary) in enumerate(
+        report_seed_data
+    ):
+        vec = [0.0] * 1536
+        vec[i] = 1.0
+        vec_literal = "[" + ",".join(repr(x) for x in vec) + "]"
+        await session.execute(
+            text(
+                "UPDATE reports SET embedding = CAST(:vec AS vector) "
+                "WHERE id = :id AND embedding IS NULL"
+            ),
+            {"id": report_id, "vec": vec_literal},
+        )
+
 
 async def _ensure_search_empty_fixture(session: AsyncSession) -> None:
     """Seed the fixture ``GET /api/v1/search?q=nomatchxyz123`` pact uses.

@@ -645,7 +645,7 @@
                 "url": "https://pact.test/search/populated-999060",
                 "url_canonical": "https://pact.test/search/populated-999060"
               },
-              "vector_rank": null
+              "vector_rank": 1
             }
           ],
           "latency_ms": 42,
@@ -758,6 +758,14 @@
               "matchers": [
                 {
                   "match": "type"
+                }
+              ]
+            },
+            "$.items[*].vector_rank": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "integer"
                 }
               ]
             },

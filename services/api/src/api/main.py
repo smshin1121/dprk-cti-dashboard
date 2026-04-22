@@ -10,6 +10,7 @@ from slowapi.middleware import SlowAPIMiddleware
 
 from .config import get_settings
 from .deps import verify_token
+from .embedding_client import PermanentEmbeddingError
 from .rate_limit import (
     get_limiter,
     handle_storage_unavailable,
@@ -77,6 +78,27 @@ app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
 app.add_exception_handler(StorageError, handle_storage_unavailable)
 app.add_exception_handler(RedisConnectionError, handle_storage_unavailable)
 app.add_exception_handler(RedisTimeoutError, handle_storage_unavailable)
+
+
+# PR #19b D9 — PermanentEmbeddingError from the hybrid /search path
+# (llm-proxy 422 / dimension mismatch / malformed 2xx) surfaces as a
+# short 500 with no upstream detail leakage. Parity with PR #19a's
+# promote-path taxonomy: permanent errors are visible; the client
+# body is a fixed string so an attacker cannot reflect raw upstream
+# content back through our API surface.
+async def _permanent_embedding_handler(request, exc):
+    from fastapi.responses import JSONResponse
+
+    # exc details stay server-side (structured log at raise site in
+    # search_service). Client body is fixed.
+    del request, exc
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "search temporarily unavailable"},
+    )
+
+
+app.add_exception_handler(PermanentEmbeddingError, _permanent_embedding_handler)
 app.add_middleware(SlowAPIMiddleware)
 
 # ---------------------------------------------------------------------------

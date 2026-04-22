@@ -1235,6 +1235,81 @@ async def test_search_populated_fixture_is_idempotent(
         )
 
 
+async def test_search_populated_fixture_stamps_embedding_not_null(
+    clean_pg: None, pg_session: AsyncSession
+) -> None:
+    """PR #19b OI6 = B — the 3 populated fixture rows carry non-null
+    ``reports.embedding`` after the state handler runs.
+
+    Without this stamp, the hybrid ``/search`` pact verifier would
+    return ``vector_rank: null`` and the consumer's ``integer()``
+    matcher (FE pact) would fail. Pinning embedding presence here
+    keeps the consumer + provider contract in sync.
+    """
+    await _ensure_search_populated_fixture(pg_session)
+    await pg_session.commit()
+
+    for rid in SEARCH_POPULATED_FIXTURE_REPORT_IDS:
+        not_null = (
+            await pg_session.execute(
+                sa.text(
+                    "SELECT embedding IS NOT NULL "
+                    "FROM reports WHERE id = :id"
+                ),
+                {"id": rid},
+            )
+        ).scalar_one()
+        assert bool(not_null) is True, (
+            f"report id {rid} has null embedding after state setup — "
+            "OI6 = B stamp step missed; hybrid vector_rank would "
+            "come back null and the consumer integer() matcher fails"
+        )
+
+
+async def test_search_populated_fixture_embedding_stamp_is_idempotent(
+    clean_pg: None, pg_session: AsyncSession
+) -> None:
+    """The embedding UPDATE is null-guarded — repeat runs do not
+    overwrite a previously-stamped vector.
+
+    Without the ``AND embedding IS NULL`` guard in the UPDATE, a
+    repeat state setup would re-stamp and silently drift the cosine
+    distance profile, so the vector_rank ordering of the 3 rows
+    could move between verifications.
+    """
+    # First run stamps embeddings.
+    await _ensure_search_populated_fixture(pg_session)
+    await pg_session.commit()
+
+    # Capture the stamped vectors.
+    first_run_vecs: dict[int, str] = {}
+    for rid in SEARCH_POPULATED_FIXTURE_REPORT_IDS:
+        vec = (
+            await pg_session.execute(
+                sa.text("SELECT embedding::text FROM reports WHERE id = :id"),
+                {"id": rid},
+            )
+        ).scalar_one()
+        first_run_vecs[rid] = vec
+
+    # Repeat state setup several times.
+    await _ensure_search_populated_fixture(pg_session)
+    await _ensure_search_populated_fixture(pg_session)
+    await pg_session.commit()
+
+    for rid in SEARCH_POPULATED_FIXTURE_REPORT_IDS:
+        after = (
+            await pg_session.execute(
+                sa.text("SELECT embedding::text FROM reports WHERE id = :id"),
+                {"id": rid},
+            )
+        ).scalar_one()
+        assert after == first_run_vecs[rid], (
+            f"report id {rid} embedding drifted across repeat state "
+            "setups — UPDATE lacks ``embedding IS NULL`` guard"
+        )
+
+
 async def test_search_empty_fixture_is_idempotent(
     clean_pg: None, pg_session: AsyncSession
 ) -> None:
