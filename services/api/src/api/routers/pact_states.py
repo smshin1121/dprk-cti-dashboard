@@ -54,7 +54,7 @@ from __future__ import annotations
 from datetime import date, datetime, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, Request, Response
 from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -62,6 +62,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..auth.schemas import SessionData
 from ..auth.session import SessionStore, get_session_store, set_session_cookie
 from ..db import get_db
+from ..deps import get_embedding_client
+from ..embedding_client import EmbeddingResult
 
 router = APIRouter()
 
@@ -78,6 +80,63 @@ class _ProviderStatePayload(BaseModel):
     states: list[str] | None = None
     action: str | None = None  # "setup" or "teardown" — we only setup
     consumer: str | None = None
+
+
+class _PactSearchEmbeddingClient:
+    """Deterministic llm-proxy stub for Pact's populated /search state.
+
+    The contract-verify CI job boots PG + Redis + uvicorn, but not
+    llm-proxy. Without an override, ``get_embedding_client`` resolves
+    to ``None`` and the populated ``/search`` pact stays on the FTS-only
+    path, which leaves ``vector_rank`` null and breaks the consumer's
+    ``integer()`` matcher.
+
+    The populated fixture stamps one-hot embeddings onto the three
+    search rows. Returning a query vector with descending non-zero
+    weight in the first three dimensions yields a stable cosine order
+    across those rows and is sufficient for the contract's type-level
+    assertion that ``vector_rank`` is an integer.
+    """
+
+    async def embed(
+        self,
+        texts: list[str],
+        *,
+        model: str | None = None,
+    ) -> EmbeddingResult:
+        del texts, model
+        vec = [0.0] * 1536
+        vec[0] = 1.0
+        vec[1] = 0.5
+        vec[2] = 0.25
+        return EmbeddingResult(
+            vectors=[vec],
+            model_returned="pact-provider-state-stub",
+            cache_hit=False,
+            upstream_latency_ms=1,
+        )
+
+
+_PACT_SEARCH_EMBEDDING_CLIENT = _PactSearchEmbeddingClient()
+
+
+def _clear_embedding_client_override(app) -> None:
+    """Remove any prior Pact-installed embedding override.
+
+    The verifier reuses one uvicorn process for the whole run, so a
+    populated-search override must not leak into unrelated interactions.
+    Every provider-state call starts by restoring the baseline.
+    """
+
+    app.dependency_overrides.pop(get_embedding_client, None)
+
+
+def _install_pact_search_embedding_override(app) -> None:
+    """Enable the hybrid /search path for the populated Pact fixture."""
+
+    app.dependency_overrides[get_embedding_client] = (
+        lambda: _PACT_SEARCH_EMBEDDING_CLIENT
+    )
 
 
 def _states_from_payload(payload: _ProviderStatePayload) -> list[str]:
@@ -1497,6 +1556,7 @@ async def _ensure_similar_reports_empty_embedding_fixture(
 
 @router.post("", include_in_schema=False)
 async def provider_states(
+    request: Request,
     payload: _ProviderStatePayload,
     response: Response,
     session_store: Annotated[SessionStore, Depends(get_session_store)],
@@ -1508,6 +1568,8 @@ async def provider_states(
     Mapping below matches the ``.given(...)`` strings in
     ``apps/frontend/tests/contract/frontend-dprk-cti-api.pact.test.ts``.
     """
+    _clear_embedding_client_override(request.app)
+
     states = _states_from_payload(payload)
     if not states:
         # pact-ruby also posts with action=teardown at the end of a
@@ -1650,6 +1712,7 @@ async def provider_states(
         ):
             await _ensure_search_populated_fixture(session)
             await session.commit()
+            _install_pact_search_embedding_override(request.app)
             await _seed_analyst_session(response, session_store)
             continue
 

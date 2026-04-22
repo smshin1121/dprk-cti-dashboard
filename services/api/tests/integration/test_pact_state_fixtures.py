@@ -25,11 +25,13 @@ from __future__ import annotations
 import asyncio
 import os
 import sys
+from types import SimpleNamespace
 from typing import AsyncIterator
 
 import pytest
 import pytest_asyncio
 import sqlalchemy as sa
+from fastapi import Response
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -66,6 +68,7 @@ from api.routers.pact_states import (  # noqa: E402
     SIMILAR_EMPTY_EMBEDDING_SOURCE_ID,
     SIMILAR_POPULATED_NEIGHBOR_IDS,
     SIMILAR_POPULATED_SOURCE_ID,
+    _ProviderStatePayload,
     _ensure_actor_detail_fixture,
     _ensure_actor_with_no_reports_fixture,
     _ensure_actor_with_reports_fixture,
@@ -81,7 +84,10 @@ from api.routers.pact_states import (  # noqa: E402
     _ensure_similar_reports_empty_embedding_fixture,
     _ensure_similar_reports_populated_fixture,
     _ensure_trend_fixture,
+    provider_states,
 )
+from api.deps import get_embedding_client  # noqa: E402
+from api.main import app  # noqa: E402
 from api.read.analytics_aggregator import (  # noqa: E402
     compute_attack_matrix,
     compute_geo,
@@ -1308,6 +1314,57 @@ async def test_search_populated_fixture_embedding_stamp_is_idempotent(
             f"report id {rid} embedding drifted across repeat state "
             "setups — UPDATE lacks ``embedding IS NULL`` guard"
         )
+
+
+async def test_search_provider_state_installs_and_clears_embedding_override(
+    clean_pg: None,
+    pg_session: AsyncSession,
+    session_store,
+) -> None:
+    """Provider-state POST toggles the hybrid /search embedding override."""
+
+    app.dependency_overrides.pop(get_embedding_client, None)
+    request = SimpleNamespace(app=app)
+
+    try:
+        await provider_states(
+            request=request,
+            payload=_ProviderStatePayload(
+                state=(
+                    "seeded search populated fixture "
+                    "and an authenticated analyst session"
+                )
+            ),
+            response=Response(),
+            session_store=session_store,
+            session=pg_session,
+        )
+
+        override = app.dependency_overrides.get(get_embedding_client)
+        assert override is not None, (
+            "search populated provider state did not install the "
+            "embedding-client override — contract-verify would stay "
+            "FTS-only and return vector_rank: null"
+        )
+
+        stub = override()
+        result = await stub.embed(["lazarus"])
+        assert len(result.vectors) == 1
+        assert result.vectors[0][0] > result.vectors[0][1] > result.vectors[0][2]
+
+        await provider_states(
+            request=request,
+            payload=_ProviderStatePayload(state="no valid session cookie"),
+            response=Response(),
+            session_store=session_store,
+            session=pg_session,
+        )
+        assert get_embedding_client not in app.dependency_overrides, (
+            "embedding-client override leaked into the next interaction — "
+            "provider-state baseline reset is broken"
+        )
+    finally:
+        app.dependency_overrides.pop(get_embedding_client, None)
 
 
 async def test_search_empty_fixture_is_idempotent(
