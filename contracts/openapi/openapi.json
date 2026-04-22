@@ -4309,7 +4309,7 @@
     },
     "/api/v1/search": {
       "get": {
-        "description": "PostgreSQL FTS-only MVP over reports. Query text is required, whitespace-only queries are rejected with 422, and the filter surface is intentionally narrow: `date_from`, `date_to`, and `limit` only. Response envelope is `{items, total_hits, latency_ms}` with per-hit `fts_rank` and a forward-compat `vector_rank: null` slot reserved for the follow-up hybrid PR.",
+        "description": "Hybrid report search — PostgreSQL FTS fused with pgvector cosine kNN via RRF (PR #19b). Query text is required, whitespace-only queries are rejected with 422, and the filter surface is intentionally narrow: `date_from`, `date_to`, and `limit` only. Response envelope is `{items, total_hits, latency_ms}` with per-hit `fts_rank` (`ts_rank_cd` float; 0.0 for a vector-only hit) and `vector_rank` (1-indexed rank inside the vector-kNN top-N, or `null` for an FTS-only hit). Degrades to FTS-only (every hit carries `vector_rank: null`) when the llm-proxy embedding path is transient-unavailable or when the corpus embedding-coverage ratio is below the configured threshold; the degraded signal lives in structured logs only (no body field). llm-proxy permanent errors surface as HTTP 500.",
         "operationId": "search_endpoint_api_v1_search_get",
         "parameters": [
           {
@@ -4383,7 +4383,7 @@
                     }
                   },
                   "happy": {
-                    "summary": "One report hit",
+                    "summary": "One hybrid hit with vector_rank populated",
                     "value": {
                       "items": [
                         {
@@ -4398,7 +4398,8 @@
                             "tlp": "WHITE",
                             "url": "https://pact.test/search/lazarus-1",
                             "url_canonical": "https://pact.test/search/lazarus-1"
-                          }
+                          },
+                          "vector_rank": 1
                         }
                       ],
                       "latency_ms": 42,
@@ -4411,7 +4412,7 @@
                 }
               }
             },
-            "description": "Search hits ordered by `fts_rank DESC, report.id DESC`, or the D10 empty envelope when there are no matches."
+            "description": "Search hits ordered by RRF fused score (`rrf_score DESC, report.id DESC`) on the hybrid path, or by `fts_rank DESC, report.id DESC` on the degraded FTS-only path. Envelope shape is identical across both paths. D10 empty envelope fires when there are no matches."
           },
           "401": {
             "description": "Missing or invalid session cookie"

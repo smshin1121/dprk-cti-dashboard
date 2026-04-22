@@ -46,24 +46,34 @@ _READ_ROLES = ("analyst", "researcher", "policy", "soc", "admin")
     response_model=SearchResponse,
     summary="Full-text search reports",
     description=(
-        "PostgreSQL FTS-only MVP over reports. Query text is required, "
-        "whitespace-only queries are rejected with 422, and the filter "
-        "surface is intentionally narrow: `date_from`, `date_to`, and "
-        "`limit` only. Response envelope is `{items, total_hits, latency_ms}` "
-        "with per-hit `fts_rank` and a forward-compat `vector_rank: null` "
-        "slot reserved for the follow-up hybrid PR."
+        "Hybrid report search — PostgreSQL FTS fused with pgvector cosine "
+        "kNN via RRF (PR #19b). Query text is required, whitespace-only "
+        "queries are rejected with 422, and the filter surface is "
+        "intentionally narrow: `date_from`, `date_to`, and `limit` only. "
+        "Response envelope is `{items, total_hits, latency_ms}` with "
+        "per-hit `fts_rank` (`ts_rank_cd` float; 0.0 for a vector-only "
+        "hit) and `vector_rank` (1-indexed rank inside the vector-kNN "
+        "top-N, or `null` for an FTS-only hit). Degrades to FTS-only "
+        "(every hit carries `vector_rank: null`) when the llm-proxy "
+        "embedding path is transient-unavailable or when the corpus "
+        "embedding-coverage ratio is below the configured threshold; "
+        "the degraded signal lives in structured logs only (no body "
+        "field). llm-proxy permanent errors surface as HTTP 500."
     ),
     responses={
         200: {
             "description": (
-                "Search hits ordered by `fts_rank DESC, report.id DESC`, or "
-                "the D10 empty envelope when there are no matches."
+                "Search hits ordered by RRF fused score (`rrf_score DESC, "
+                "report.id DESC`) on the hybrid path, or by `fts_rank DESC, "
+                "report.id DESC` on the degraded FTS-only path. Envelope "
+                "shape is identical across both paths. D10 empty envelope "
+                "fires when there are no matches."
             ),
             "content": {
                 "application/json": {
                     "examples": {
                         "happy": {
-                            "summary": "One report hit",
+                            "summary": "One hybrid hit with vector_rank populated",
                             "value": {
                                 "items": [
                                     {
@@ -79,7 +89,11 @@ _READ_ROLES = ("analyst", "researcher", "policy", "soc", "admin")
                                             "tlp": "WHITE",
                                         },
                                         "fts_rank": 0.0759,
-                                        "vector_rank": None,
+                                        # PR #19b — populated 1-indexed
+                                        # rank from the vector-kNN leg
+                                        # filling PR #17 D9's forward-
+                                        # compat slot.
+                                        "vector_rank": 1,
                                     }
                                 ],
                                 "total_hits": 1,

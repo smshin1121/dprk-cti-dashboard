@@ -845,6 +845,12 @@ describe('actorReportsResponseSchema (PR #15 D9 envelope reuse)', () => {
 // must track it in the same PR.
 
 describe('searchResponseSchema — BE OpenAPI example parity', () => {
+  // PR #19b Group D — mirrors the BE `happy` example in
+  // ``services/api/src/api/routers/search.py`` after the hybrid
+  // upgrade filled D9's forward-compat ``vector_rank`` slot with a
+  // 1-indexed integer. Any BE example drift (e.g. an accidental
+  // flip back to null, or a shape change) makes the parity tests
+  // below fire red in the SAME PR as the BE edit.
   const bePopulatedExample = {
     items: [
       {
@@ -860,7 +866,7 @@ describe('searchResponseSchema — BE OpenAPI example parity', () => {
           tlp: 'WHITE',
         },
         fts_rank: 0.0759,
-        vector_rank: null,
+        vector_rank: 1,
       },
     ],
     total_hits: 1,
@@ -947,5 +953,21 @@ describe('searchResponseSchema — BE OpenAPI example parity', () => {
     // either. Regression guard — if a future edit tries to fold
     // them together, this test flips red.
     expect(searchResponseSchema).not.toBe(reportListResponseSchema)
+  })
+
+  it('PR #19b Group D — populated BE example has vector_rank as int, not null', () => {
+    // Lock the post-hybrid contract flip. Before PR #19b the BE
+    // example carried ``vector_rank: null`` (forward-compat slot
+    // reserved). After PR #19b the hybrid path fills the slot with
+    // a 1-indexed int on populated hits. A future BE edit that
+    // silently reverts the example to ``null`` would quietly undo
+    // the OI6 = B pact contract flip; this guard catches that
+    // regression in the consumer test run before the pact verifier
+    // sees it.
+    const hit = bePopulatedExample.items[0]
+    expect(hit.vector_rank).not.toBeNull()
+    expect(hit.vector_rank).toBeTypeOf('number')
+    expect(Number.isInteger(hit.vector_rank)).toBe(true)
+    expect(hit.vector_rank as number).toBeGreaterThanOrEqual(1)
   })
 })
