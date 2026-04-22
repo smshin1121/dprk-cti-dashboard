@@ -99,6 +99,51 @@ class Settings(BaseSettings):
     llm_proxy_internal_token: str = ""
     llm_proxy_embedding_timeout_seconds: float = 10.0
 
+    # PR #19b Group A — hybrid-search knobs.
+    # Coverage threshold: if ``reports.embedding`` population ratio
+    # drops below this, /search degrades to FTS-only (plan D5(b)).
+    # Bounded to [0.0, 1.0]. Default 0.5 per plan.
+    hybrid_search_coverage_threshold: float = 0.5
+    # Vector kNN candidate set size — LIMIT on the vector rank list
+    # before RRF fusion (plan D2 / OI1 = B). Must be >= 1.
+    hybrid_search_vector_k: int = 50
+    # Process-local coverage cache refresh interval in seconds
+    # (plan D5 / OI4 = B). Must be >= 1 — zero would force a
+    # per-request recompute, defeating the cache's purpose.
+    hybrid_search_coverage_refresh_seconds: int = 600
+
+    @field_validator("hybrid_search_coverage_threshold")
+    @classmethod
+    def _validate_coverage_threshold(cls, v: float) -> float:
+        """Reject out-of-[0.0, 1.0] coverage threshold (plan D5 bound)."""
+        if not 0.0 <= v <= 1.0:
+            raise ValueError(
+                f"hybrid_search_coverage_threshold must be in [0.0, 1.0], "
+                f"got {v}"
+            )
+        return v
+
+    @field_validator("hybrid_search_vector_k")
+    @classmethod
+    def _validate_vector_k(cls, v: int) -> int:
+        """Reject non-positive vector_k (plan D2 / OI1 = B bound)."""
+        if v < 1:
+            raise ValueError(
+                f"hybrid_search_vector_k must be >= 1, got {v}"
+            )
+        return v
+
+    @field_validator("hybrid_search_coverage_refresh_seconds")
+    @classmethod
+    def _validate_refresh_seconds(cls, v: int) -> int:
+        """Reject non-positive refresh interval (plan D5 / OI4 = B bound)."""
+        if v < 1:
+            raise ValueError(
+                f"hybrid_search_coverage_refresh_seconds must be >= 1, "
+                f"got {v}"
+            )
+        return v
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
