@@ -24,7 +24,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth.schemas import CurrentUser
 from ..db import get_db
-from ..deps import require_role
+from ..deps import get_embedding_client, require_role
+from ..embedding_client import LlmProxyEmbeddingClient
 from ..rate_limit import get_limiter
 from ..read import search_cache, search_service
 from ..schemas.read import (
@@ -169,9 +170,18 @@ async def search_endpoint(
     ] = SEARCH_LIMIT_DEFAULT,
     session: AsyncSession = Depends(get_db),
     redis=Depends(search_cache.get_redis_for_search_cache),
+    embedding_client: LlmProxyEmbeddingClient | None = Depends(
+        get_embedding_client
+    ),
     _current_user: CurrentUser = Depends(require_role(*_READ_ROLES)),
 ) -> Response:
-    """Report search endpoint (PR #17 Group B)."""
+    """Report search endpoint (PR #17 Group B + PR #19b hybrid upgrade).
+
+    ``embedding_client`` is injected via ``Depends(get_embedding_client)``
+    — ``None`` when ``LLM_PROXY_URL`` / ``LLM_PROXY_INTERNAL_TOKEN`` are
+    empty (feature disabled — FTS-only behavior). Non-None activates
+    the hybrid dispatch in ``search_service.get_search_results``.
+    """
     q_stripped = q.strip()
     if not q_stripped:
         return JSONResponse(
@@ -194,5 +204,6 @@ async def search_endpoint(
         date_from=date_from,
         date_to=date_to,
         limit=limit,
+        embedding_client=embedding_client,
     )
     return SearchResponse.model_validate(result.payload)
