@@ -24,7 +24,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth.schemas import CurrentUser
 from ..db import get_db
-from ..deps import require_role
+from ..deps import get_embedding_client, require_role
+from ..embedding_client import LlmProxyEmbeddingClient
 from ..rate_limit import get_limiter
 from ..read import search_cache, search_service
 from ..schemas.read import (
@@ -45,24 +46,34 @@ _READ_ROLES = ("analyst", "researcher", "policy", "soc", "admin")
     response_model=SearchResponse,
     summary="Full-text search reports",
     description=(
-        "PostgreSQL FTS-only MVP over reports. Query text is required, "
-        "whitespace-only queries are rejected with 422, and the filter "
-        "surface is intentionally narrow: `date_from`, `date_to`, and "
-        "`limit` only. Response envelope is `{items, total_hits, latency_ms}` "
-        "with per-hit `fts_rank` and a forward-compat `vector_rank: null` "
-        "slot reserved for the follow-up hybrid PR."
+        "Hybrid report search — PostgreSQL FTS fused with pgvector cosine "
+        "kNN via RRF (PR #19b). Query text is required, whitespace-only "
+        "queries are rejected with 422, and the filter surface is "
+        "intentionally narrow: `date_from`, `date_to`, and `limit` only. "
+        "Response envelope is `{items, total_hits, latency_ms}` with "
+        "per-hit `fts_rank` (`ts_rank_cd` float; 0.0 for a vector-only "
+        "hit) and `vector_rank` (1-indexed rank inside the vector-kNN "
+        "top-N, or `null` for an FTS-only hit). Degrades to FTS-only "
+        "(every hit carries `vector_rank: null`) when the llm-proxy "
+        "embedding path is transient-unavailable or when the corpus "
+        "embedding-coverage ratio is below the configured threshold; "
+        "the degraded signal lives in structured logs only (no body "
+        "field). llm-proxy permanent errors surface as HTTP 500."
     ),
     responses={
         200: {
             "description": (
-                "Search hits ordered by `fts_rank DESC, report.id DESC`, or "
-                "the D10 empty envelope when there are no matches."
+                "Search hits ordered by RRF fused score (`rrf_score DESC, "
+                "report.id DESC`) on the hybrid path, or by `fts_rank DESC, "
+                "report.id DESC` on the degraded FTS-only path. Envelope "
+                "shape is identical across both paths. D10 empty envelope "
+                "fires when there are no matches."
             ),
             "content": {
                 "application/json": {
                     "examples": {
                         "happy": {
-                            "summary": "One report hit",
+                            "summary": "One hybrid hit with vector_rank populated",
                             "value": {
                                 "items": [
                                     {
@@ -78,7 +89,11 @@ _READ_ROLES = ("analyst", "researcher", "policy", "soc", "admin")
                                             "tlp": "WHITE",
                                         },
                                         "fts_rank": 0.0759,
-                                        "vector_rank": None,
+                                        # PR #19b — populated 1-indexed
+                                        # rank from the vector-kNN leg
+                                        # filling PR #17 D9's forward-
+                                        # compat slot.
+                                        "vector_rank": 1,
                                     }
                                 ],
                                 "total_hits": 1,
@@ -169,9 +184,18 @@ async def search_endpoint(
     ] = SEARCH_LIMIT_DEFAULT,
     session: AsyncSession = Depends(get_db),
     redis=Depends(search_cache.get_redis_for_search_cache),
+    embedding_client: LlmProxyEmbeddingClient | None = Depends(
+        get_embedding_client
+    ),
     _current_user: CurrentUser = Depends(require_role(*_READ_ROLES)),
 ) -> Response:
-    """Report search endpoint (PR #17 Group B)."""
+    """Report search endpoint (PR #17 Group B + PR #19b hybrid upgrade).
+
+    ``embedding_client`` is injected via ``Depends(get_embedding_client)``
+    — ``None`` when ``LLM_PROXY_URL`` / ``LLM_PROXY_INTERNAL_TOKEN`` are
+    empty (feature disabled — FTS-only behavior). Non-None activates
+    the hybrid dispatch in ``search_service.get_search_results``.
+    """
     q_stripped = q.strip()
     if not q_stripped:
         return JSONResponse(
@@ -194,5 +218,6 @@ async def search_endpoint(
         date_from=date_from,
         date_to=date_to,
         limit=limit,
+        embedding_client=embedding_client,
     )
     return SearchResponse.model_validate(result.payload)

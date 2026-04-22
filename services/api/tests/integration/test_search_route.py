@@ -128,7 +128,10 @@ class TestHappyAndEmpty:
             published=dt.date(2026, 3, 15),
         )
 
-        async def _fake_get_search_results(session, redis, *, q, date_from, date_to, limit):
+        async def _fake_get_search_results(
+            session, redis, *, q, date_from, date_to, limit,
+            embedding_client=None,
+        ):
             return SearchServiceResult(
                 payload={
                     "items": [

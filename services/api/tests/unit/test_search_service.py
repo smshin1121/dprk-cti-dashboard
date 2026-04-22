@@ -24,6 +24,9 @@ Review priorities locked at the Group A ask:
 from __future__ import annotations
 
 import datetime as dt
+import logging
+from dataclasses import dataclass
+from typing import Any
 
 import pytest
 import pytest_asyncio
@@ -34,10 +37,26 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
+from api.embedding_client import (
+    EmbeddingResult,
+    PermanentEmbeddingError,
+    TransientEmbeddingError,
+)
 from api.read import search_cache, search_service
 from api.tables import metadata, reports_table, sources_table
 
 pytestmark = pytest.mark.asyncio
+
+
+@pytest.fixture(autouse=True)
+def _reset_coverage_cache_between_tests() -> None:
+    """PR #19b — prevent coverage-cache leak across tests.
+
+    The coverage ratio is process-local (plan OI4 = B). Without this
+    reset, a test that primed the cache with 0.8 would fool a later
+    test that expected the sqlite-dialect 0.0 ratio to force degraded.
+    """
+    search_service.reset_coverage_cache()
 
 
 # ---------------------------------------------------------------------------
@@ -459,3 +478,680 @@ class TestSearchFixturePactPathLiteralAlignment:
             "seed helpers would fight over rows and state replay "
             "would leave the DB in a mixed state"
         )
+
+
+# ===========================================================================
+# PR #19b Group B — hybrid path tests
+# ===========================================================================
+
+
+def _row(
+    *,
+    rid: int,
+    title: str = "report",
+    fts_rank: float = 0.0,
+    published: dt.date = dt.date(2026, 1, 1),
+    source_id: int = 1,
+) -> dict[str, Any]:
+    """Build a seeded FTS/vector row dict matching service helper shape."""
+    return {
+        "id": rid,
+        "title": title,
+        "url": f"https://ex.test/{rid}",
+        "url_canonical": f"https://ex.test/{rid}",
+        "published": published,
+        "source_id": source_id,
+        "source_name": "Vendor",
+        "lang": "en",
+        "tlp": "WHITE",
+        "fts_rank": fts_rank,
+    }
+
+
+@dataclass
+class _FakeEmbedClient:
+    """Stub for ``LlmProxyEmbeddingClient`` — records calls + returns fixed outcome.
+
+    Accepts either ``result`` (EmbeddingResult) OR ``exc`` (Exception)
+    via mutually-exclusive construction. Calls are recorded on
+    ``.calls`` so tests can assert "client was / was not invoked".
+    """
+
+    result: EmbeddingResult | None = None
+    exc: BaseException | None = None
+
+    def __post_init__(self) -> None:
+        self.calls: list[list[str]] = []
+
+    async def embed(
+        self, texts: list[str], *, model: str | None = None
+    ) -> EmbeddingResult:
+        self.calls.append(list(texts))
+        if self.exc is not None:
+            raise self.exc
+        assert self.result is not None, "_FakeEmbedClient needs result or exc"
+        return self.result
+
+
+def _ok_embed_result(vec_length: int = 1536) -> EmbeddingResult:
+    return EmbeddingResult(
+        vectors=[[0.1] * vec_length],
+        model_returned="text-embedding-3-small",
+        cache_hit=False,
+        upstream_latency_ms=42,
+    )
+
+
+def _force_hybrid_environment(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    fts_rows: list[dict[str, Any]],
+    fts_total: int | None = None,
+    vec_rows: list[dict[str, Any]],
+    coverage_ratio: float = 0.95,
+) -> None:
+    """Patch the dispatcher's boundary seams so hybrid runs on sqlite.
+
+    - ``_dialect_is_postgres`` → True (dispatcher takes hybrid branch)
+    - ``_run_fts`` → returns seeded rows + total
+    - ``_run_vector_query`` → returns seeded rows
+    - ``_get_coverage_ratio`` → returns the supplied ratio
+    """
+    total = fts_total if fts_total is not None else len(fts_rows)
+
+    async def _fake_run_fts(
+        session, *, q, date_from, date_to, limit
+    ):  # noqa: ANN001 — stubs mirror helper signatures loosely
+        return list(fts_rows), total
+
+    async def _fake_run_vec(
+        session, *, q_vec, date_from, date_to, limit_k
+    ):
+        return list(vec_rows)
+
+    async def _fake_coverage(session, *, refresh_seconds):
+        return coverage_ratio
+
+    monkeypatch.setattr(search_service, "_dialect_is_postgres", lambda s: True)
+    monkeypatch.setattr(search_service, "_run_fts", _fake_run_fts)
+    monkeypatch.setattr(search_service, "_run_vector_query", _fake_run_vec)
+    monkeypatch.setattr(
+        search_service, "_get_coverage_ratio", _fake_coverage
+    )
+
+
+# ---------------------------------------------------------------------------
+# TestHybridPathDispatching — who gets to run the hybrid path
+# ---------------------------------------------------------------------------
+
+
+class TestHybridPathDispatching:
+    async def test_embedding_client_none_on_sqlite_stays_fts_only_not_degraded(
+        self, engine: AsyncEngine
+    ) -> None:
+        """client=None + sqlite → FTS-only path, degraded=False.
+
+        Feature-disabled is not 'degraded' — plan D5 reserves that
+        flag for runtime failure (transient / coverage gate).
+        """
+        async with AsyncSession(engine) as s:
+            result = await search_service.get_search_results(
+                s,
+                redis=None,
+                q="x",
+                date_from=None,
+                date_to=None,
+                limit=10,
+                embedding_client=None,
+            )
+        assert result.degraded is False
+        assert result.degraded_reason is None
+        assert result.embedding_ms == 0
+        assert result.vector_ms == 0
+        assert result.fusion_ms == 0
+        assert result.payload["items"] == []
+
+    async def test_embedding_client_present_on_sqlite_still_takes_fts_only(
+        self, engine: AsyncEngine
+    ) -> None:
+        """client=mock + sqlite (real dialect) → hybrid NOT reachable.
+
+        Non-PG dialect is an infrastructure gate, not a degradation
+        signal. Embedder must never be invoked here.
+        """
+        fake = _FakeEmbedClient(result=_ok_embed_result())
+        async with AsyncSession(engine) as s:
+            result = await search_service.get_search_results(
+                s,
+                redis=None,
+                q="x",
+                date_from=None,
+                date_to=None,
+                limit=10,
+                embedding_client=fake,  # type: ignore[arg-type]
+            )
+        assert fake.calls == []
+        assert result.degraded is False
+        assert result.embedding_ms == 0
+
+    async def test_pg_plus_client_runs_hybrid_path(
+        self,
+        engine: AsyncEngine,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Dialect forced PG + client present + coverage OK → hybrid runs."""
+        _force_hybrid_environment(
+            monkeypatch,
+            fts_rows=[_row(rid=100, fts_rank=0.9)],
+            vec_rows=[_row(rid=100, fts_rank=0.0)],
+            coverage_ratio=0.95,
+        )
+        fake = _FakeEmbedClient(result=_ok_embed_result())
+        async with AsyncSession(engine) as s:
+            result = await search_service.get_search_results(
+                s,
+                redis=None,
+                q="x",
+                date_from=None,
+                date_to=None,
+                limit=10,
+                embedding_client=fake,  # type: ignore[arg-type]
+            )
+        assert len(fake.calls) == 1
+        assert fake.calls[0] == ["x"]
+        assert result.degraded is False
+        # embedding_ms is measured by asyncio.gather wall clock — even
+        # for a sub-ms stub call it should be a non-negative int.
+        assert result.embedding_ms >= 0
+
+    async def test_coverage_below_threshold_triggers_degraded_coverage(
+        self,
+        engine: AsyncEngine,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """coverage < threshold → FTS-only, degraded=True, reason=coverage.
+
+        The embedder must NOT be called — the coverage gate short-
+        circuits before the hybrid branch.
+        """
+        _force_hybrid_environment(
+            monkeypatch,
+            fts_rows=[],
+            vec_rows=[],
+            coverage_ratio=0.3,  # below default threshold 0.5
+        )
+        fake = _FakeEmbedClient(result=_ok_embed_result())
+        async with AsyncSession(engine) as s:
+            result = await search_service.get_search_results(
+                s,
+                redis=None,
+                q="x",
+                date_from=None,
+                date_to=None,
+                limit=10,
+                embedding_client=fake,  # type: ignore[arg-type]
+            )
+        assert fake.calls == []
+        assert result.degraded is True
+        assert result.degraded_reason == "coverage"
+        assert result.embedding_ms == 0
+
+
+# ---------------------------------------------------------------------------
+# TestHybridPathFusion — envelope shape after hybrid dispatch
+# ---------------------------------------------------------------------------
+
+
+class TestHybridPathFusion:
+    async def test_vector_rank_populated_on_shared_hit(
+        self,
+        engine: AsyncEngine,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """id in both FTS + vector lists → envelope has vector_rank int."""
+        _force_hybrid_environment(
+            monkeypatch,
+            fts_rows=[_row(rid=100, fts_rank=0.9)],
+            vec_rows=[_row(rid=100, fts_rank=0.0)],
+        )
+        fake = _FakeEmbedClient(result=_ok_embed_result())
+        async with AsyncSession(engine) as s:
+            result = await search_service.get_search_results(
+                s,
+                redis=None,
+                q="x",
+                date_from=None,
+                date_to=None,
+                limit=10,
+                embedding_client=fake,  # type: ignore[arg-type]
+            )
+        items = result.payload["items"]
+        assert len(items) == 1
+        assert items[0]["report"]["id"] == 100
+        assert items[0]["fts_rank"] == pytest.approx(0.9)
+        assert items[0]["vector_rank"] == 1  # 1-indexed rank
+
+    async def test_vector_only_hit_has_fts_rank_zero_sentinel(
+        self,
+        engine: AsyncEngine,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """OI2 = A — vector-only hit's envelope fts_rank is literal 0.0."""
+        _force_hybrid_environment(
+            monkeypatch,
+            fts_rows=[],  # FTS returned nothing
+            vec_rows=[_row(rid=300, fts_rank=0.0)],
+        )
+        fake = _FakeEmbedClient(result=_ok_embed_result())
+        async with AsyncSession(engine) as s:
+            result = await search_service.get_search_results(
+                s,
+                redis=None,
+                q="x",
+                date_from=None,
+                date_to=None,
+                limit=10,
+                embedding_client=fake,  # type: ignore[arg-type]
+            )
+        items = result.payload["items"]
+        assert len(items) == 1
+        assert items[0]["report"]["id"] == 300
+        assert items[0]["fts_rank"] == 0.0
+        assert items[0]["vector_rank"] == 1
+
+    async def test_items_ordered_by_rrf_descending(
+        self,
+        engine: AsyncEngine,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Fused order: shared hits (both rank 1) > single-list rank-1 > rank-2.
+
+        Inputs:
+          FTS: [100 (rank 1), 200 (rank 2)]
+          vec: [100 (rank 1), 300 (rank 2)]
+        Fused scores:
+          100: 1/61 + 1/61  = 2/61
+          200: 1/62         = 1/62
+          300: 1/62         = 1/62
+        Order: [100, 300, 200] — ties break on id DESC.
+        """
+        _force_hybrid_environment(
+            monkeypatch,
+            fts_rows=[
+                _row(rid=100, fts_rank=0.9),
+                _row(rid=200, fts_rank=0.5),
+            ],
+            vec_rows=[
+                _row(rid=100, fts_rank=0.0),
+                _row(rid=300, fts_rank=0.0),
+            ],
+        )
+        fake = _FakeEmbedClient(result=_ok_embed_result())
+        async with AsyncSession(engine) as s:
+            result = await search_service.get_search_results(
+                s,
+                redis=None,
+                q="x",
+                date_from=None,
+                date_to=None,
+                limit=10,
+                embedding_client=fake,  # type: ignore[arg-type]
+            )
+        ids = [item["report"]["id"] for item in result.payload["items"]]
+        assert ids == [100, 300, 200]
+
+    async def test_total_hits_equals_unique_union_count(
+        self,
+        engine: AsyncEngine,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """total_hits = |set(fts_ids) ∪ set(vec_ids)| for hybrid path."""
+        _force_hybrid_environment(
+            monkeypatch,
+            fts_rows=[_row(rid=i, fts_rank=0.5) for i in [1, 2, 3]],
+            vec_rows=[_row(rid=i, fts_rank=0.0) for i in [3, 4, 5]],
+        )
+        fake = _FakeEmbedClient(result=_ok_embed_result())
+        async with AsyncSession(engine) as s:
+            result = await search_service.get_search_results(
+                s,
+                redis=None,
+                q="x",
+                date_from=None,
+                date_to=None,
+                limit=10,
+                embedding_client=fake,  # type: ignore[arg-type]
+            )
+        # Union cardinality: {1,2,3,4,5} = 5.
+        assert result.payload["total_hits"] == 5
+
+    async def test_limit_caps_returned_items_not_total_hits(
+        self,
+        engine: AsyncEngine,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """limit caps items length but not total_hits."""
+        _force_hybrid_environment(
+            monkeypatch,
+            fts_rows=[_row(rid=i, fts_rank=0.5) for i in range(10, 20)],
+            vec_rows=[],
+        )
+        fake = _FakeEmbedClient(result=_ok_embed_result())
+        async with AsyncSession(engine) as s:
+            result = await search_service.get_search_results(
+                s,
+                redis=None,
+                q="x",
+                date_from=None,
+                date_to=None,
+                limit=3,
+                embedding_client=fake,  # type: ignore[arg-type]
+            )
+        assert len(result.payload["items"]) == 3
+        assert result.payload["total_hits"] == 10
+
+
+# ---------------------------------------------------------------------------
+# TestDegradedModeBranches — transient, permanent, unexpected
+# ---------------------------------------------------------------------------
+
+
+class TestDegradedModeBranches:
+    async def test_transient_embedding_error_degrades_to_fts_only(
+        self,
+        engine: AsyncEngine,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Transient exception → FTS-only items, degraded=True, transient reason."""
+        _force_hybrid_environment(
+            monkeypatch,
+            fts_rows=[_row(rid=100, fts_rank=0.9)],
+            fts_total=1,
+            vec_rows=[_row(rid=200, fts_rank=0.0)],  # will be IGNORED on transient
+        )
+        fake = _FakeEmbedClient(
+            exc=TransientEmbeddingError(
+                upstream_status=503, reason="upstream_503"
+            )
+        )
+        async with AsyncSession(engine) as s:
+            result = await search_service.get_search_results(
+                s,
+                redis=None,
+                q="x",
+                date_from=None,
+                date_to=None,
+                limit=10,
+                embedding_client=fake,  # type: ignore[arg-type]
+            )
+        assert result.degraded is True
+        assert result.degraded_reason == "transient"
+        # Items are the already-gathered FTS rows; vector row 200 is
+        # NOT in the envelope (degraded path skips vector query).
+        ids = [item["report"]["id"] for item in result.payload["items"]]
+        assert ids == [100]
+        # All envelope vector_rank values are null on degraded.
+        assert all(
+            item["vector_rank"] is None
+            for item in result.payload["items"]
+        )
+
+    async def test_permanent_embedding_error_propagates(
+        self,
+        engine: AsyncEngine,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Permanent exception → propagated to caller (router → HTTP 500)."""
+        _force_hybrid_environment(
+            monkeypatch,
+            fts_rows=[_row(rid=100, fts_rank=0.9)],
+            vec_rows=[],
+        )
+        fake = _FakeEmbedClient(
+            exc=PermanentEmbeddingError(
+                upstream_status=422, reason="invalid_input"
+            )
+        )
+        async with AsyncSession(engine) as s:
+            with pytest.raises(PermanentEmbeddingError):
+                await search_service.get_search_results(
+                    s,
+                    redis=None,
+                    q="x",
+                    date_from=None,
+                    date_to=None,
+                    limit=10,
+                    embedding_client=fake,  # type: ignore[arg-type]
+                )
+
+    async def test_unexpected_exception_treated_as_transient(
+        self,
+        engine: AsyncEngine,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Unknown exception class from embed() → fail-open + WARN log.
+
+        Protects against a future exception class surfacing without
+        the service knowing whether it's transient or permanent.
+        Default is fail-open (degraded) rather than surprise 500.
+        """
+        _force_hybrid_environment(
+            monkeypatch,
+            fts_rows=[_row(rid=100, fts_rank=0.9)],
+            fts_total=1,
+            vec_rows=[],
+        )
+        fake = _FakeEmbedClient(exc=RuntimeError("surprise!"))
+        caplog.set_level("WARNING", logger="api.read.search_service")
+        async with AsyncSession(engine) as s:
+            result = await search_service.get_search_results(
+                s,
+                redis=None,
+                q="x",
+                date_from=None,
+                date_to=None,
+                limit=10,
+                embedding_client=fake,  # type: ignore[arg-type]
+            )
+        assert result.degraded is True
+        assert result.degraded_reason == "transient"
+        warn_records = [
+            r for r in caplog.records
+            if getattr(r, "event", "")
+            == "search.embedding.unexpected_exception"
+        ]
+        assert len(warn_records) == 1
+        assert warn_records[0].error_class == "RuntimeError"
+
+
+# ---------------------------------------------------------------------------
+# TestCoverageCacheBehavior — process-local cache with refresh + reset
+# ---------------------------------------------------------------------------
+
+
+class TestCoverageCacheBehavior:
+    async def test_sqlite_dialect_returns_zero_coverage(
+        self, engine: AsyncEngine
+    ) -> None:
+        """Non-PG dialect always returns 0.0 coverage (cacheable)."""
+        async with AsyncSession(engine) as s:
+            ratio = await search_service._get_coverage_ratio(
+                s, refresh_seconds=600
+            )
+        assert ratio == 0.0
+
+    async def test_cache_hit_avoids_reissuing_sql(
+        self, engine: AsyncEngine
+    ) -> None:
+        """Second call within refresh window uses cached ratio.
+
+        We check it indirectly by asserting the cached value persists
+        across calls WITHOUT waiting and WITHOUT the second call
+        re-hitting the DB. The dialect-gate path sets ratio=0.0
+        cheaply; the assertion here is the cache dict persists it.
+        """
+        async with AsyncSession(engine) as s:
+            first = await search_service._get_coverage_ratio(
+                s, refresh_seconds=600
+            )
+            # Peek at module state — this is a test-only coupling and
+            # acceptable since the test is pinning THAT module state.
+            assert search_service._COVERAGE_CACHE["ratio"] == 0.0
+            second = await search_service._get_coverage_ratio(
+                s, refresh_seconds=600
+            )
+        assert first == second == 0.0
+
+    async def test_reset_coverage_cache_forces_refresh(
+        self, engine: AsyncEngine
+    ) -> None:
+        """After reset, the cache is cleared and next call re-fetches."""
+        async with AsyncSession(engine) as s:
+            await search_service._get_coverage_ratio(s, refresh_seconds=600)
+        assert search_service._COVERAGE_CACHE["ratio"] is not None
+
+        search_service.reset_coverage_cache()
+        assert search_service._COVERAGE_CACHE["ratio"] is None
+        assert search_service._COVERAGE_CACHE["fetched_at_monotonic"] == 0.0
+
+
+# ---------------------------------------------------------------------------
+# TestHybridLogFields — D8 additive observability surface
+# ---------------------------------------------------------------------------
+
+
+class TestHybridLogFields:
+    async def test_hybrid_log_has_all_new_fields(
+        self,
+        engine: AsyncEngine,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """D8 — hybrid success log carries new fields with non-zero ms."""
+        _force_hybrid_environment(
+            monkeypatch,
+            fts_rows=[_row(rid=100, fts_rank=0.9)],
+            vec_rows=[_row(rid=100, fts_rank=0.0)],
+        )
+        fake = _FakeEmbedClient(
+            result=EmbeddingResult(
+                vectors=[[0.1] * 1536],
+                model_returned="text-embedding-3-small",
+                cache_hit=True,  # exercise llm_proxy_cache_hit=True path
+                upstream_latency_ms=12,
+            )
+        )
+        caplog.set_level(logging.INFO, logger="api.read.search_service")
+        async with AsyncSession(engine) as s:
+            await search_service.get_search_results(
+                s,
+                redis=None,
+                q="lazarus",
+                date_from=None,
+                date_to=None,
+                limit=10,
+                embedding_client=fake,  # type: ignore[arg-type]
+            )
+        records = [
+            r for r in caplog.records
+            if getattr(r, "event", "") == "search.query"
+        ]
+        assert len(records) == 1
+        rec = records[0]
+        for field in (
+            "q_len", "hits", "latency_ms", "fts_ms", "cache_hit",
+            "embedding_ms", "vector_ms", "fusion_ms", "degraded",
+            "degraded_reason", "llm_proxy_cache_hit",
+        ):
+            assert hasattr(rec, field), f"missing log field {field}"
+        assert rec.degraded is False
+        assert rec.degraded_reason is None
+        assert rec.llm_proxy_cache_hit is True
+        assert "lazarus" not in "\n".join(
+            r.getMessage() for r in caplog.records
+        )
+
+    async def test_degraded_transient_log_has_transient_reason(
+        self,
+        engine: AsyncEngine,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Degraded path log shows reason="transient" on TransientEmbeddingError."""
+        _force_hybrid_environment(
+            monkeypatch,
+            fts_rows=[_row(rid=100, fts_rank=0.9)],
+            fts_total=1,
+            vec_rows=[],
+        )
+        fake = _FakeEmbedClient(
+            exc=TransientEmbeddingError(
+                upstream_status=429, reason="rate_limited"
+            )
+        )
+        caplog.set_level(logging.INFO, logger="api.read.search_service")
+        async with AsyncSession(engine) as s:
+            await search_service.get_search_results(
+                s,
+                redis=None,
+                q="x",
+                date_from=None,
+                date_to=None,
+                limit=10,
+                embedding_client=fake,  # type: ignore[arg-type]
+            )
+        records = [
+            r for r in caplog.records
+            if getattr(r, "event", "") == "search.query"
+        ]
+        assert len(records) == 1
+        assert records[0].degraded is True
+        assert records[0].degraded_reason == "transient"
+
+    async def test_cache_hit_log_has_zeroed_hybrid_fields(
+        self, engine: AsyncEngine
+    ) -> None:
+        """Cache-hit path reports 0 for every new D8 hybrid field."""
+
+        class _Fake:
+            def __init__(self) -> None:
+                self.store: dict[str, str] = {}
+
+            async def get(self, key: str):
+                return self.store.get(key)
+
+            async def set(self, key: str, value: str, ex: int | None = None):
+                self.store[key] = value
+
+        fake_redis = _Fake()
+        # Prime cache with a miss on sqlite → FTS-only empty envelope
+        async with AsyncSession(engine) as s:
+            await search_service.get_search_results(
+                s,
+                redis=fake_redis,  # type: ignore[arg-type]
+                q="prime",
+                date_from=None,
+                date_to=None,
+                limit=10,
+                embedding_client=None,
+            )
+        # Second call — cache hit
+        async with AsyncSession(engine) as s:
+            result = await search_service.get_search_results(
+                s,
+                redis=fake_redis,  # type: ignore[arg-type]
+                q="prime",
+                date_from=None,
+                date_to=None,
+                limit=10,
+                embedding_client=None,
+            )
+        assert result.cache_hit is True
+        # SearchServiceResult surface reflects the log fields
+        assert result.embedding_ms == 0
+        assert result.vector_ms == 0
+        assert result.fusion_ms == 0
+        assert result.degraded is False
+        assert result.degraded_reason is None
+        assert result.llm_proxy_cache_hit is False

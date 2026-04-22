@@ -563,6 +563,11 @@ jobs:
       DATABASE_URL: postgresql+psycopg_async://postgres:postgres@localhost:5432/dprk_cti_pact
       REDIS_URL: redis://localhost:6379/0
       RATE_LIMIT_STORAGE_URL: redis://localhost:6379/1
+      # Pact verification seeds many reports without embeddings across
+      # unrelated states before the populated /search interaction runs.
+      # Keep the hybrid path reachable for that contract check even when
+      # corpus-wide embedding coverage is low in the shared verifier DB.
+      HYBRID_SEARCH_COVERAGE_THRESHOLD: "0.0"
       APP_ENV: dev
       JWT_SECRET: pact-verify-secret-at-least-32-chars-long
       OIDC_CLIENT_ID: dprk-cti

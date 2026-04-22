@@ -941,14 +941,18 @@ describe('GET /api/v1/actors/{id}/reports', () => {
 //     State   : seeded search populated fixture ...
 //     Shape   : {items: eachLike(SearchHit), total_hits, latency_ms}
 //               SearchHit = {report: ReportItem, fts_rank: number,
-//                            vector_rank: LITERAL null}
-//     Notes   : vector_rank MUST be a literal null in the example
-//               (NOT wrapped in a matcher). The D9 forward-compat
-//               slot is a nullable int; the hybrid follow-up PR
-//               flips it to an integer rank without re-shaping the
-//               envelope. Pinning null here means the verifier
-//               fails red if any future BE edit writes an integer
-//               into it BEFORE the coordinated follow-up lands.
+//                            vector_rank: integer() matcher}
+//     Notes   : PR #19b OI6 = B — vector_rank flipped from literal
+//               null to an integer() matcher. The provider-state
+//               handler stamps deterministic stub embeddings onto
+//               the populated fixture rows (999060..062) so the
+//               vector-kNN kicks them into the top-N and the hybrid
+//               RRF path populates vector_rank. Envelope top-level
+//               keys remain {items, total_hits, latency_ms} — the
+//               only change is the per-hit vector_rank matcher
+//               shifting from literal to shape. A future BE edit
+//               that reverts to returning null would fail the
+//               integer() matcher and surface immediately.
 //
 //   D10 empty : GET /api/v1/search?q=nomatchxyz123
 //     State   : seeded search empty fixture ...
@@ -1007,8 +1011,10 @@ describe('GET /api/v1/search', () => {
         // D9 envelope: items + total_hits + latency_ms. eachLike
         // over the SearchHit body; inside each hit, `report` uses
         // like() on the ReportItem shape (matches PR #15 actor-
-        // reports style) and `vector_rank` is pinned to LITERAL
-        // null per the Group F review criterion.
+        // reports style). PR #19b OI6 = B — ``vector_rank`` uses
+        // an ``integer()`` matcher now; the provider-state handler
+        // stamps deterministic embeddings so the hybrid path returns
+        // a 1-indexed int rather than the PR #17 literal null.
         body: like({
           items: eachLike({
             report: like({
@@ -1027,9 +1033,12 @@ describe('GET /api/v1/search', () => {
               tlp: string('WHITE'),
             }),
             fts_rank: like(0.0759),
-            // Literal null — D9 forward-compat slot. See the
-            // describe-level doc block above for rationale.
-            vector_rank: null,
+            // PR #19b OI6 = B — integer() matcher replaces the
+            // PR #17 literal null. Validates SHAPE, not VALUE; the
+            // BE stamps embeddings on the fixture rows so vector-
+            // kNN places them in the top-N and the hybrid RRF path
+            // populates a positive 1-indexed rank.
+            vector_rank: integer(1),
           }),
           total_hits: integer(3),
           latency_ms: integer(42),
@@ -1058,12 +1067,16 @@ describe('GET /api/v1/search', () => {
       ])
       expect(Array.isArray(body.items)).toBe(true)
       expect(body.items.length).toBeGreaterThan(0)
-      // SearchHit shape + vector_rank null pin.
+      // SearchHit shape — PR #19b OI6 = B: vector_rank is now a
+      // positive 1-indexed integer (provider-state stamps stub
+      // embeddings so vector-kNN returns a rank for the fixture row).
       const hit = body.items[0]
       expect(hit.report.id).toBeTypeOf('number')
       expect(hit.report.title).toBeTypeOf('string')
       expect(hit.fts_rank).toBeTypeOf('number')
-      expect(hit.vector_rank).toBeNull()
+      expect(hit.vector_rank).toBeTypeOf('number')
+      expect(hit.vector_rank).not.toBeNull()
+      expect(hit.vector_rank as number).toBeGreaterThanOrEqual(1)
     })
   })
 

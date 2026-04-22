@@ -25,11 +25,13 @@ from __future__ import annotations
 import asyncio
 import os
 import sys
+from types import SimpleNamespace
 from typing import AsyncIterator
 
 import pytest
 import pytest_asyncio
 import sqlalchemy as sa
+from fastapi import Response
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -66,6 +68,7 @@ from api.routers.pact_states import (  # noqa: E402
     SIMILAR_EMPTY_EMBEDDING_SOURCE_ID,
     SIMILAR_POPULATED_NEIGHBOR_IDS,
     SIMILAR_POPULATED_SOURCE_ID,
+    _ProviderStatePayload,
     _ensure_actor_detail_fixture,
     _ensure_actor_with_no_reports_fixture,
     _ensure_actor_with_reports_fixture,
@@ -81,7 +84,10 @@ from api.routers.pact_states import (  # noqa: E402
     _ensure_similar_reports_empty_embedding_fixture,
     _ensure_similar_reports_populated_fixture,
     _ensure_trend_fixture,
+    provider_states,
 )
+from api.deps import get_embedding_client  # noqa: E402
+from api.main import app  # noqa: E402
 from api.read.analytics_aggregator import (  # noqa: E402
     compute_attack_matrix,
     compute_geo,
@@ -1233,6 +1239,132 @@ async def test_search_populated_fixture_is_idempotent(
             f"report id {rid} double-inserted on repeat state setup — "
             "ON CONFLICT (id) DO NOTHING broken"
         )
+
+
+async def test_search_populated_fixture_stamps_embedding_not_null(
+    clean_pg: None, pg_session: AsyncSession
+) -> None:
+    """PR #19b OI6 = B — the 3 populated fixture rows carry non-null
+    ``reports.embedding`` after the state handler runs.
+
+    Without this stamp, the hybrid ``/search`` pact verifier would
+    return ``vector_rank: null`` and the consumer's ``integer()``
+    matcher (FE pact) would fail. Pinning embedding presence here
+    keeps the consumer + provider contract in sync.
+    """
+    await _ensure_search_populated_fixture(pg_session)
+    await pg_session.commit()
+
+    for rid in SEARCH_POPULATED_FIXTURE_REPORT_IDS:
+        not_null = (
+            await pg_session.execute(
+                sa.text(
+                    "SELECT embedding IS NOT NULL "
+                    "FROM reports WHERE id = :id"
+                ),
+                {"id": rid},
+            )
+        ).scalar_one()
+        assert bool(not_null) is True, (
+            f"report id {rid} has null embedding after state setup — "
+            "OI6 = B stamp step missed; hybrid vector_rank would "
+            "come back null and the consumer integer() matcher fails"
+        )
+
+
+async def test_search_populated_fixture_embedding_stamp_is_idempotent(
+    clean_pg: None, pg_session: AsyncSession
+) -> None:
+    """The embedding UPDATE is null-guarded — repeat runs do not
+    overwrite a previously-stamped vector.
+
+    Without the ``AND embedding IS NULL`` guard in the UPDATE, a
+    repeat state setup would re-stamp and silently drift the cosine
+    distance profile, so the vector_rank ordering of the 3 rows
+    could move between verifications.
+    """
+    # First run stamps embeddings.
+    await _ensure_search_populated_fixture(pg_session)
+    await pg_session.commit()
+
+    # Capture the stamped vectors.
+    first_run_vecs: dict[int, str] = {}
+    for rid in SEARCH_POPULATED_FIXTURE_REPORT_IDS:
+        vec = (
+            await pg_session.execute(
+                sa.text("SELECT embedding::text FROM reports WHERE id = :id"),
+                {"id": rid},
+            )
+        ).scalar_one()
+        first_run_vecs[rid] = vec
+
+    # Repeat state setup several times.
+    await _ensure_search_populated_fixture(pg_session)
+    await _ensure_search_populated_fixture(pg_session)
+    await pg_session.commit()
+
+    for rid in SEARCH_POPULATED_FIXTURE_REPORT_IDS:
+        after = (
+            await pg_session.execute(
+                sa.text("SELECT embedding::text FROM reports WHERE id = :id"),
+                {"id": rid},
+            )
+        ).scalar_one()
+        assert after == first_run_vecs[rid], (
+            f"report id {rid} embedding drifted across repeat state "
+            "setups — UPDATE lacks ``embedding IS NULL`` guard"
+        )
+
+
+async def test_search_provider_state_installs_and_clears_embedding_override(
+    clean_pg: None,
+    pg_session: AsyncSession,
+    session_store,
+) -> None:
+    """Provider-state POST toggles the hybrid /search embedding override."""
+
+    app.dependency_overrides.pop(get_embedding_client, None)
+    request = SimpleNamespace(app=app)
+
+    try:
+        await provider_states(
+            request=request,
+            payload=_ProviderStatePayload(
+                state=(
+                    "seeded search populated fixture "
+                    "and an authenticated analyst session"
+                )
+            ),
+            response=Response(),
+            session_store=session_store,
+            session=pg_session,
+        )
+
+        override = app.dependency_overrides.get(get_embedding_client)
+        assert override is not None, (
+            "search populated provider state did not install the "
+            "embedding-client override — contract-verify would stay "
+            "FTS-only and return vector_rank: null"
+        )
+
+        stub = override()
+        result = await stub.embed(["lazarus"])
+        assert len(result.vectors) == 1
+        assert result.vectors[0][0] > result.vectors[0][1] > result.vectors[0][2]
+
+        await provider_states(
+            request=request,
+            payload=_ProviderStatePayload(state="no valid session cookie"),
+            response=Response(),
+            session_store=session_store,
+            session=pg_session,
+        )
+        assert get_embedding_client not in app.dependency_overrides, (
+            "embedding-client override leaked into the next interaction — "
+            "provider-state baseline reset is broken"
+        )
+    finally:
+        app.dependency_overrides.pop(get_embedding_client, None)
 
 
 async def test_search_empty_fixture_is_idempotent(
