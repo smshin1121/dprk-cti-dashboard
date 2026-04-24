@@ -1,6 +1,6 @@
 # PR #23 — lazarus.day feature parity
 
-**Status:** 🔒 **Locked — 2026-04-24** after 1-round discuss-phase. OI-A / OI-B = B (extend `/analytics/trend` with `group_by`). OI-C = A (extend `/dashboard/summary` with `top_sectors`). OI-D = A (aggregate on existing `sources.name` — see §2.5 below; no new `contributors` table). OI-E = B (author autocomplete). OI-F = B (year → date range synthesis in FE; URL_STATE_KEYS 5-tuple preserved). OI-G = A (quote deferred). OI-H = B (detail-page external link to lazarus.day). OI-I = A (parity before visual). OI-J = A (Phase 3.5).
+**Status:** 🔒 **Locked — 2026-04-24, amended 2026-04-25** (OI-A/B flip: B→A). OI-A / OI-B = A (new `GET /api/v1/analytics/incidents_trend?group_by=motivation|sector` endpoint — fact-table mismatch with `compute_trend` surfaced at Group A C1 pre-kickoff forced the flip; see §9 status log). OI-C = A (extend `/dashboard/summary` with `top_sectors`). OI-D = A (aggregate on existing `sources.name` — see §2.5 below; no new `contributors` table). OI-E = B (author autocomplete). OI-F = B (year → date range synthesis in FE; URL_STATE_KEYS 5-tuple preserved). OI-G = A (quote deferred). OI-H = B (detail-page external link to lazarus.day). OI-I = A (parity before visual). OI-J = A (Phase 3.5).
 
 **Base:** `chore/expose-dev-ports` (PR #22 open, pending merge). Per user 2026-04-24 OK: "머지 전이라도 그 브랜치 위에서 병렬 작업하는 판단도 괜찮습니다." — branch `feat/p3.5-lazarus-parity` off `chore/expose-dev-ports`; rebase onto `main` after chore merges.
 
@@ -211,8 +211,8 @@ Surveyed the existing data model before expanding §6: `reports.author` does **n
 
 | ID | Locked | Rationale |
 |:---:|:---:|:---|
-| **OI-A** | **B** — extend `/analytics/trend` with `group_by=motivation` param | One endpoint per analytical axis; reduces API surface. TrendResponse grows an optional `series: [{key, count}]` field per bucket (additive, FE-backward-compat). |
-| **OI-B** | **B** — same endpoint, `group_by=sector` | Parallel axis; same envelope growth. |
+| **OI-A** | **A** — new `GET /api/v1/analytics/incidents_trend?group_by=motivation` endpoint | **Flipped 2026-04-25.** Fact-table mismatch discovered at Group A C1 pre-kickoff: `compute_trend` is reports-based (`COUNT(DISTINCT reports.id)` bucketed by `month(reports.published)`), but lazarus.day `#mtrends` is incidents-based (`incident_motivations` junction keys off `incidents.id`, not `reports.id`). Extending `compute_trend` with `group_by` would bifurcate it into reports-fact OR incidents-fact — semantic muddiness bleeding into OpenAPI + Pact + FE hook shape. New endpoint preserves single-responsibility on `/analytics/trend` (15 existing Pact interactions **untouched** — stronger guarantee than extension) + has its own `IncidentsTrendResponse` envelope with no conditional shape. |
+| **OI-B** | **A** — same new endpoint, `group_by=sector` | Parallel axis on `incident_sectors` junction; same `IncidentsTrendResponse` envelope. Flipped together with OI-A for the same fact-table reason. |
 | **OI-C** | **A** — extend `/dashboard/summary` with `top_sectors` | Mirrors the existing `top_motivations` precedent (see `schemas/read.py:351`). Additive field; OpenAPI snapshot grows by ~500B. |
 | **OI-D** | **A** (REVISED per §2.5) — aggregate on existing `sources.name` | No `reports.author` field exists; our schema already has `sources` FK + junction. No new table, no migration. |
 | **OI-E** | **B** — autocomplete input | ~40+ distinct sources per lazarus.day inventory; dropdown too dense. Needs `/api/v1/sources?q=<prefix>` endpoint (new, thin). |
@@ -224,12 +224,11 @@ Surveyed the existing data model before expanding §6: `reports.author` does **n
 
 ### 5.2 Dependent items — derived 2026-04-24
 
-- **DP1** TrendResponse envelope growth — `series: list[TrendSeriesItem] | None = None` added to each `TrendBucket`. `None` when `group_by` param absent (FE-backward-compat). When `group_by=motivation`: each `series[i]` is `{key: motivation_str, count: int}`; same for `group_by=sector`.
 - **DP2** DashboardSummary envelope growth — `top_sectors: list[DashboardSectorCount]` added (Field default_factory=list). Mirrors `incidents_by_motivation` shape. Zero `group_by` flag required (always present; empty if no data).
 - **DP3** New endpoint `/api/v1/sources?q=<prefix>&limit=<n>` (role-gated read, 60/min) returns `{items: [{id, name, report_count}]}` sorted by report_count DESC. Limit ≤ 50 default 20.
-- **DP4** Pact contract: 4 new interactions — `trend?group_by=motivation populated`, `trend?group_by=sector populated`, `summary with top_sectors populated`, `sources autocomplete populated`. Keeps pact interaction count at 18 + 4 = 22.
-- **DP5** FE Zod: `trendResponseSchema` gets optional `series` field; `dashboardSummarySchema` gets `top_sectors`; new `sourceSuggestionsSchema`.
-- **DP6** FE hook: `useTrend({ groupBy?: 'motivation' | 'sector' })` returns shape-aware union. Default remains flat.
+- **DP4** Pact contract: 4 new interactions — `incidents_trend?group_by=motivation populated`, `incidents_trend?group_by=sector populated`, `summary with top_sectors populated`, `sources autocomplete populated`. Keeps pact interaction count at 18 + 4 = 22. `/analytics/trend` (15 existing flat-shape interactions) **untouched**.
+- **DP5** FE Zod: new `incidentsTrendResponseSchema` + `incidentsTrendBucketSchema` + `incidentsTrendSeriesItemSchema` (existing `trendResponseSchema` unchanged); `dashboardSummarySchema` gets `top_sectors`; new `sourceSuggestionsSchema`.
+- **DP6** FE hook: new `useIncidentsTrend({ groupBy: 'motivation' | 'sector' })` — React Query key `['incidents_trend', groupBy, filters]`; existing `useTrend` hook and query key untouched.
 - **DP7** FE FilterBar: `<SourcePicker/>` component with async autocomplete. Filter state key: `sources` (list[str]) — already passed to `/reports?source=...`. No URL_STATE change (filter key stays in filterStore local scope per PR #13 convention).
 
 ---
@@ -238,11 +237,16 @@ Surveyed the existing data model before expanding §6: `reports.author` does **n
 
 ### 6.A — Backend aggregation layer (3 commits)
 
-**C1** — `compute_trend` extended with `group_by: Literal["motivation", "sector"] | None = None` param.
-- `None` branch: current flat shape (unchanged — all existing callers, 15 Pact interactions, FE TrendChart hook).
-- `"motivation"` branch: JOIN `incident_motivations` via `reports` when needed (or directly if trend is already incidents-based — verify via `analytics_aggregator.py:191`). GROUP BY `(month, motivation)`. Produce `buckets: [{month, count, series: [{key, count}]}]` where outer `count` = sum of `series[*].count`.
-- `"sector"` branch: same shape, `incident_sectors` junction. COUNT DISTINCT incident_id per bucket per sector to avoid join inflation.
-- **`group_by` validator**: FastAPI `Query(...)` with `Literal` type → 422 on invalid value.
+**C1** — new `GET /api/v1/analytics/incidents_trend` endpoint + new `compute_incidents_trend` aggregator in `services/api/src/api/read/analytics_aggregator.py`. **`/analytics/trend` not touched.**
+- Signature: `compute_incidents_trend(filters: IncidentFilters, group_by: Literal["motivation", "sector"]) -> IncidentsTrendResponse`. `group_by` is **required** (no flat mode — that's what `/analytics/trend` is for).
+- Fact table: `incidents` (NOT `reports`). `COUNT(DISTINCT incidents.id)` bucketed by `date_trunc('month', incidents.reported)`. `incidents.reported` is nullable (see `tables.py:267`) — apply `WHERE incidents.reported IS NOT NULL` upstream of the junction join, consistent with the list-endpoint cursor convention (`tables.py:258-261`).
+- `group_by="motivation"` branch: `LEFT JOIN incident_motivations ON incident_motivations.incident_id = incidents.id`. `GROUP BY (date_trunc('month', reported), motivation)`. Rows with no motivation assignment land in a sentinel `"unknown"` key (never dropped) so outer `count = sum(series[*].count)` holds.
+- `group_by="sector"` branch: same shape, `incident_sectors` junction; same unknown-bucket handling.
+- Response envelope: `IncidentsTrendResponse { buckets: list[IncidentsTrendBucket], group_by: str, generated_at: datetime }` where `IncidentsTrendBucket = { month: date, count: int, series: list[IncidentsTrendSeriesItem] }` and `IncidentsTrendSeriesItem = { key: str, count: int }`. **Distinct Pydantic type from `TrendResponse`** — no conditional-shape union, no FE discriminated-union cost.
+- `group_by` validator: FastAPI `Query(...)` with `Literal["motivation", "sector"]` → 422 on invalid; `Query(...)` (required) → 422 on missing.
+- Filter propagation: reuse the same `IncidentFilters` assembly used by `compute_dashboard_summary`'s incidents side (date_from / date_to / group_ids / tlp). Extract the shared helper if it doesn't already exist; do **not** duplicate filter logic.
+- Rate limit: reuse the read bucket on `/analytics/*` (currently 60/min per-user per `routers/analytics.py`).
+- OpenAPI examples: `group_by=motivation` populated (3 months × 4 motivations) + `group_by=sector` populated (3 months × 3 sectors) + empty (`buckets: []`).
 
 **C2** — `compute_dashboard_summary` extended with `top_sectors: list[DashboardSectorCount]` (N=10 cap per plan D6 top_n=5 default; expose as param). Pure SQL: `SELECT sector, COUNT(DISTINCT incident_id) FROM incident_sectors JOIN incidents ... WHERE date/group filters ... GROUP BY sector ORDER BY count DESC LIMIT top_n`.
 
@@ -254,9 +258,11 @@ Surveyed the existing data model before expanding §6: `reports.author` does **n
 
 **Sub-criteria (pre-landing review, in-commit assertions):**
 
-- **C1.a** zero regression on existing `/analytics/trend` — 3 flat-shape Pact interactions reverify without change
-- **C1.b** `group_by=motivation` + `group_by=sector` both produce `sum(series[].count) == outer count` invariant test
-- **C1.c** Pact 2 new interactions (motivation populated + sector populated); empty case covered by existing empty pact reverified as `series: null` vs `series: []` — **pick `null`** (omitted field, matches our "zero-count months are omitted" precedent)
+- **C1.a** zero regression on `/analytics/trend` — by construction: **no code touched** on that endpoint; 15 existing Pact interactions reverify identically. Grep-assertion that `compute_trend` signature + docstring are byte-identical to the PR-parent commit.
+- **C1.b** `group_by=motivation` and `group_by=sector` each produce `sum(series[].count) == outer count` invariant on populated fixtures (unit test on aggregator + integration test against real PG)
+- **C1.c** 2 new Pact interactions on `/api/v1/analytics/incidents_trend` (motivation populated + sector populated). Empty response is a top-level shape: `buckets: []` (no `series: null` question to answer — the new envelope has no conditional field).
+- **C1.d** `group_by` **required**: request without query param → 422; invalid value (`"foo"`) → 422. Regression tests for both paths.
+- **C1.e** static-source scan: new endpoint gated by `_READ_ROLES` + 60/min limiter (grep assertion, per `pattern_factory_wiring_guard` precedent)
 - **C2.a** DashboardSummary snapshot regeneration; OpenAPI grows by ~500B
 - **C2.b** `top_sectors` respects `group_ids` filter same way `incidents_by_motivation` does (filter-propagation audit)
 - **C3.a** sources endpoint returns empty list (not 404) when no match
@@ -265,16 +271,16 @@ Surveyed the existing data model before expanding §6: `reports.author` does **n
 ### 6.B — FE client layer (2 commits)
 
 **C4** — Zod schema evolution:
-- `trendBucketSchema` gains optional `series: z.array(trendSeriesItemSchema).nullable().optional()`
+- New `incidentsTrendSeriesItemSchema` + `incidentsTrendBucketSchema` + `incidentsTrendResponseSchema` (`trendResponseSchema` unchanged — no edits)
 - `dashboardSummarySchema` gains `top_sectors: z.array(dashboardSectorCountSchema).default([])`
 - New `sourceSuggestionSchema` + `sourcesResponseSchema`
 - Literal parity test against BE OpenAPI examples (reuses PR #17 D-C pattern).
 
 **C5** — Hook + endpoint layer:
-- `useTrend({ groupBy?: 'motivation' | 'sector' })` — React Query key includes groupBy
+- New `useIncidentsTrend({ groupBy: 'motivation' | 'sector' })` — React Query key `['incidents_trend', groupBy, filters]`; existing `useTrend` hook and query key untouched
 - `useDashboardSummary` unchanged structurally; consumers read new `top_sectors` field
 - `useSourceSuggestions(q: string)` — debounced 250ms, enable-gate `q.length >= 2`
-- `queryKeys.sourceSuggestions(q)` factory
+- `queryKeys.incidentsTrend(groupBy, filters)` + `queryKeys.sourceSuggestions(q)` factories
 - Pact consumer adds 4 new interactions (OpenAPI parity).
 
 ### 6.C — FE dashboard widgets (4 commits)
@@ -282,9 +288,9 @@ Surveyed the existing data model before expanding §6: `reports.author` does **n
 **C6** — `ContributorsList` widget → derives from `/dashboard/summary.top_sources` (from OI-D + DP2 — wait, `top_sectors` is the new field; "Leading Contributors" is a **separate** new field `top_sources`). **Correction: DP2 covers `top_sectors`; `top_sources` is a SECOND new field. Update C2 to add both.**
 - Row: `{source_name, report_count, latest_report_date}` → i18n-friendly list, links to `/reports?source=<name>` (filter deep-link, OI-H-adjacent)
 
-**C7** — `MotivationStackedArea` widget — consumes `useTrend({ groupBy: 'motivation' })`. Recharts StackedAreaChart with color palette from PR #22 chart theme placeholder (default Tailwind for now; Group A of PR #24 will sub in Paul Tol colors).
+**C7** — `MotivationStackedArea` widget — consumes `useIncidentsTrend({ groupBy: 'motivation' })`. Recharts StackedAreaChart with color palette from PR #24 chart theme placeholder (default Tailwind for now; Group A of PR #24 will sub in Paul Tol colors).
 
-**C8** — `SectorStackedArea` widget — same shape, sector axis. Mounts next to MotivationStackedArea in dashboard grid.
+**C8** — `SectorStackedArea` widget — consumes `useIncidentsTrend({ groupBy: 'sector' })`. Same Recharts StackedAreaChart shape as C7. Mounts next to MotivationStackedArea in dashboard grid.
 
 **C9** — `SectorBreakdown` widget — consumes `summary.top_sectors`. Horizontal bar list mirroring existing `MotivationDonut` positioning.
 
@@ -347,3 +353,4 @@ Approx: 15 commits across 6 Groups. Memory `feedback_codex_iteration.md` says 3-
 
 - **Draft v1 — 2026-04-24.** lazarus.day inventory captured. Gap map published. OI-A – OI-J open. Awaiting user answers to lock §5.1 → expand §6 Group details → begin Group A.
 - **Locked — 2026-04-24.** All OIs locked to recommended defaults (`B / B / A / A / B / B / A / B / A / A`). §2.5 scope correction recorded: `reports.source_id → sources.name` is the "author" surface; no new table. §5.2 DP1–DP7 derived. §6 Groups A–F expanded to concrete pre-landing criteria C1–C15. Branch name: `feat/p3.5-lazarus-parity` off `chore/expose-dev-ports`. PR #22 (visual redesign) plan doc to be renumbered PR #24.
+- **Amended — 2026-04-25.** OI-A/B flip: **B → A**. New OI vector: `A / A / A / A / B / B / A / B / A / A`. Trigger: fact-table mismatch surfaced at Group A C1 pre-kickoff — `compute_trend` is reports-based (`COUNT(DISTINCT reports.id)` on `month(reports.published)`), but lazarus.day `#mtrends`/`#strends` are incidents-based (`incident_motivations` / `incident_sectors` junctions key off `incidents.id`). Extending `compute_trend` with a `group_by` param would bifurcate it into reports-fact-OR-incidents-fact depending on caller — muddiness propagates to OpenAPI, Pact, and FE hook shape. Rejected. Locked instead: new dedicated `GET /api/v1/analytics/incidents_trend?group_by=motivation|sector` endpoint with its own `IncidentsTrendResponse` envelope. Diff vs original lock: §5.1 OI-A/B rows rewritten; §5.2 DP1 deleted (DP4/DP5/DP6 updated to reference new endpoint/schemas/hook); §6.A C1 + sub-criteria (C1.a–C1.e) rewritten; §6.B C4/C5 updated; §6.C C7/C8 hook consumer updated. `/analytics/trend` (15 existing Pact interactions) **untouched** — stronger regression guarantee than the original extension plan. Validates `pattern_scope_expansion_before_criteria_lock` for the third time in this PR (§2.5 reports.author → sources.name was #2).
