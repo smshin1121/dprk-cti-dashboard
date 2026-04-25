@@ -1702,6 +1702,218 @@
       }
     },
     {
+      "description": "a request for the incidents trend bucketed by motivation",
+      "providerStates": [
+        {
+          "name": "seeded incidents_trend motivation dataset and an authenticated analyst session"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/analytics/incidents_trend",
+        "query": {
+          "date_from": [
+            "2026-01-01"
+          ],
+          "date_to": [
+            "2026-04-18"
+          ],
+          "group_by": [
+            "motivation"
+          ]
+        }
+      },
+      "response": {
+        "body": {
+          "buckets": [
+            {
+              "count": 2,
+              "month": "2026-02",
+              "series": [
+                {
+                  "count": 1,
+                  "key": "Espionage"
+                }
+              ]
+            }
+          ],
+          "group_by": "motivation"
+        },
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "matchingRules": {
+          "body": {
+            "$": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.buckets": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type",
+                  "min": 1
+                }
+              ]
+            },
+            "$.buckets[*].count": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "integer"
+                }
+              ]
+            },
+            "$.buckets[*].month": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.buckets[*].series": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type",
+                  "min": 1
+                }
+              ]
+            },
+            "$.buckets[*].series[*].count": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "integer"
+                }
+              ]
+            },
+            "$.buckets[*].series[*].key": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          }
+        },
+        "status": 200
+      }
+    },
+    {
+      "description": "a request for the incidents trend bucketed by sector",
+      "providerStates": [
+        {
+          "name": "seeded incidents_trend sector dataset and an authenticated analyst session"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/analytics/incidents_trend",
+        "query": {
+          "date_from": [
+            "2026-01-01"
+          ],
+          "date_to": [
+            "2026-04-18"
+          ],
+          "group_by": [
+            "sector"
+          ]
+        }
+      },
+      "response": {
+        "body": {
+          "buckets": [
+            {
+              "count": 2,
+              "month": "2026-02",
+              "series": [
+                {
+                  "count": 1,
+                  "key": "GOV"
+                }
+              ]
+            }
+          ],
+          "group_by": "sector"
+        },
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "matchingRules": {
+          "body": {
+            "$": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.buckets": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type",
+                  "min": 1
+                }
+              ]
+            },
+            "$.buckets[*].count": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "integer"
+                }
+              ]
+            },
+            "$.buckets[*].month": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.buckets[*].series": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type",
+                  "min": 1
+                }
+              ]
+            },
+            "$.buckets[*].series[*].count": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "integer"
+                }
+              ]
+            },
+            "$.buckets[*].series[*].key": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          }
+        },
+        "status": 200
+      }
+    },
+    {
       "description": "a request for the monthly-trend buckets with date filter",
       "providerStates": [
         {

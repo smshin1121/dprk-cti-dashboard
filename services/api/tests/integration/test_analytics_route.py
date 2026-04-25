@@ -34,10 +34,13 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
+from api.schemas.read import INCIDENTS_TREND_UNKNOWN_KEY
 from api.tables import (
     codenames_table,
     groups_table,
     incident_countries_table,
+    incident_motivations_table,
+    incident_sectors_table,
     incidents_table,
     metadata,
     report_codenames_table,
@@ -184,8 +187,10 @@ async def _seed_incident(
     engine: AsyncEngine,
     *,
     title: str,
-    reported: dt.date,
+    reported: dt.date | None,
     countries: list[str] | None = None,
+    motivations: list[str] | None = None,
+    sectors: list[str] | None = None,
 ) -> int:
     async with AsyncSession(engine, expire_on_commit=False) as s:
         result = await s.execute(
@@ -198,6 +203,18 @@ async def _seed_incident(
             await s.execute(
                 sa.insert(incident_countries_table).values(
                     incident_id=iid, country_iso2=c
+                )
+            )
+        for m in motivations or []:
+            await s.execute(
+                sa.insert(incident_motivations_table).values(
+                    incident_id=iid, motivation=m
+                )
+            )
+        for sc in sectors or []:
+            await s.execute(
+                sa.insert(incident_sectors_table).values(
+                    incident_id=iid, sector_code=sc
                 )
             )
         await s.commit()
@@ -508,7 +525,12 @@ class TestFilterPlumbing:
 class TestAuthAndValidation:
     @pytest.mark.parametrize(
         "path",
-        ["/api/v1/analytics/attack_matrix", "/api/v1/analytics/trend", "/api/v1/analytics/geo"],
+        [
+            "/api/v1/analytics/attack_matrix",
+            "/api/v1/analytics/trend",
+            "/api/v1/analytics/geo",
+            "/api/v1/analytics/incidents_trend?group_by=motivation",
+        ],
     )
     async def test_missing_cookie_returns_401(
         self, analytics_client: AsyncClient, path: str
@@ -518,7 +540,12 @@ class TestAuthAndValidation:
 
     @pytest.mark.parametrize(
         "path",
-        ["/api/v1/analytics/attack_matrix", "/api/v1/analytics/trend", "/api/v1/analytics/geo"],
+        [
+            "/api/v1/analytics/attack_matrix",
+            "/api/v1/analytics/trend",
+            "/api/v1/analytics/geo",
+            "/api/v1/analytics/incidents_trend?group_by=motivation",
+        ],
     )
     async def test_role_not_in_read_allowlist_returns_403(
         self,
@@ -551,6 +578,231 @@ class TestAuthAndValidation:
             cookies={"dprk_cti_session": cookie},
         )
         assert resp.status_code == 422
+
+    async def test_incidents_trend_missing_group_by_returns_422(
+        self, analytics_client: AsyncClient, make_session_cookie
+    ) -> None:
+        # ``group_by`` is required (no default) — request without it must
+        # 422, never silently fall back to a flat shape. PR #23 §6.A C1.d.
+        cookie = await _cookie(make_session_cookie)
+        resp = await analytics_client.get(
+            "/api/v1/analytics/incidents_trend",
+            cookies={"dprk_cti_session": cookie},
+        )
+        assert resp.status_code == 422
+
+    @pytest.mark.parametrize("invalid", ["foo", "Motivation", "", "all"])
+    async def test_incidents_trend_invalid_group_by_returns_422(
+        self,
+        analytics_client: AsyncClient,
+        make_session_cookie,
+        invalid: str,
+    ) -> None:
+        # Literal["motivation","sector"] — anything else is 422. Common
+        # drift: capital-M, plural form, or "all". PR #23 §6.A C1.d.
+        cookie = await _cookie(make_session_cookie)
+        resp = await analytics_client.get(
+            f"/api/v1/analytics/incidents_trend?group_by={invalid}",
+            cookies={"dprk_cti_session": cookie},
+        )
+        assert resp.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# /incidents_trend — PR #23 Group A C1 (lazarus.day parity)
+# ---------------------------------------------------------------------------
+
+
+class TestIncidentsTrendEmpty:
+    async def test_empty_db_motivation(
+        self, analytics_client: AsyncClient, make_session_cookie
+    ) -> None:
+        cookie = await _cookie(make_session_cookie)
+        resp = await analytics_client.get(
+            "/api/v1/analytics/incidents_trend?group_by=motivation",
+            cookies={"dprk_cti_session": cookie},
+        )
+        assert resp.status_code == 200
+        assert resp.json() == {"buckets": [], "group_by": "motivation"}
+
+    async def test_empty_db_sector(
+        self, analytics_client: AsyncClient, make_session_cookie
+    ) -> None:
+        cookie = await _cookie(make_session_cookie)
+        resp = await analytics_client.get(
+            "/api/v1/analytics/incidents_trend?group_by=sector",
+            cookies={"dprk_cti_session": cookie},
+        )
+        assert resp.status_code == 200
+        assert resp.json() == {"buckets": [], "group_by": "sector"}
+
+
+class TestIncidentsTrendHappy:
+    async def test_motivation_populated_invariant_holds(
+        self,
+        analytics_client: AsyncClient,
+        make_session_cookie,
+        real_engine: AsyncEngine,
+    ) -> None:
+        # Feb 2026: 2 Espionage + 1 Finance.
+        # Mar 2026: 1 Espionage + 1 unjuncted (lands in "unknown").
+        await _seed_incident(
+            real_engine,
+            title="i-feb-1",
+            reported=dt.date(2026, 2, 5),
+            motivations=["Espionage"],
+        )
+        await _seed_incident(
+            real_engine,
+            title="i-feb-2",
+            reported=dt.date(2026, 2, 18),
+            motivations=["Espionage"],
+        )
+        await _seed_incident(
+            real_engine,
+            title="i-feb-3",
+            reported=dt.date(2026, 2, 25),
+            motivations=["Finance"],
+        )
+        await _seed_incident(
+            real_engine,
+            title="i-mar-1",
+            reported=dt.date(2026, 3, 4),
+            motivations=["Espionage"],
+        )
+        await _seed_incident(
+            real_engine,
+            title="i-mar-unknown",
+            reported=dt.date(2026, 3, 20),
+            motivations=[],  # no junction row → unknown bucket
+        )
+
+        cookie = await _cookie(make_session_cookie)
+        resp = await analytics_client.get(
+            "/api/v1/analytics/incidents_trend?group_by=motivation",
+            cookies={"dprk_cti_session": cookie},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["group_by"] == "motivation"
+
+        buckets = {b["month"]: b for b in body["buckets"]}
+        assert set(buckets.keys()) == {"2026-02", "2026-03"}
+
+        # Per-bucket invariant.
+        for month, bucket in buckets.items():
+            series_total = sum(item["count"] for item in bucket["series"])
+            assert series_total == bucket["count"], (
+                f"invariant broken for {month}: outer={bucket['count']}, "
+                f"sum(series)={series_total}, series={bucket['series']}"
+            )
+
+        feb = buckets["2026-02"]
+        assert feb["count"] == 3
+        assert sorted(feb["series"], key=lambda s: s["key"]) == [
+            {"key": "Espionage", "count": 2},
+            {"key": "Finance", "count": 1},
+        ]
+        mar = buckets["2026-03"]
+        assert mar["count"] == 2
+        assert sorted(mar["series"], key=lambda s: s["key"]) == [
+            {"key": "Espionage", "count": 1},
+            {"key": INCIDENTS_TREND_UNKNOWN_KEY, "count": 1},
+        ]
+
+    async def test_sector_populated_invariant_holds(
+        self,
+        analytics_client: AsyncClient,
+        make_session_cookie,
+        real_engine: AsyncEngine,
+    ) -> None:
+        # Mar 2026: 2 GOV, 1 FIN, 1 ENE.
+        await _seed_incident(
+            real_engine,
+            title="i-gov-a",
+            reported=dt.date(2026, 3, 2),
+            sectors=["GOV"],
+        )
+        await _seed_incident(
+            real_engine,
+            title="i-gov-b",
+            reported=dt.date(2026, 3, 8),
+            sectors=["GOV"],
+        )
+        await _seed_incident(
+            real_engine,
+            title="i-fin",
+            reported=dt.date(2026, 3, 12),
+            sectors=["FIN"],
+        )
+        await _seed_incident(
+            real_engine,
+            title="i-eng",
+            reported=dt.date(2026, 3, 20),
+            sectors=["ENE"],
+        )
+
+        cookie = await _cookie(make_session_cookie)
+        resp = await analytics_client.get(
+            "/api/v1/analytics/incidents_trend?group_by=sector",
+            cookies={"dprk_cti_session": cookie},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["group_by"] == "sector"
+
+        buckets = {b["month"]: b for b in body["buckets"]}
+        assert set(buckets.keys()) == {"2026-03"}
+        mar = buckets["2026-03"]
+        assert mar["count"] == 4
+        assert sorted(mar["series"], key=lambda s: s["key"]) == [
+            {"key": "ENE", "count": 1},
+            {"key": "FIN", "count": 1},
+            {"key": "GOV", "count": 2},
+        ]
+
+    async def test_date_filters_pass_through_to_aggregator(
+        self,
+        analytics_client: AsyncClient,
+        make_session_cookie,
+        real_engine: AsyncEngine,
+    ) -> None:
+        # 3 incidents, only the 2026-03 one should land in the response.
+        await _seed_incident(
+            real_engine,
+            title="i-old",
+            reported=dt.date(2024, 1, 15),
+            motivations=["Espionage"],
+        )
+        await _seed_incident(
+            real_engine,
+            title="i-in",
+            reported=dt.date(2026, 3, 10),
+            motivations=["Finance"],
+        )
+        await _seed_incident(
+            real_engine,
+            title="i-future",
+            reported=dt.date(2027, 6, 5),
+            motivations=["Espionage"],
+        )
+
+        cookie = await _cookie(make_session_cookie)
+        resp = await analytics_client.get(
+            "/api/v1/analytics/incidents_trend"
+            "?group_by=motivation&date_from=2026-01-01&date_to=2026-12-31",
+            cookies={"dprk_cti_session": cookie},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["group_by"] == "motivation"
+        assert body["buckets"] == [
+            {
+                "month": "2026-03",
+                "count": 1,
+                "series": [{"key": "Finance", "count": 1}],
+            }
+        ]
 
 
 # ---------------------------------------------------------------------------

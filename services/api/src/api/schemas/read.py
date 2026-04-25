@@ -48,7 +48,7 @@ here — ``/auth/me`` keeps the PR #2 DTO in ``api.auth.schemas``.
 from __future__ import annotations
 
 from datetime import date
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -553,6 +553,121 @@ class TrendResponse(BaseModel):
     )
 
     buckets: list[TrendBucket] = Field(default_factory=list)
+
+
+INCIDENTS_TREND_UNKNOWN_KEY = "unknown"
+"""Sentinel ``key`` value for ``IncidentsTrendSeriesItem`` when an
+incident has no row in the ``incident_motivations`` /
+``incident_sectors`` junction. The bucket is **never dropped** — those
+rows are folded into this single key so that
+``sum(series[].count) == outer count`` holds for every bucket. FE
+renders this as a non-clickable "Unassigned" segment per plan PR #23
+§6.A C1. BE and FE share the literal string; see Zod mirror at
+``apps/frontend/src/lib/api/schemas.ts``.
+"""
+
+
+class IncidentsTrendSeriesItem(BaseModel):
+    """One stacked-axis slice within an ``IncidentsTrendBucket``.
+
+    ``key`` is the motivation or sector label (e.g. ``"Espionage"``,
+    ``"Government"``). When an incident has no junction row, ``key`` is
+    the sentinel ``INCIDENTS_TREND_UNKNOWN_KEY`` (``"unknown"``) — see
+    that constant's docstring for the no-row-dropped invariant.
+    """
+
+    model_config = ConfigDict(
+        frozen=True,
+        json_schema_extra={"examples": [{"key": "Espionage", "count": 12}]},
+    )
+
+    key: str
+    count: Annotated[int, Field(ge=0)]
+
+
+class IncidentsTrendBucket(BaseModel):
+    """One monthly bucket in ``IncidentsTrendResponse.buckets``.
+
+    Same ``month`` shape as ``TrendBucket`` (strict ``YYYY-MM``,
+    zero-padded). Outer ``count`` is the total distinct incidents in
+    the bucket and equals ``sum(series[].count)`` — the
+    ``INCIDENTS_TREND_UNKNOWN_KEY`` slice absorbs incidents that have
+    no junction row so the invariant holds without dropping data.
+    """
+
+    model_config = ConfigDict(
+        frozen=True,
+        json_schema_extra={
+            "examples": [
+                {
+                    "month": "2026-03",
+                    "count": 18,
+                    "series": [
+                        {"key": "Espionage", "count": 12},
+                        {"key": "Finance", "count": 5},
+                        {"key": INCIDENTS_TREND_UNKNOWN_KEY, "count": 1},
+                    ],
+                }
+            ]
+        },
+    )
+
+    month: Annotated[str, Field(pattern=r"^\d{4}-\d{2}$")]
+    count: Annotated[int, Field(ge=0)]
+    series: list[IncidentsTrendSeriesItem] = Field(default_factory=list)
+
+
+class IncidentsTrendResponse(BaseModel):
+    """Response for ``GET /api/v1/analytics/incidents_trend``.
+
+    Distinct from ``TrendResponse``: the fact table is ``incidents``
+    (not ``reports``), bucketed by ``date_trunc('month',
+    incidents.reported)`` with ``incidents.reported IS NOT NULL``
+    upstream of the junction join (see ``tables.py:258-267``). Each
+    bucket carries a ``series`` slice of motivation or sector counts
+    summing to the outer ``count``. Plan PR #23 §6.A C1 lock.
+
+    ``group_by`` echoes the request's required query parameter
+    (``"motivation"`` or ``"sector"``) so the FE doesn't need to thread
+    it back through the response wrapper.
+
+    Zero-count months are **omitted**, not zero-filled — same
+    convention as ``TrendResponse``.
+    """
+
+    model_config = ConfigDict(
+        frozen=True,
+        json_schema_extra={
+            "examples": [
+                {
+                    "buckets": [
+                        {
+                            "month": "2026-01",
+                            "count": 14,
+                            "series": [
+                                {"key": "Espionage", "count": 9},
+                                {"key": "Finance", "count": 5},
+                            ],
+                        },
+                        {
+                            "month": "2026-02",
+                            "count": 16,
+                            "series": [
+                                {"key": "Espionage", "count": 10},
+                                {"key": "Finance", "count": 4},
+                                {"key": INCIDENTS_TREND_UNKNOWN_KEY, "count": 2},
+                            ],
+                        },
+                    ],
+                    "group_by": "motivation",
+                },
+                {"buckets": [], "group_by": "sector"},
+            ]
+        },
+    )
+
+    buckets: list[IncidentsTrendBucket] = Field(default_factory=list)
+    group_by: Literal["motivation", "sector"]
 
 
 class GeoCountry(BaseModel):

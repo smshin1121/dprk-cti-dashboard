@@ -9,6 +9,8 @@ import {
   dashboardSummarySchema,
   geoResponseSchema,
   incidentDetailSchema,
+  INCIDENTS_TREND_UNKNOWN_KEY,
+  incidentsTrendResponseSchema,
   reportDetailSchema,
   reportItemSchema,
   reportListResponseSchema,
@@ -321,6 +323,142 @@ describe('trendResponseSchema', () => {
         buckets: [{ month: '2026-03', count: -1 }],
       }),
     ).toThrow()
+  })
+})
+
+describe('incidentsTrendResponseSchema', () => {
+  // Lifted verbatim from contracts/openapi/openapi.json — the
+  // ``motivation_populated``, ``sector_populated``, and ``empty``
+  // examples on ``GET /api/v1/analytics/incidents_trend`` (PR #23
+  // Group A C1). If the BE example changes, this test breaks first —
+  // desired, since it's the BE↔FE shape drift signal for this
+  // endpoint. Mirrors the ``trendResponseSchema`` BE-happy-example
+  // pattern above.
+  const beMotivationExample = {
+    buckets: [
+      {
+        month: '2026-01',
+        count: 14,
+        series: [
+          { key: 'Espionage', count: 9 },
+          { key: 'Finance', count: 5 },
+        ],
+      },
+      {
+        month: '2026-02',
+        count: 16,
+        series: [
+          { key: 'Espionage', count: 10 },
+          { key: 'Finance', count: 4 },
+          { key: INCIDENTS_TREND_UNKNOWN_KEY, count: 2 },
+        ],
+      },
+    ],
+    group_by: 'motivation' as const,
+  }
+
+  const beSectorExample = {
+    buckets: [
+      {
+        month: '2026-03',
+        count: 4,
+        series: [
+          { key: 'ENE', count: 1 },
+          { key: 'FIN', count: 1 },
+          { key: 'GOV', count: 2 },
+        ],
+      },
+    ],
+    group_by: 'sector' as const,
+  }
+
+  const beEmptyExample = { buckets: [], group_by: 'motivation' as const }
+
+  it('parses the BE motivation_populated example verbatim', () => {
+    expect(incidentsTrendResponseSchema.parse(beMotivationExample)).toEqual(
+      beMotivationExample,
+    )
+  })
+
+  it('parses the BE sector_populated example verbatim', () => {
+    expect(incidentsTrendResponseSchema.parse(beSectorExample)).toEqual(
+      beSectorExample,
+    )
+  })
+
+  it('parses the BE empty example verbatim', () => {
+    expect(incidentsTrendResponseSchema.parse(beEmptyExample)).toEqual(
+      beEmptyExample,
+    )
+  })
+
+  it('accepts the unknown-bucket sentinel as a regular `key` value', () => {
+    const fixture = {
+      buckets: [
+        {
+          month: '2026-03',
+          count: 3,
+          series: [{ key: INCIDENTS_TREND_UNKNOWN_KEY, count: 3 }],
+        },
+      ],
+      group_by: 'motivation' as const,
+    }
+    expect(incidentsTrendResponseSchema.parse(fixture)).toEqual(fixture)
+  })
+
+  it('rejects malformed month strings (must be YYYY-MM)', () => {
+    expect(() =>
+      incidentsTrendResponseSchema.parse({
+        buckets: [{ month: '2026-1', count: 0, series: [] }],
+        group_by: 'motivation',
+      }),
+    ).toThrow()
+  })
+
+  it('rejects negative outer count', () => {
+    expect(() =>
+      incidentsTrendResponseSchema.parse({
+        buckets: [{ month: '2026-03', count: -1, series: [] }],
+        group_by: 'motivation',
+      }),
+    ).toThrow()
+  })
+
+  it('rejects negative series count', () => {
+    expect(() =>
+      incidentsTrendResponseSchema.parse({
+        buckets: [
+          {
+            month: '2026-03',
+            count: 0,
+            series: [{ key: 'Espionage', count: -1 }],
+          },
+        ],
+        group_by: 'motivation',
+      }),
+    ).toThrow()
+  })
+
+  it('rejects unknown group_by values (Literal["motivation","sector"])', () => {
+    expect(() =>
+      incidentsTrendResponseSchema.parse({
+        buckets: [],
+        group_by: 'foo',
+      }),
+    ).toThrow()
+  })
+
+  it('rejects missing series field on a bucket', () => {
+    expect(() =>
+      incidentsTrendResponseSchema.parse({
+        buckets: [{ month: '2026-03', count: 5 }],
+        group_by: 'motivation',
+      }),
+    ).toThrow()
+  })
+
+  it('pins the unknown-bucket sentinel string to "unknown" (BE/FE drift guard)', () => {
+    expect(INCIDENTS_TREND_UNKNOWN_KEY).toBe('unknown')
   })
 })
 

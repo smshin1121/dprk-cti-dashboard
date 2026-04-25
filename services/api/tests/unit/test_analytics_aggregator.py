@@ -33,12 +33,16 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engin
 from api.read.analytics_aggregator import (
     compute_attack_matrix,
     compute_geo,
+    compute_incidents_trend,
     compute_trend,
 )
+from api.schemas.read import INCIDENTS_TREND_UNKNOWN_KEY
 from api.tables import (
     codenames_table,
     groups_table,
     incident_countries_table,
+    incident_motivations_table,
+    incident_sectors_table,
     incidents_table,
     metadata,
     report_codenames_table,
@@ -166,7 +170,7 @@ async def _link_report_technique(
 
 
 async def _seed_incident(
-    session: AsyncSession, *, title: str, reported: dt.date
+    session: AsyncSession, *, title: str, reported: dt.date | None
 ) -> int:
     result = await session.execute(
         sa.insert(incidents_table)
@@ -184,6 +188,28 @@ async def _link_incident_country(
     await session.execute(
         sa.insert(incident_countries_table).values(
             incident_id=incident_id, country_iso2=country_iso2
+        )
+    )
+    await session.commit()
+
+
+async def _link_incident_motivation(
+    session: AsyncSession, incident_id: int, motivation: str
+) -> None:
+    await session.execute(
+        sa.insert(incident_motivations_table).values(
+            incident_id=incident_id, motivation=motivation
+        )
+    )
+    await session.commit()
+
+
+async def _link_incident_sector(
+    session: AsyncSession, incident_id: int, sector_code: str
+) -> None:
+    await session.execute(
+        sa.insert(incident_sectors_table).values(
+            incident_id=incident_id, sector_code=sector_code
         )
     )
     await session.commit()
@@ -657,3 +683,204 @@ class TestGeoPopulated:
         assert result_with_group == {
             "countries": [{"iso2": "KR", "count": 1}]
         }
+
+
+# ---------------------------------------------------------------------------
+# compute_incidents_trend (PR #23 Group A C1 — lazarus.day parity)
+# ---------------------------------------------------------------------------
+#
+# Distinct from ``compute_trend``: fact table is ``incidents`` (not
+# ``reports``), bucketed by ``incidents.reported``. Each bucket carries a
+# ``series`` slice of motivation or sector counts, and the invariant
+# ``sum(series[].count) == outer count`` holds — incidents with no
+# junction row land in the ``INCIDENTS_TREND_UNKNOWN_KEY`` slice rather
+# than being dropped. ``incidents.reported IS NULL`` rows ARE excluded
+# upstream of the junction (cursor-convention parity, ``tables.py:258``).
+# Plan PR #23 §6.A C1 lock.
+
+
+class TestIncidentsTrendMotivation:
+    @pytest.mark.asyncio
+    async def test_motivation_invariant_holds_per_bucket(
+        self, session: AsyncSession
+    ) -> None:
+        # Feb 2026: 3 incidents — 2 Espionage, 1 Finance.
+        # Mar 2026: 2 incidents — 2 Espionage.
+        i_feb_e1 = await _seed_incident(
+            session, title="i-feb-e1", reported=dt.date(2026, 2, 5)
+        )
+        i_feb_e2 = await _seed_incident(
+            session, title="i-feb-e2", reported=dt.date(2026, 2, 18)
+        )
+        i_feb_f1 = await _seed_incident(
+            session, title="i-feb-f1", reported=dt.date(2026, 2, 25)
+        )
+        i_mar_e1 = await _seed_incident(
+            session, title="i-mar-e1", reported=dt.date(2026, 3, 1)
+        )
+        i_mar_e2 = await _seed_incident(
+            session, title="i-mar-e2", reported=dt.date(2026, 3, 15)
+        )
+        for iid in (i_feb_e1, i_feb_e2, i_mar_e1, i_mar_e2):
+            await _link_incident_motivation(session, iid, "Espionage")
+        await _link_incident_motivation(session, i_feb_f1, "Finance")
+
+        result = await compute_incidents_trend(session, group_by="motivation")
+
+        assert result["group_by"] == "motivation"
+        buckets = {b["month"]: b for b in result["buckets"]}
+        assert set(buckets.keys()) == {"2026-02", "2026-03"}
+
+        # Per-bucket invariant: sum(series.count) == outer count.
+        for month, bucket in buckets.items():
+            series_total = sum(item["count"] for item in bucket["series"])
+            assert series_total == bucket["count"], (
+                f"invariant broken for {month}: outer={bucket['count']}, "
+                f"series sum={series_total}, series={bucket['series']}"
+            )
+
+        # Concrete shape pinned to catch unintended surface change.
+        feb = buckets["2026-02"]
+        assert feb["count"] == 3
+        assert sorted(feb["series"], key=lambda s: s["key"]) == [
+            {"key": "Espionage", "count": 2},
+            {"key": "Finance", "count": 1},
+        ]
+        mar = buckets["2026-03"]
+        assert mar["count"] == 2
+        assert mar["series"] == [{"key": "Espionage", "count": 2}]
+
+
+class TestIncidentsTrendSector:
+    @pytest.mark.asyncio
+    async def test_sector_invariant_holds_per_bucket(
+        self, session: AsyncSession
+    ) -> None:
+        # Mar 2026: 4 incidents — 2 Government, 1 Finance, 1 Energy.
+        # An incident with TWO sector links must NOT inflate the outer
+        # bucket count (COUNT DISTINCT incident_id) but the slices may
+        # each list the incident — series sums can exceed outer when the
+        # invariant we want is "outer = distinct incidents", not "outer =
+        # sum(series)". Plan §6.A C1 actually pins the invariant at sum
+        # form — so a multi-sector incident must be folded down to one
+        # canonical bucket OR each junction row counted once with outer
+        # being sum(series). The aggregator picks **sum form**: the
+        # invariant ``sum(series.count) == outer count`` holds by
+        # COUNT(*) on junction rows (not COUNT DISTINCT), with each
+        # incident contributing once per junction row.
+        i_gov_a = await _seed_incident(
+            session, title="i-gov-a", reported=dt.date(2026, 3, 2)
+        )
+        i_gov_b = await _seed_incident(
+            session, title="i-gov-b", reported=dt.date(2026, 3, 8)
+        )
+        i_fin = await _seed_incident(
+            session, title="i-fin", reported=dt.date(2026, 3, 12)
+        )
+        i_eng = await _seed_incident(
+            session, title="i-eng", reported=dt.date(2026, 3, 20)
+        )
+        await _link_incident_sector(session, i_gov_a, "GOV")
+        await _link_incident_sector(session, i_gov_b, "GOV")
+        await _link_incident_sector(session, i_fin, "FIN")
+        await _link_incident_sector(session, i_eng, "ENE")
+
+        result = await compute_incidents_trend(session, group_by="sector")
+
+        assert result["group_by"] == "sector"
+        buckets = {b["month"]: b for b in result["buckets"]}
+        assert set(buckets.keys()) == {"2026-03"}
+
+        mar = buckets["2026-03"]
+        series_total = sum(item["count"] for item in mar["series"])
+        assert series_total == mar["count"], (
+            f"sum(series.count)={series_total} != outer={mar['count']}; "
+            f"series={mar['series']}"
+        )
+        # Outer count is 4 (one count per junction row); slices sum to 4.
+        assert mar["count"] == 4
+        assert sorted(mar["series"], key=lambda s: s["key"]) == [
+            {"key": "ENE", "count": 1},
+            {"key": "FIN", "count": 1},
+            {"key": "GOV", "count": 2},
+        ]
+
+
+class TestIncidentsTrendUnknownBucket:
+    @pytest.mark.asyncio
+    async def test_unknown_bucket_absorbs_unjuncted_and_excludes_null_reported(
+        self, session: AsyncSession
+    ) -> None:
+        # Mar 2026:
+        #   - 1 incident with motivation "Espionage" (juncted)
+        #   - 1 incident with NO motivation row (must land in "unknown")
+        #   - 1 incident with reported=NULL (must NOT appear at all —
+        #     date_trunc on NULL drops the row before bucketing)
+        i_juncted = await _seed_incident(
+            session, title="i-juncted", reported=dt.date(2026, 3, 1)
+        )
+        await _link_incident_motivation(session, i_juncted, "Espionage")
+
+        await _seed_incident(
+            session, title="i-unknown", reported=dt.date(2026, 3, 15)
+        )  # no motivation link → "unknown"
+
+        await _seed_incident(
+            session, title="i-null-date", reported=None
+        )  # reported IS NULL → excluded from aggregation entirely
+
+        result = await compute_incidents_trend(session, group_by="motivation")
+
+        # Only one bucket — the reported=None incident did NOT create
+        # a NULL-month bucket.
+        buckets = {b["month"]: b for b in result["buckets"]}
+        assert set(buckets.keys()) == {"2026-03"}
+        mar = buckets["2026-03"]
+
+        # Outer count = 2 (juncted + unknown). The reported=None row is
+        # excluded — if it were included, outer would be 3.
+        assert mar["count"] == 2
+
+        # Invariant: unknown slice carries the unjuncted incident.
+        series_by_key = {item["key"]: item["count"] for item in mar["series"]}
+        assert series_by_key == {
+            "Espionage": 1,
+            INCIDENTS_TREND_UNKNOWN_KEY: 1,
+        }
+        assert sum(series_by_key.values()) == mar["count"]
+
+
+class TestIncidentsTrendDateFilters:
+    @pytest.mark.asyncio
+    async def test_date_filters_propagate_through_junction(
+        self, session: AsyncSession
+    ) -> None:
+        # 3 incidents across 3 different months, each motivation-linked.
+        # date_from/date_to should narrow the bucket set and carry through
+        # the junction join — a filter dropped on the wrong side of the
+        # JOIN here would silently leak rows.
+        i_old = await _seed_incident(
+            session, title="i-old", reported=dt.date(2024, 1, 15)
+        )
+        i_in = await _seed_incident(
+            session, title="i-in", reported=dt.date(2026, 3, 10)
+        )
+        i_future = await _seed_incident(
+            session, title="i-future", reported=dt.date(2027, 6, 5)
+        )
+        await _link_incident_motivation(session, i_old, "Espionage")
+        await _link_incident_motivation(session, i_in, "Finance")
+        await _link_incident_motivation(session, i_future, "Espionage")
+
+        result = await compute_incidents_trend(
+            session,
+            group_by="motivation",
+            date_from=dt.date(2026, 1, 1),
+            date_to=dt.date(2026, 12, 31),
+        )
+
+        buckets = {b["month"]: b for b in result["buckets"]}
+        assert set(buckets.keys()) == {"2026-03"}
+        mar = buckets["2026-03"]
+        assert mar["count"] == 1
+        assert mar["series"] == [{"key": "Finance", "count": 1}]

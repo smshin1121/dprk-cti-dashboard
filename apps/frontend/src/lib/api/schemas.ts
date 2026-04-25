@@ -231,6 +231,41 @@ export const trendResponseSchema = z.object({
   buckets: z.array(trendBucketSchema),
 })
 
+/**
+ * Sentinel `key` value emitted when an incident has no row in the
+ * `incident_motivations` / `incident_sectors` junction. Mirrors the BE
+ * constant `INCIDENTS_TREND_UNKNOWN_KEY` in
+ * `services/api/src/api/schemas/read.py`. The bucket is never dropped —
+ * those rows fold into this single key so `sum(series[].count) == outer
+ * count` holds for every bucket. FE renders this as a non-clickable
+ * "Unassigned" segment per plan PR #23 §6.A C1.
+ */
+export const INCIDENTS_TREND_UNKNOWN_KEY = 'unknown'
+
+export const incidentsTrendSeriesItemSchema = z.object({
+  /** Motivation or sector label, or `INCIDENTS_TREND_UNKNOWN_KEY` for
+   *  incidents with no junction row. */
+  key: z.string(),
+  count: z.number().int().gte(0),
+})
+
+export const incidentsTrendBucketSchema = z.object({
+  /** Strict `YYYY-MM` (zero-padded) — same shape as `trendBucketSchema`. */
+  month: z.string().regex(/^\d{4}-\d{2}$/),
+  /** Total distinct incidents in this bucket; equals `sum(series.count)`
+   *  (the `unknown` slice absorbs missing-junction rows so this holds
+   *  without dropping data). */
+  count: z.number().int().gte(0),
+  series: z.array(incidentsTrendSeriesItemSchema),
+})
+
+export const incidentsTrendResponseSchema = z.object({
+  buckets: z.array(incidentsTrendBucketSchema),
+  /** Echo of the required query param so the FE doesn't have to thread
+   *  it back through the response wrapper. */
+  group_by: z.enum(['motivation', 'sector']),
+})
+
 export const geoCountrySchema = z.object({
   /** ISO 3166-1 alpha-2. DPRK is `KP` — plan D7 lock says the FE
    *  highlights it; the BE treats it as a plain row here. */
@@ -248,6 +283,13 @@ export type AttackTacticRow = z.infer<typeof attackTacticRowSchema>
 export type AttackMatrixResponse = z.infer<typeof attackMatrixResponseSchema>
 export type TrendBucket = z.infer<typeof trendBucketSchema>
 export type TrendResponse = z.infer<typeof trendResponseSchema>
+export type IncidentsTrendSeriesItem = z.infer<
+  typeof incidentsTrendSeriesItemSchema
+>
+export type IncidentsTrendBucket = z.infer<typeof incidentsTrendBucketSchema>
+export type IncidentsTrendResponse = z.infer<
+  typeof incidentsTrendResponseSchema
+>
 export type GeoCountry = z.infer<typeof geoCountrySchema>
 export type GeoResponse = z.infer<typeof geoResponseSchema>
 

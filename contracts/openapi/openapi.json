@@ -1015,6 +1015,148 @@
         "title": "IncidentListResponse",
         "type": "object"
       },
+      "IncidentsTrendBucket": {
+        "description": "One monthly bucket in ``IncidentsTrendResponse.buckets``.\n\nSame ``month`` shape as ``TrendBucket`` (strict ``YYYY-MM``,\nzero-padded). Outer ``count`` is the total distinct incidents in\nthe bucket and equals ``sum(series[].count)`` — the\n``INCIDENTS_TREND_UNKNOWN_KEY`` slice absorbs incidents that have\nno junction row so the invariant holds without dropping data.",
+        "examples": [
+          {
+            "count": 18,
+            "month": "2026-03",
+            "series": [
+              {
+                "count": 12,
+                "key": "Espionage"
+              },
+              {
+                "count": 5,
+                "key": "Finance"
+              },
+              {
+                "count": 1,
+                "key": "unknown"
+              }
+            ]
+          }
+        ],
+        "properties": {
+          "count": {
+            "minimum": 0.0,
+            "title": "Count",
+            "type": "integer"
+          },
+          "month": {
+            "pattern": "^\\d{4}-\\d{2}$",
+            "title": "Month",
+            "type": "string"
+          },
+          "series": {
+            "items": {
+              "$ref": "#/components/schemas/IncidentsTrendSeriesItem"
+            },
+            "title": "Series",
+            "type": "array"
+          }
+        },
+        "required": [
+          "month",
+          "count"
+        ],
+        "title": "IncidentsTrendBucket",
+        "type": "object"
+      },
+      "IncidentsTrendResponse": {
+        "description": "Response for ``GET /api/v1/analytics/incidents_trend``.\n\nDistinct from ``TrendResponse``: the fact table is ``incidents``\n(not ``reports``), bucketed by ``date_trunc('month',\nincidents.reported)`` with ``incidents.reported IS NOT NULL``\nupstream of the junction join (see ``tables.py:258-267``). Each\nbucket carries a ``series`` slice of motivation or sector counts\nsumming to the outer ``count``. Plan PR #23 §6.A C1 lock.\n\n``group_by`` echoes the request's required query parameter\n(``\"motivation\"`` or ``\"sector\"``) so the FE doesn't need to thread\nit back through the response wrapper.\n\nZero-count months are **omitted**, not zero-filled — same\nconvention as ``TrendResponse``.",
+        "examples": [
+          {
+            "buckets": [
+              {
+                "count": 14,
+                "month": "2026-01",
+                "series": [
+                  {
+                    "count": 9,
+                    "key": "Espionage"
+                  },
+                  {
+                    "count": 5,
+                    "key": "Finance"
+                  }
+                ]
+              },
+              {
+                "count": 16,
+                "month": "2026-02",
+                "series": [
+                  {
+                    "count": 10,
+                    "key": "Espionage"
+                  },
+                  {
+                    "count": 4,
+                    "key": "Finance"
+                  },
+                  {
+                    "count": 2,
+                    "key": "unknown"
+                  }
+                ]
+              }
+            ],
+            "group_by": "motivation"
+          },
+          {
+            "buckets": [],
+            "group_by": "sector"
+          }
+        ],
+        "properties": {
+          "buckets": {
+            "items": {
+              "$ref": "#/components/schemas/IncidentsTrendBucket"
+            },
+            "title": "Buckets",
+            "type": "array"
+          },
+          "group_by": {
+            "enum": [
+              "motivation",
+              "sector"
+            ],
+            "title": "Group By",
+            "type": "string"
+          }
+        },
+        "required": [
+          "group_by"
+        ],
+        "title": "IncidentsTrendResponse",
+        "type": "object"
+      },
+      "IncidentsTrendSeriesItem": {
+        "description": "One stacked-axis slice within an ``IncidentsTrendBucket``.\n\n``key`` is the motivation or sector label (e.g. ``\"Espionage\"``,\n``\"Government\"``). When an incident has no junction row, ``key`` is\nthe sentinel ``INCIDENTS_TREND_UNKNOWN_KEY`` (``\"unknown\"``) — see\nthat constant's docstring for the no-row-dropped invariant.",
+        "examples": [
+          {
+            "count": 12,
+            "key": "Espionage"
+          }
+        ],
+        "properties": {
+          "count": {
+            "minimum": 0.0,
+            "title": "Count",
+            "type": "integer"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "count"
+        ],
+        "title": "IncidentsTrendSeriesItem",
+        "type": "object"
+      },
       "LinkedIncidentSummary": {
         "description": "One row in ``ReportDetail.linked_incidents`` (plan D9 + D11).\n\nShallow summary only — ``{id, title, reported}``. A click\nnavigates to ``/incidents/{id}`` for the full detail. No nested\nmotivations / sectors / countries arrays here (that would\nrecursively expand per D9's \"no recursive nesting\" rule).",
         "examples": [
@@ -2920,6 +3062,209 @@
           }
         },
         "summary": "Country-aggregated incident count",
+        "tags": [
+          "analytics"
+        ]
+      }
+    },
+    "/api/v1/analytics/incidents_trend": {
+      "get": {
+        "description": "Distinct incidents per calendar month of ``incidents.reported`` within the filter window, sliced by motivation or sector via the required ``group_by`` query parameter (``motivation`` | ``sector``). Outer ``count`` per bucket equals ``sum(series[].count)`` — incidents with no junction row land in a sentinel ``key='unknown'`` slice rather than being dropped. Distinct from ``/analytics/trend`` because the fact table is ``incidents`` (not ``reports``); the two endpoints answer different analytical questions and do not share an envelope. Plan PR #23 §6.A C1 lock.",
+        "operationId": "incidents_trend_endpoint_api_v1_analytics_incidents_trend_get",
+        "parameters": [
+          {
+            "description": "Required slice axis. ``motivation`` joins ``incident_motivations``; ``sector`` joins ``incident_sectors``. Anything else is 422.",
+            "in": "query",
+            "name": "group_by",
+            "required": true,
+            "schema": {
+              "description": "Required slice axis. ``motivation`` joins ``incident_motivations``; ``sector`` joins ``incident_sectors``. Anything else is 422.",
+              "enum": [
+                "motivation",
+                "sector"
+              ],
+              "title": "Group By",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "date_from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Date From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "date_to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Date To"
+            }
+          },
+          {
+            "in": "query",
+            "name": "group_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "integer"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Group Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "empty": {
+                    "summary": "No incidents in window",
+                    "value": {
+                      "buckets": [],
+                      "group_by": "motivation"
+                    }
+                  },
+                  "motivation_populated": {
+                    "summary": "Motivation slice — two months of data",
+                    "value": {
+                      "buckets": [
+                        {
+                          "count": 14,
+                          "month": "2026-01",
+                          "series": [
+                            {
+                              "count": 9,
+                              "key": "Espionage"
+                            },
+                            {
+                              "count": 5,
+                              "key": "Finance"
+                            }
+                          ]
+                        },
+                        {
+                          "count": 16,
+                          "month": "2026-02",
+                          "series": [
+                            {
+                              "count": 10,
+                              "key": "Espionage"
+                            },
+                            {
+                              "count": 4,
+                              "key": "Finance"
+                            },
+                            {
+                              "count": 2,
+                              "key": "unknown"
+                            }
+                          ]
+                        }
+                      ],
+                      "group_by": "motivation"
+                    }
+                  },
+                  "sector_populated": {
+                    "summary": "Sector slice — one month, three sectors",
+                    "value": {
+                      "buckets": [
+                        {
+                          "count": 4,
+                          "month": "2026-03",
+                          "series": [
+                            {
+                              "count": 1,
+                              "key": "ENE"
+                            },
+                            {
+                              "count": 1,
+                              "key": "FIN"
+                            },
+                            {
+                              "count": 2,
+                              "key": "GOV"
+                            }
+                          ]
+                        }
+                      ],
+                      "group_by": "sector"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/IncidentsTrendResponse"
+                }
+              }
+            },
+            "description": "Incidents trend payload, sliced by axis."
+          },
+          "401": {
+            "description": "Missing or invalid session cookie"
+          },
+          "403": {
+            "description": "Role not analyst / researcher / policy / soc / admin"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "detail": [
+                    {
+                      "loc": [
+                        "query",
+                        "group_id"
+                      ],
+                      "msg": "group_id must be >= 1",
+                      "type": "value_error"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "Invalid query param — bad ISO date, negative ``group_id``, or ``top_n`` out of ``1..200`` (attack_matrix only). Plan D12 uniform 422 contract."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": "rate_limit_exceeded",
+                  "message": "60 per 1 minute"
+                }
+              }
+            },
+            "description": "Rate limit exceeded — same 60/min/user policy as other read endpoints (dashboard, reports, incidents, actors) but a per-decorated-route bucket. Exhausting /analytics/attack_matrix does NOT consume /analytics/trend or /dashboard/summary budget."
+          }
+        },
+        "summary": "Monthly incidents trend, sliced by motivation or sector",
         "tags": [
           "analytics"
         ]
