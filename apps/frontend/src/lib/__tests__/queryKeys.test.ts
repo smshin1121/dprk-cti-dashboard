@@ -207,6 +207,48 @@ describe('queryKeys.similarReports', () => {
   })
 })
 
+describe('queryKeys.analyticsIncidentsTrend (PR #23 §6.A C1)', () => {
+  const emptyFilters = {}
+  const dateFilters = { date_from: '2026-01-01', date_to: '2026-04-18' }
+
+  it('uses the documented ["analytics", "incidents_trend", groupBy, filters] shape', () => {
+    const key = queryKeys.analyticsIncidentsTrend(emptyFilters, 'motivation')
+    expect(key).toEqual(['analytics', 'incidents_trend', 'motivation', emptyFilters])
+  })
+
+  // Critical — without `groupBy` in the key, switching between
+  // MotivationStackedArea and SectorStackedArea would flash stale
+  // axis data from React Query's cache. Pin per-axis isolation.
+  it('motivation and sector axes produce different keys for same filters', () => {
+    expect(
+      queryKeys.analyticsIncidentsTrend(emptyFilters, 'motivation'),
+    ).not.toEqual(
+      queryKeys.analyticsIncidentsTrend(emptyFilters, 'sector'),
+    )
+  })
+
+  it('different filter inputs produce different keys for same axis', () => {
+    expect(
+      queryKeys.analyticsIncidentsTrend(emptyFilters, 'motivation'),
+    ).not.toEqual(
+      queryKeys.analyticsIncidentsTrend(dateFilters, 'motivation'),
+    )
+  })
+
+  it('does not collide with analyticsTrend key for same filters (different fact tables)', () => {
+    expect(
+      queryKeys.analyticsIncidentsTrend(dateFilters, 'motivation'),
+    ).not.toEqual(queryKeys.analyticsTrend(dateFilters))
+  })
+
+  it('cache key JSON contains no tlp marker (D5 isolation)', () => {
+    const json = JSON.stringify(
+      queryKeys.analyticsIncidentsTrend(dateFilters, 'sector'),
+    ).toLowerCase()
+    expect(json).not.toContain('tlp')
+  })
+})
+
 describe('queryKeys.actorReports (PR #15 Group D)', () => {
   const emptyFilters = {}
   const dateFilters = { date_from: '2026-01-01', date_to: '2026-12-31' }

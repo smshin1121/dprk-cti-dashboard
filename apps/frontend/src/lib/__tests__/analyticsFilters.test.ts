@@ -4,6 +4,7 @@ import {
   toAnalyticsFilters,
   toAttackMatrixQueryParams,
   toGeoQueryParams,
+  toIncidentsTrendQueryParams,
   toTrendQueryParams,
   type AnalyticsFilters,
 } from '../analyticsFilters'
@@ -154,6 +155,38 @@ describe('toTrendQueryParams', () => {
   it('returns empty params for empty filters', () => {
     const params = toTrendQueryParams({})
     expect(params.toString()).toBe('')
+  })
+})
+
+describe('toIncidentsTrendQueryParams (PR #23 §6.A C1)', () => {
+  it('serializes group_by alongside the shared date + group params', () => {
+    // Note: group_id canonicalization (sort ASC) lives in
+    // `toAnalyticsFilters`, not in this serializer. Pass already-
+    // canonicalized input to mirror what the hook layer feeds in.
+    const params = toIncidentsTrendQueryParams(
+      {
+        date_from: '2026-01-01',
+        date_to: '2026-04-18',
+        group_id: [1, 3],
+      },
+      'motivation',
+    )
+    expect(params.get('group_by')).toBe('motivation')
+    expect(params.get('date_from')).toBe('2026-01-01')
+    expect(params.get('date_to')).toBe('2026-04-18')
+    expect(params.getAll('group_id')).toEqual(['1', '3'])
+  })
+
+  it('serializes group_by=sector', () => {
+    const params = toIncidentsTrendQueryParams({}, 'sector')
+    expect(params.toString()).toBe('group_by=sector')
+  })
+
+  it('emits group_by even with no other filters', () => {
+    const params = toIncidentsTrendQueryParams({}, 'motivation')
+    expect(params.has('group_by')).toBe(true)
+    expect(params.has('date_from')).toBe(false)
+    expect(params.has('group_id')).toBe(false)
   })
 })
 

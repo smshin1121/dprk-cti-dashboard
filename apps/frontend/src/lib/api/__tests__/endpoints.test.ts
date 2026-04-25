@@ -5,6 +5,7 @@ import {
   getActorReports,
   getDashboardSummary,
   getIncidentDetail,
+  getIncidentsTrend,
   getMe,
   getReportDetail,
   getSimilarReports,
@@ -108,6 +109,71 @@ describe('getDashboardSummary', () => {
     for (const key of parsed.searchParams.keys()) {
       expect(key.toLowerCase()).not.toContain('tlp')
     }
+  })
+})
+
+describe('getIncidentsTrend (PR #23 §6.A C1)', () => {
+  const motivationBody = {
+    buckets: [
+      {
+        month: '2026-02',
+        count: 3,
+        series: [
+          { key: 'Espionage', count: 2 },
+          { key: 'Finance', count: 1 },
+        ],
+      },
+    ],
+    group_by: 'motivation' as const,
+  }
+
+  it('GETs /api/v1/analytics/incidents_trend with required group_by query param', async () => {
+    const fetchSpy = vi
+      .spyOn(global, 'fetch')
+      .mockResolvedValue(
+        new Response(JSON.stringify(motivationBody), { status: 200 }),
+      )
+    const parsed = await getIncidentsTrend({}, 'motivation')
+    expect(parsed.group_by).toBe('motivation')
+    expect(parsed.buckets).toHaveLength(1)
+    const url = new URL(String(fetchSpy.mock.calls[0][0]))
+    expect(url.pathname).toBe('/api/v1/analytics/incidents_trend')
+    expect(url.searchParams.get('group_by')).toBe('motivation')
+  })
+
+  it('forwards date_from / date_to / group_id alongside group_by', async () => {
+    const fetchSpy = vi
+      .spyOn(global, 'fetch')
+      .mockResolvedValue(
+        new Response(JSON.stringify(motivationBody), { status: 200 }),
+      )
+    // group_id canonicalization happens in `toAnalyticsFilters`; this
+    // endpoint-layer test feeds already-sorted input the hook layer
+    // would emit.
+    await getIncidentsTrend(
+      {
+        date_from: '2026-01-01',
+        date_to: '2026-04-18',
+        group_id: [1, 3],
+      },
+      'sector',
+    )
+    const url = new URL(String(fetchSpy.mock.calls[0][0]))
+    expect(url.searchParams.get('group_by')).toBe('sector')
+    expect(url.searchParams.get('date_from')).toBe('2026-01-01')
+    expect(url.searchParams.get('date_to')).toBe('2026-04-18')
+    expect(url.searchParams.getAll('group_id')).toEqual(['1', '3'])
+  })
+
+  it('parses an empty payload (group_by echo only)', async () => {
+    vi.spyOn(global, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({ buckets: [], group_by: 'sector' }),
+        { status: 200 },
+      ),
+    )
+    const parsed = await getIncidentsTrend({}, 'sector')
+    expect(parsed).toEqual({ buckets: [], group_by: 'sector' })
   })
 })
 
