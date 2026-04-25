@@ -65,6 +65,26 @@
       "title": "Monthly Report Trend",
       "empty": "No trend data to chart."
     },
+    "motivationStackedArea": {
+      "title": "Incidents by Motivation (Monthly)",
+      "empty": "No motivation timeseries for current filters.",
+      "unknownLabel": "Unassigned"
+    },
+    "sectorStackedArea": {
+      "title": "Incidents by Sector (Monthly)",
+      "empty": "No sector timeseries for current filters.",
+      "unknownLabel": "Unassigned"
+    },
+    "sectorBreakdown": {
+      "title": "Top Target Sectors",
+      "empty": "No sector breakdown for current filters."
+    },
+    "contributorsList": {
+      "title": "Leading Contributors",
+      "empty": "No contributors for current filters.",
+      "reportsSuffix": "reports",
+      "latestPrefix": "Latest"
+    },
     "groupsMiniList": {
       "title": "Top Groups",
       "empty": "No groups for current filters.",
