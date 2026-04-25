@@ -179,11 +179,16 @@ describe('DashboardPage — §4.2 area [B]-[F] wiring (PR #13 Group I)', () => {
       expect(screen.getByTestId('report-feed')).toBeInTheDocument(),
     )
 
-    // PR #23 §6.C — four lazarus.day-parity panels added to the grid.
-    // Two ranked-slice widgets (C9 SectorBreakdown + C6
+    // PR #23 §6.C — five lazarus.day-parity panels added to the
+    // grid. Two ranked-slice widgets (C9 SectorBreakdown + C6
     // ContributorsList) sit alongside the existing donut/yearbar; two
     // time-series widgets (C7 MotivationStackedArea + C8
-    // SectorStackedArea) sit alongside the existing trend/groups.
+    // SectorStackedArea) sit alongside the existing trend/groups; one
+    // geo-accessibility widget (C10 LocationsRanked) sits below the
+    // WorldMap row sharing the /analytics/geo cache slot.
+    await waitFor(() =>
+      expect(screen.getByTestId('locations-ranked')).toBeInTheDocument(),
+    )
     expect(screen.getByTestId('sector-breakdown')).toBeInTheDocument()
     expect(screen.getByTestId('contributors-list')).toBeInTheDocument()
     await waitFor(() =>
@@ -231,6 +236,22 @@ describe('DashboardPage — §4.2 area [B]-[F] wiring (PR #13 Group I)', () => {
     // SectorBreakdown + ContributorsList = 6 subscribers, one shared
     // cache key → exactly ONE fetch.
     expect(summaryCalls).toHaveLength(1)
+  })
+
+  it('WorldMap + LocationsRanked share ONE /analytics/geo fetch (PR #23 C10)', async () => {
+    const spy = mockAllEndpoints()
+    const { Wrapper } = makeWrapper()
+    render(<DashboardPage />, { wrapper: Wrapper })
+    await waitFor(() =>
+      expect(screen.getByTestId('locations-ranked')).toBeInTheDocument(),
+    )
+    const geoCalls = spy.mock.calls.filter(([url]) =>
+      String(url).includes('/api/v1/analytics/geo'),
+    )
+    // WorldMap + LocationsRanked = 2 subscribers, one shared cache
+    // key → exactly ONE fetch. If a future regression switches
+    // LocationsRanked to a bespoke hook this drops to 2 and fires red.
+    expect(geoCalls).toHaveLength(1)
   })
 
   it('motivation + sector stacked-area widgets occupy distinct cache slots (PR #23 C5)', async () => {

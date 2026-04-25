@@ -8,6 +8,7 @@
  * Layout mirrors design doc §4.2 areas [B] → [F]:
  *   [B] KPIStrip                                (top, full width)
  *   [C] WorldMap + AttackHeatmap                (split row)
+ *       LocationsRanked                         (geo accessibility companion to WorldMap, PR #23 §6.C C10)
  *   [D] MotivationDonut + YearBar               (ranked slice — row 1)
  *       SectorBreakdown + ContributorsList      (ranked slice — row 2, PR #23 §6.C C9+C6)
  *   [E] TrendChart + GroupsMiniList             (time series — row 1)
@@ -24,7 +25,8 @@
  *     `/dashboard/summary` via `useDashboardSummary()` → ONE fetch
  *     across all six (summarySharedCache + DashboardPage tests pin
  *     this invariant).
- *   - WorldMap consumes `useGeo()`.
+ *   - WorldMap + LocationsRanked share `useGeo()` (one fetch — same
+ *     cache slot per the LocationsRanked test).
  *   - AttackHeatmap consumes `useAttackMatrix()`.
  *   - TrendChart consumes `useTrend()` (reports fact table).
  *   - MotivationStackedArea + SectorStackedArea each consume
@@ -48,6 +50,7 @@ import {
   SectorStackedArea,
 } from '../features/dashboard/IncidentsStackedArea'
 import { KPIStrip } from '../features/dashboard/KPIStrip'
+import { LocationsRanked } from '../features/dashboard/LocationsRanked'
 import { MotivationDonut } from '../features/dashboard/MotivationDonut'
 import { ReportFeed } from '../features/dashboard/ReportFeed'
 import { SectorBreakdown } from '../features/dashboard/SectorBreakdown'
@@ -84,6 +87,12 @@ export function DashboardPage(): JSX.Element {
           <AttackHeatmap />
         </div>
       </div>
+
+      {/* PR #23 §6.C C10 — LocationsRanked sits below the WorldMap
+          row as a sortable, accessible companion list to the geo
+          visualization. Same `useGeo()` cache slot — no extra
+          /analytics/geo round-trip. */}
+      <LocationsRanked />
 
       {/* [D] ranked slice band — existing donut/yearbar PLUS the two
           new lazarus.day-parity ranked panels (PR #23 §6.C C9+C6). */}

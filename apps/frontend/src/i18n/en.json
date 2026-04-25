@@ -85,6 +85,11 @@
       "reportsSuffix": "reports",
       "latestPrefix": "Latest"
     },
+    "locationsRanked": {
+      "title": "Top Incident Locations",
+      "empty": "No incident locations for current filters.",
+      "incidentsSuffix": "incidents"
+    },
     "groupsMiniList": {
       "title": "Top Groups",
       "empty": "No groups for current filters.",
