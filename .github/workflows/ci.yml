@@ -532,8 +532,9 @@ jobs:
     # and runs pact-python's Verifier against the FE consumer pact at
     # contracts/pacts/frontend-dprk-cti-api.json. Provider states
     # resolve through the dev-only POST /_pact/provider_states
-    # endpoint (registered under APP_ENV != "prod" in main.py;
-    # prod-guard pinned by tests/contract/test_pact_states_prod_guard.py).
+    # endpoint (registered under PACT_ROUTER_ENV_ALLOWLIST = {dev,test,
+    # ci} in main.py; allowlist regression-guarded by
+    # tests/contract/test_pact_states_prod_guard.py).
     services:
       postgres:
         image: pgvector/pgvector:pg16

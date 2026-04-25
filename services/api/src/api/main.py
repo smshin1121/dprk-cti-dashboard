@@ -209,12 +209,20 @@ app.include_router(
 
 
 # ---------------------------------------------------------------------------
-# Pact provider-state handler — dev/test envs only.
-# Registering in prod would expose an unauthenticated session minter;
-# the APP_ENV guard scopes it to the contract-verify CI job and local
-# devs reproducing that suite.
+# Pact provider-state handler — dev/test/ci envs only.
+# Registering anywhere else would expose an unauthenticated session
+# minter AND a direct DB-row mutator. The previous gate was
+# ``app_env != "prod"``, which leaked the router into any non-``"prod"``
+# value — including ``"staging"``, ``"uat"``, ``"demo"``, ``"review"``,
+# the empty string, or a typo. Fail-closed allowlist: the router is
+# mounted ONLY for the three explicitly safe envs (the same set the
+# contract-verify CI job and local devs reproducing it use).
+# ``test_pact_states_prod_guard`` pins the staging case as a
+# regression guard.
 # ---------------------------------------------------------------------------
-if _settings.app_env != "prod":
+PACT_ROUTER_ENV_ALLOWLIST: frozenset[str] = frozenset({"dev", "test", "ci"})
+
+if _settings.app_env in PACT_ROUTER_ENV_ALLOWLIST:
     app.include_router(
         pact_states.router,
         prefix="/_pact/provider_states",
