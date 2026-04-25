@@ -308,6 +308,18 @@ async def compute_incidents_trend(
     ``key`` falls back to ``INCIDENTS_TREND_UNKNOWN_KEY`` via COALESCE,
     not a dropped row.
 
+    Outer ``count`` semantics: it is the **number of junction rows**
+    in the bucket, NOT the number of distinct incidents. An incident
+    linked to N motivations (or N sectors) contributes one row per
+    link, so outer ``count`` increases by N and each of the N series
+    keys gains +1 — preserving ``sum(series.count) == outer count``.
+    This matches the standard stacked-area chart reading ("each
+    incident lives in every category it belongs to") and is
+    deliberately distinct from ``dashboard_aggregator.top_sectors``,
+    which uses ``COUNT(DISTINCT incident_id)`` because a ranked-list
+    widget needs distinct-incident semantics. Multi-junction
+    over-counting is pinned by ``test_sector_invariant_two_links``.
+
     ``group_ids`` is accepted for API uniformity with the other
     analytics endpoints but is a documented no-op — the schema has no
     path from ``incidents`` to ``groups`` (same constraint as

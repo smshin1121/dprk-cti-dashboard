@@ -805,6 +805,38 @@ class TestIncidentsTrendSector:
             {"key": "GOV", "count": 2},
         ]
 
+    @pytest.mark.asyncio
+    async def test_sector_invariant_two_links(
+        self, session: AsyncSession
+    ) -> None:
+        # Pin the sum-form invariant explicitly for the multi-junction
+        # case the aggregator's docstring references: ONE incident
+        # linked to TWO sectors contributes +2 to the outer bucket
+        # count and +1 to each of the two series keys. This is the
+        # standard stacked-area reading ("each incident lives in every
+        # category it belongs to") and is deliberately distinct from
+        # ``dashboard_aggregator.top_sectors`` which uses
+        # ``COUNT(DISTINCT incident_id)``.
+        i_dual = await _seed_incident(
+            session, title="i-dual", reported=dt.date(2026, 3, 5)
+        )
+        await _link_incident_sector(session, i_dual, "GOV")
+        await _link_incident_sector(session, i_dual, "FIN")
+
+        result = await compute_incidents_trend(session, group_by="sector")
+        buckets = {b["month"]: b for b in result["buckets"]}
+        mar = buckets["2026-03"]
+
+        # ONE incident, but outer count is 2 (one row per junction
+        # link). sum(series) == outer holds.
+        assert mar["count"] == 2
+        series_total = sum(item["count"] for item in mar["series"])
+        assert series_total == mar["count"]
+        assert sorted(mar["series"], key=lambda s: s["key"]) == [
+            {"key": "FIN", "count": 1},
+            {"key": "GOV", "count": 1},
+        ]
+
 
 class TestIncidentsTrendUnknownBucket:
     @pytest.mark.asyncio

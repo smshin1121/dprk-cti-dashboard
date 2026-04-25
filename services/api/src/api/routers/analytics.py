@@ -440,7 +440,20 @@ async def incidents_trend_endpoint(
     date_from: Annotated[date | None, Query()] = None,
     date_to: Annotated[date | None, Query()] = None,
     group_id: Annotated[
-        list[int] | None, Query(), AfterValidator(_validate_group_ids)
+        list[int] | None,
+        Query(
+            description=(
+                "Accepted for filter-surface uniformity with the other "
+                "analytics endpoints, but ``incidents_trend`` is a "
+                "documented no-op for ``group_id`` — the schema has no "
+                "path from ``incidents`` to ``groups`` (same constraint "
+                "as ``/analytics/geo`` and the "
+                "``incidents_by_motivation`` aggregate on "
+                "``/dashboard/summary``). Group-aware incident filters "
+                "depend on a future drill-down view per plan §6.C C13."
+            ),
+        ),
+        AfterValidator(_validate_group_ids),
     ] = None,
     session: AsyncSession = Depends(get_db),
     _current_user: CurrentUser = Depends(require_role(*_READ_ROLES)),

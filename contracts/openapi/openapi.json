@@ -3235,6 +3235,7 @@
             }
           },
           {
+            "description": "Accepted for filter-surface uniformity with the other analytics endpoints, but ``incidents_trend`` is a documented no-op for ``group_id`` — the schema has no path from ``incidents`` to ``groups`` (same constraint as ``/analytics/geo`` and the ``incidents_by_motivation`` aggregate on ``/dashboard/summary``). Group-aware incident filters depend on a future drill-down view per plan §6.C C13.",
             "in": "query",
             "name": "group_id",
             "required": false,
@@ -3250,6 +3251,7 @@
                   "type": "null"
                 }
               ],
+              "description": "Accepted for filter-surface uniformity with the other analytics endpoints, but ``incidents_trend`` is a documented no-op for ``group_id`` — the schema has no path from ``incidents`` to ``groups`` (same constraint as ``/analytics/geo`` and the ``incidents_by_motivation`` aggregate on ``/dashboard/summary``). Group-aware incident filters depend on a future drill-down view per plan §6.C C13.",
               "title": "Group Id"
             }
           }
