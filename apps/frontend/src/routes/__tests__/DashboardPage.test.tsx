@@ -23,6 +23,8 @@ const SUMMARY_BODY = {
   reports_by_year: [{ year: 2026, count: 12 }],
   incidents_by_motivation: [{ motivation: 'financial', count: 3 }],
   top_groups: [{ group_id: 1, name: 'Lazarus Group', report_count: 5 }],
+  top_sectors: [],
+  top_sources: [],
 }
 
 const TREND_BODY = {

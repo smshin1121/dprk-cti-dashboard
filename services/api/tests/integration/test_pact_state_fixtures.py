@@ -205,6 +205,41 @@ async def test_dashboard_fixture_satisfies_each_pact_matcher(
     assert isinstance(first_tg["report_count"], int)
     assert first_tg["report_count"] >= 1
 
+    # PR #23 §6.A C2: top_sectors = eachLike({sector_code, count}).
+    # Fixture seeds one incident with a "GOV" sector link inside the
+    # pact window. eachLike rejects empty arrays.
+    assert summary["top_sectors"], (
+        "top_sectors is empty — _ensure_dashboard_fixture must seed "
+        "at least one incident_sectors row whose incidents.reported "
+        "lands inside the pact filter window 2026-01-01..2026-04-18."
+    )
+    first_sector = summary["top_sectors"][0]
+    assert isinstance(first_sector["sector_code"], str) and first_sector["sector_code"]
+    assert isinstance(first_sector["count"], int) and first_sector["count"] >= 1
+
+    # PR #23 §6.A C2: top_sources = eachLike({source_id, source_name,
+    # report_count, latest_report_date}). Seeded by the same source +
+    # report rows the existing fixture provides.
+    assert summary["top_sources"], (
+        "top_sources is empty — _ensure_dashboard_fixture must seed "
+        "at least one report whose source_id resolves to a sources "
+        "row AND whose published date lands in the pact window."
+    )
+    first_source = summary["top_sources"][0]
+    assert isinstance(first_source["source_id"], int)
+    assert isinstance(first_source["source_name"], str) and first_source["source_name"]
+    assert isinstance(first_source["report_count"], int) and first_source["report_count"] >= 1
+    # latest_report_date is a date object on the BE (serialized as
+    # ISO YYYY-MM-DD on the wire). The aggregator returns it raw.
+    from datetime import date as _date  # noqa: PLC0415
+    assert (
+        first_source["latest_report_date"] is None
+        or isinstance(first_source["latest_report_date"], _date)
+    ), (
+        "pact: top_sources.latest_report_date must be a date or null "
+        f"— got {type(first_source['latest_report_date'])!r}"
+    )
+
 
 async def test_actor_canonical_fixture_satisfies_each_pact_matcher(
     clean_pg: None, pg_session: AsyncSession

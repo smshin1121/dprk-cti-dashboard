@@ -39,6 +39,7 @@ from api.tables import (
     codenames_table,
     groups_table,
     incident_motivations_table,
+    incident_sectors_table,
     incidents_table,
     metadata,
     report_codenames_table,
@@ -164,6 +165,7 @@ async def _seed_incident(
     title: str,
     reported: dt.date,
     motivations: list[str] | None = None,
+    sectors: list[str] | None = None,
 ) -> int:
     async with AsyncSession(engine, expire_on_commit=False) as s:
         result = await s.execute(
@@ -176,6 +178,12 @@ async def _seed_incident(
             await s.execute(
                 sa.insert(incident_motivations_table).values(
                     incident_id=iid, motivation=m
+                )
+            )
+        for sc in sectors or []:
+            await s.execute(
+                sa.insert(incident_sectors_table).values(
+                    incident_id=iid, sector_code=sc
                 )
             )
         await s.commit()
@@ -207,6 +215,8 @@ class TestEmptyDB:
             "reports_by_year": [],
             "incidents_by_motivation": [],
             "top_groups": [],
+            "top_sectors": [],
+            "top_sources": [],
         }
 
 
@@ -684,6 +694,361 @@ class TestRBAC:
             "/api/v1/dashboard/summary", cookies={"dprk_cti_session": cookie}
         )
         assert resp.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# PR #23 §6.A C2 — top_sectors + top_sources parity
+# ---------------------------------------------------------------------------
+
+
+class TestTopSectors:
+    async def test_top_sectors_sorted_by_count_desc_then_code_asc(
+        self,
+        dashboard_client: AsyncClient,
+        make_session_cookie,
+        real_engine: AsyncEngine,
+    ) -> None:
+        # 3 incidents in GOV (count=3), 2 in FIN (count=2), 1 in ENE
+        # (count=1). Order on the wire is count DESC, sector_code ASC.
+        for i in range(3):
+            await _seed_incident(
+                real_engine,
+                title=f"i-gov-{i}",
+                reported=dt.date(2026, 3, 1),
+                sectors=["GOV"],
+            )
+        for i in range(2):
+            await _seed_incident(
+                real_engine,
+                title=f"i-fin-{i}",
+                reported=dt.date(2026, 3, 2),
+                sectors=["FIN"],
+            )
+        await _seed_incident(
+            real_engine,
+            title="i-ene-0",
+            reported=dt.date(2026, 3, 3),
+            sectors=["ENE"],
+        )
+
+        cookie = await _cookie(make_session_cookie)
+        resp = await dashboard_client.get(
+            "/api/v1/dashboard/summary",
+            cookies={"dprk_cti_session": cookie},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["top_sectors"] == [
+            {"sector_code": "GOV", "count": 3},
+            {"sector_code": "FIN", "count": 2},
+            {"sector_code": "ENE", "count": 1},
+        ]
+
+    async def test_top_sectors_dedupes_per_incident(
+        self,
+        dashboard_client: AsyncClient,
+        make_session_cookie,
+        real_engine: AsyncEngine,
+    ) -> None:
+        # One incident tagged with two sectors must contribute +1 to
+        # EACH sector's bucket but never double-count its own row in a
+        # single bucket. Mirrors `incidents_by_motivation` review
+        # priority #4 invariant.
+        await _seed_incident(
+            real_engine,
+            title="i-cross",
+            reported=dt.date(2026, 3, 1),
+            sectors=["GOV", "FIN"],
+        )
+
+        cookie = await _cookie(make_session_cookie)
+        resp = await dashboard_client.get(
+            "/api/v1/dashboard/summary",
+            cookies={"dprk_cti_session": cookie},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["top_sectors"] == [
+            # Tied at count=1 → sector_code ASC (FIN before GOV).
+            {"sector_code": "FIN", "count": 1},
+            {"sector_code": "GOV", "count": 1},
+        ]
+
+    async def test_top_sectors_respects_date_filter(
+        self,
+        dashboard_client: AsyncClient,
+        make_session_cookie,
+        real_engine: AsyncEngine,
+    ) -> None:
+        await _seed_incident(
+            real_engine,
+            title="i-old",
+            reported=dt.date(2024, 1, 1),
+            sectors=["GOV"],
+        )
+        await _seed_incident(
+            real_engine,
+            title="i-in",
+            reported=dt.date(2026, 3, 1),
+            sectors=["FIN"],
+        )
+
+        cookie = await _cookie(make_session_cookie)
+        resp = await dashboard_client.get(
+            "/api/v1/dashboard/summary"
+            "?date_from=2026-01-01&date_to=2026-12-31",
+            cookies={"dprk_cti_session": cookie},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        # Only the in-window FIN incident surfaces.
+        assert body["top_sectors"] == [{"sector_code": "FIN", "count": 1}]
+
+    async def test_top_sectors_is_noop_for_group_ids_filter(
+        self,
+        dashboard_client: AsyncClient,
+        make_session_cookie,
+        real_engine: AsyncEngine,
+    ) -> None:
+        # Plan §6.A C2.b — top_sectors mirrors incidents_by_motivation
+        # on group_ids: schema has no incident → group path, so
+        # passing group_id is accepted but does NOT filter.
+        g = await _seed_group(real_engine, "Lazarus Group")
+        await _seed_incident(
+            real_engine,
+            title="i-gov",
+            reported=dt.date(2026, 3, 1),
+            sectors=["GOV"],
+        )
+
+        cookie = await _cookie(make_session_cookie)
+        no_filter = (
+            await dashboard_client.get(
+                "/api/v1/dashboard/summary",
+                cookies={"dprk_cti_session": cookie},
+            )
+        ).json()
+        with_filter = (
+            await dashboard_client.get(
+                f"/api/v1/dashboard/summary?group_id={g}",
+                cookies={"dprk_cti_session": cookie},
+            )
+        ).json()
+        assert no_filter["top_sectors"] == with_filter["top_sectors"]
+        assert with_filter["top_sectors"] == [
+            {"sector_code": "GOV", "count": 1}
+        ]
+
+    async def test_top_sectors_respects_top_n(
+        self,
+        dashboard_client: AsyncClient,
+        make_session_cookie,
+        real_engine: AsyncEngine,
+    ) -> None:
+        # 6 distinct sectors, each with one incident. top_n=3 caps to
+        # the highest-count three; ties resolved alphabetically.
+        for sec in ("AAA", "BBB", "CCC", "DDD", "EEE", "FFF"):
+            await _seed_incident(
+                real_engine,
+                title=f"i-{sec}",
+                reported=dt.date(2026, 3, 1),
+                sectors=[sec],
+            )
+
+        cookie = await _cookie(make_session_cookie)
+        resp = await dashboard_client.get(
+            "/api/v1/dashboard/summary?top_n=3",
+            cookies={"dprk_cti_session": cookie},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert [row["sector_code"] for row in body["top_sectors"]] == [
+            "AAA",
+            "BBB",
+            "CCC",
+        ]
+
+
+class TestTopSources:
+    async def test_top_sources_sorted_by_report_count_desc(
+        self,
+        dashboard_client: AsyncClient,
+        make_session_cookie,
+        real_engine: AsyncEngine,
+    ) -> None:
+        src_mandiant = await _seed_source(real_engine, "Mandiant")
+        src_chain = await _seed_source(real_engine, "Chainalysis")
+        src_anyrun = await _seed_source(real_engine, "AnyRun")
+
+        for i in range(3):
+            await _seed_report(
+                real_engine,
+                title=f"r-mand-{i}",
+                url=f"https://ex/m{i}",
+                source_id=src_mandiant,
+                published=dt.date(2026, 3, 10 + i),
+            )
+        for i in range(2):
+            await _seed_report(
+                real_engine,
+                title=f"r-chain-{i}",
+                url=f"https://ex/c{i}",
+                source_id=src_chain,
+                published=dt.date(2026, 3, 5 + i),
+            )
+        await _seed_report(
+            real_engine,
+            title="r-anyrun-0",
+            url="https://ex/a0",
+            source_id=src_anyrun,
+            published=dt.date(2026, 3, 1),
+        )
+
+        cookie = await _cookie(make_session_cookie)
+        resp = await dashboard_client.get(
+            "/api/v1/dashboard/summary",
+            cookies={"dprk_cti_session": cookie},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["top_sources"] == [
+            {
+                "source_id": src_mandiant,
+                "source_name": "Mandiant",
+                "report_count": 3,
+                "latest_report_date": "2026-03-12",
+            },
+            {
+                "source_id": src_chain,
+                "source_name": "Chainalysis",
+                "report_count": 2,
+                "latest_report_date": "2026-03-06",
+            },
+            {
+                "source_id": src_anyrun,
+                "source_name": "AnyRun",
+                "report_count": 1,
+                "latest_report_date": "2026-03-01",
+            },
+        ]
+
+    async def test_top_sources_tie_broken_by_source_id_asc(
+        self,
+        dashboard_client: AsyncClient,
+        make_session_cookie,
+        real_engine: AsyncEngine,
+    ) -> None:
+        # Two sources tied at report_count=1. id ASC tiebreaker keeps
+        # repeat calls stable (mirror of top_groups review priority #3).
+        src_first = await _seed_source(real_engine, "FirstAlphabetically")
+        src_second = await _seed_source(real_engine, "AnotherSource")
+        # Insert order is id-ascending: FirstAlphabetically(id=N) before
+        # AnotherSource(id=N+1) regardless of name.
+        await _seed_report(
+            real_engine,
+            title="r-first",
+            url="https://ex/f",
+            source_id=src_first,
+            published=dt.date(2026, 3, 1),
+        )
+        await _seed_report(
+            real_engine,
+            title="r-second",
+            url="https://ex/s",
+            source_id=src_second,
+            published=dt.date(2026, 3, 1),
+        )
+
+        cookie = await _cookie(make_session_cookie)
+        resp = await dashboard_client.get(
+            "/api/v1/dashboard/summary",
+            cookies={"dprk_cti_session": cookie},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        ids_in_response = [row["source_id"] for row in body["top_sources"]]
+        assert ids_in_response == [src_first, src_second], (
+            "tied-count rows must order by source_id ASC for stability "
+            "across repeated calls"
+        )
+
+    async def test_top_sources_respects_date_filter(
+        self,
+        dashboard_client: AsyncClient,
+        make_session_cookie,
+        real_engine: AsyncEngine,
+    ) -> None:
+        # latest_report_date is MAX(reports.published) within the
+        # filter window — verify both filtering AND the latest-date
+        # field's filter-awareness.
+        src = await _seed_source(real_engine, "Vendor")
+        await _seed_report(
+            real_engine,
+            title="r-old",
+            url="https://ex/old",
+            source_id=src,
+            published=dt.date(2024, 1, 15),
+        )
+        await _seed_report(
+            real_engine,
+            title="r-in1",
+            url="https://ex/in1",
+            source_id=src,
+            published=dt.date(2026, 3, 5),
+        )
+        await _seed_report(
+            real_engine,
+            title="r-in2",
+            url="https://ex/in2",
+            source_id=src,
+            published=dt.date(2026, 3, 15),
+        )
+
+        cookie = await _cookie(make_session_cookie)
+        resp = await dashboard_client.get(
+            "/api/v1/dashboard/summary"
+            "?date_from=2026-01-01&date_to=2026-12-31",
+            cookies={"dprk_cti_session": cookie},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["top_sources"] == [
+            {
+                "source_id": src,
+                "source_name": "Vendor",
+                "report_count": 2,
+                "latest_report_date": "2026-03-15",
+            }
+        ]
+
+    async def test_top_sources_respects_top_n(
+        self,
+        dashboard_client: AsyncClient,
+        make_session_cookie,
+        real_engine: AsyncEngine,
+    ) -> None:
+        # 6 distinct sources, top_n=2 caps to the top two by report
+        # count (here all tied at 1, so id-ASC selects the first two).
+        srcs = [
+            await _seed_source(real_engine, f"src-{i}") for i in range(6)
+        ]
+        for i, src in enumerate(srcs):
+            await _seed_report(
+                real_engine,
+                title=f"r-{i}",
+                url=f"https://ex/r{i}",
+                source_id=src,
+                published=dt.date(2026, 3, 1),
+            )
+
+        cookie = await _cookie(make_session_cookie)
+        resp = await dashboard_client.get(
+            "/api/v1/dashboard/summary?top_n=2",
+            cookies={"dprk_cti_session": cookie},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert [row["source_id"] for row in body["top_sources"]] == srcs[:2]
 
 
 class TestOpenAPIRouterExamples:

@@ -77,6 +77,7 @@ describe('currentUserSchema', () => {
 describe('dashboardSummarySchema', () => {
   // Lifted verbatim from contracts/openapi/openapi.json (PR #11 Group
   // K D13 example — components.schemas.DashboardSummary.examples[0]).
+  // PR #23 §6.A C2 extends this with `top_sectors` + `top_sources`.
   // If the BE example changes, this test breaks first — the exact
   // signal D7 relies on until OpenAPI→Zod codegen lands.
   const beHappyExample = {
@@ -97,6 +98,25 @@ describe('dashboardSummarySchema', () => {
       { group_id: 3, name: 'Lazarus Group', report_count: 412 },
       { group_id: 5, name: 'Kimsuky', report_count: 287 },
     ],
+    top_sectors: [
+      { sector_code: 'GOV', count: 42 },
+      { sector_code: 'FIN', count: 31 },
+      { sector_code: 'ENE', count: 12 },
+    ],
+    top_sources: [
+      {
+        source_id: 7,
+        source_name: 'Mandiant',
+        report_count: 23,
+        latest_report_date: '2026-04-12',
+      },
+      {
+        source_id: 12,
+        source_name: 'Chainalysis',
+        report_count: 17,
+        latest_report_date: '2026-03-28',
+      },
+    ],
   }
 
   const beEmptyExample = {
@@ -106,6 +126,8 @@ describe('dashboardSummarySchema', () => {
     reports_by_year: [],
     incidents_by_motivation: [],
     top_groups: [],
+    top_sectors: [],
+    top_sources: [],
   }
 
   it('parses the BE happy example verbatim', () => {
@@ -139,6 +161,63 @@ describe('dashboardSummarySchema', () => {
         reports_by_year: [{ year: 1800, count: 1 }],
       }),
     ).toThrow()
+  })
+
+  // PR #23 §6.A C2 — top_sectors + top_sources guards.
+
+  it('rejects negative count on a top_sectors entry', () => {
+    expect(() =>
+      dashboardSummarySchema.parse({
+        ...beEmptyExample,
+        top_sectors: [{ sector_code: 'GOV', count: -1 }],
+      }),
+    ).toThrow()
+  })
+
+  it('rejects missing sector_code on a top_sectors entry', () => {
+    expect(() =>
+      dashboardSummarySchema.parse({
+        ...beEmptyExample,
+        top_sectors: [{ count: 5 }],
+      }),
+    ).toThrow(/sector_code/i)
+  })
+
+  it('rejects missing report_count on a top_sources entry', () => {
+    expect(() =>
+      dashboardSummarySchema.parse({
+        ...beEmptyExample,
+        top_sources: [
+          {
+            source_id: 7,
+            source_name: 'Mandiant',
+            latest_report_date: '2026-04-12',
+          },
+        ],
+      }),
+    ).toThrow(/report_count/i)
+  })
+
+  it('accepts null latest_report_date on a top_sources entry (BE Optional[date])', () => {
+    const fixture = {
+      ...beEmptyExample,
+      top_sources: [
+        {
+          source_id: 7,
+          source_name: 'Mandiant',
+          report_count: 23,
+          latest_report_date: null,
+        },
+      ],
+    }
+    expect(dashboardSummarySchema.parse(fixture)).toEqual(fixture)
+  })
+
+  it('rejects missing top_sectors / top_sources fields entirely', () => {
+    const stripped = { ...beHappyExample } as Record<string, unknown>
+    delete stripped.top_sectors
+    delete stripped.top_sources
+    expect(() => dashboardSummarySchema.parse(stripped)).toThrow()
   })
 })
 

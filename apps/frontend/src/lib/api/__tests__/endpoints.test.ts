@@ -59,6 +59,8 @@ describe('getDashboardSummary', () => {
     reports_by_year: [],
     incidents_by_motivation: [],
     top_groups: [],
+    top_sectors: [],
+    top_sources: [],
   }
 
   it('GETs /api/v1/dashboard/summary with no querystring when filters empty', async () => {

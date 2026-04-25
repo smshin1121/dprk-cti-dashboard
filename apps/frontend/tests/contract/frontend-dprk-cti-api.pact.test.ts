@@ -178,6 +178,25 @@ describe('GET /api/v1/dashboard/summary', () => {
             name: string('Lazarus Group'),
             report_count: integer(412),
           }),
+          // PR #23 §6.A C2 — top_sectors mirrors top_groups on the
+          // incident_sectors junction; top_sources is the "Leading
+          // Contributors" field via reports.source_id → sources.name.
+          // Both eachLike requires non-empty arrays — the BE fixture
+          // (`_ensure_dashboard_fixture`) seeds at least one
+          // sector-linked incident + at least one source-linked
+          // report inside the pact filter window.
+          top_sectors: eachLike({
+            sector_code: string('GOV'),
+            count: integer(1),
+          }),
+          top_sources: eachLike({
+            source_id: integer(1),
+            source_name: string('Mandiant'),
+            report_count: integer(1),
+            // `latest_report_date` is `MAX(reports.published)` —
+            // ISO YYYY-MM-DD string in the BE response.
+            latest_report_date: string('2026-03-15'),
+          }),
         }),
       })
 

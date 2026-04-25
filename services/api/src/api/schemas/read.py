@@ -326,6 +326,62 @@ class DashboardTopGroup(BaseModel):
     report_count: Annotated[int, Field(ge=0)]
 
 
+class DashboardSectorCount(BaseModel):
+    """One entry in ``DashboardSummary.top_sectors`` (PR #23 §6.A C2).
+
+    Mirror of ``DashboardMotivationCount`` on the
+    ``incident_sectors`` junction. ``count`` is
+    ``COUNT(DISTINCT incident_id)`` per sector — an incident with
+    multiple sector links contributes +1 to each sector's bucket but
+    never multiplies its own count within a single bucket. Ordered by
+    ``count DESC, sector_code ASC``; length bounded by ``top_n``.
+    """
+
+    model_config = ConfigDict(
+        frozen=True,
+        json_schema_extra={
+            "examples": [{"sector_code": "GOV", "count": 18}]
+        },
+    )
+
+    sector_code: str
+    count: Annotated[int, Field(ge=0)]
+
+
+class DashboardSourceCount(BaseModel):
+    """One entry in ``DashboardSummary.top_sources`` — "Leading
+    Contributors" parity with lazarus.day (PR #23 §6.A C2 + §6.C C6).
+
+    ``report_count`` is ``COUNT(DISTINCT reports.id)`` per source
+    (mirror of ``top_groups.report_count``). ``latest_report_date``
+    is ``MAX(reports.published)`` for the source within the filter
+    window — null only when the source has zero reports in window
+    (which means the row would not surface in the first place;
+    nullable in the schema for shape symmetry with other date
+    columns). Ordered by ``report_count DESC, source_id ASC``;
+    length bounded by ``top_n``.
+    """
+
+    model_config = ConfigDict(
+        frozen=True,
+        json_schema_extra={
+            "examples": [
+                {
+                    "source_id": 7,
+                    "source_name": "Mandiant",
+                    "report_count": 23,
+                    "latest_report_date": "2026-04-12",
+                }
+            ]
+        },
+    )
+
+    source_id: int
+    source_name: str
+    report_count: Annotated[int, Field(ge=0)]
+    latest_report_date: date | None = None
+
+
 class DashboardSummary(BaseModel):
     """Response for ``GET /api/v1/dashboard/summary``.
 
@@ -357,6 +413,25 @@ class DashboardSummary(BaseModel):
                         {"group_id": 3, "name": "Lazarus Group", "report_count": 412},
                         {"group_id": 5, "name": "Kimsuky", "report_count": 287},
                     ],
+                    "top_sectors": [
+                        {"sector_code": "GOV", "count": 42},
+                        {"sector_code": "FIN", "count": 31},
+                        {"sector_code": "ENE", "count": 12},
+                    ],
+                    "top_sources": [
+                        {
+                            "source_id": 7,
+                            "source_name": "Mandiant",
+                            "report_count": 23,
+                            "latest_report_date": "2026-04-12",
+                        },
+                        {
+                            "source_id": 12,
+                            "source_name": "Chainalysis",
+                            "report_count": 17,
+                            "latest_report_date": "2026-03-28",
+                        },
+                    ],
                 }
             ]
         },
@@ -368,6 +443,8 @@ class DashboardSummary(BaseModel):
     reports_by_year: list[DashboardYearCount] = Field(default_factory=list)
     incidents_by_motivation: list[DashboardMotivationCount] = Field(default_factory=list)
     top_groups: list[DashboardTopGroup] = Field(default_factory=list)
+    top_sectors: list[DashboardSectorCount] = Field(default_factory=list)
+    top_sources: list[DashboardSourceCount] = Field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------

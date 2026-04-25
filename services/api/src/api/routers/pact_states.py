@@ -765,12 +765,16 @@ async def _ensure_min_actors(session: AsyncSession, minimum: int) -> None:
 async def _ensure_dashboard_fixture(session: AsyncSession) -> None:
     """Seed the full fixture set the /dashboard/summary pact requires.
 
-    - 1 source (FK for reports)
+    - 1 source (FK for reports) — seeds top_sources via the
+      reports.source_id → sources.name join chain
     - 1 group + 1 codename (for top_groups join chain)
     - 1 report linked to source + codename (populates reports_by_year
-      AND completes the report → codename → group chain for
-      top_groups)
+      AND completes the report → codename → group chain for top_groups
+      AND surfaces the source under top_sources)
     - 1 incident + 1 motivation (populates incidents_by_motivation)
+    - 1 incident + 1 sector (populates top_sectors — PR #23 §6.A C2;
+      separate row from the motivation-linked one to keep the two
+      junction surfaces independent)
     """
     await _ensure_canonical_lazarus_fixture(session)
     source_id = await _ensure_source(session)
@@ -805,6 +809,12 @@ async def _ensure_dashboard_fixture(session: AsyncSession) -> None:
         session,
         title="Pact fixture — Ronin bridge exploit",
         motivation="financial",
+    )
+    await _ensure_incident_with_sector(
+        session,
+        title="Pact fixture — dashboard sector seed",
+        sector_code="GOV",
+        reported=date(2026, 2, 20),
     )
 
 

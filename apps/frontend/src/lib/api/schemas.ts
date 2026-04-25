@@ -81,6 +81,22 @@ export const dashboardTopGroupSchema = z.object({
   report_count: z.number().int().gte(0),
 })
 
+export const dashboardSectorCountSchema = z.object({
+  /** Free-form sector code mirroring `incident_sectors.sector_code`. */
+  sector_code: z.string(),
+  count: z.number().int().gte(0),
+})
+
+export const dashboardSourceCountSchema = z.object({
+  source_id: z.number().int(),
+  source_name: z.string(),
+  report_count: z.number().int().gte(0),
+  /** ISO `YYYY-MM-DD`; null only when no reports in window (in which
+   *  case the row would not surface in the first place — nullable for
+   *  shape symmetry with other date columns). */
+  latest_report_date: z.string().nullish(),
+})
+
 export const dashboardSummarySchema = z.object({
   total_reports: z.number().int().gte(0),
   total_incidents: z.number().int().gte(0),
@@ -88,11 +104,19 @@ export const dashboardSummarySchema = z.object({
   reports_by_year: z.array(dashboardYearCountSchema),
   incidents_by_motivation: z.array(dashboardMotivationCountSchema),
   top_groups: z.array(dashboardTopGroupSchema),
+  /** PR #23 §6.A C2 — top_n bounded sector breakdown, mirror of
+   *  top_groups on the incident_sectors junction. */
+  top_sectors: z.array(dashboardSectorCountSchema),
+  /** PR #23 §6.A C2 + §6.C C6 — "Leading Contributors" via
+   *  reports.source_id → sources.name. */
+  top_sources: z.array(dashboardSourceCountSchema),
 })
 
 export type DashboardYearCount = z.infer<typeof dashboardYearCountSchema>
 export type DashboardMotivationCount = z.infer<typeof dashboardMotivationCountSchema>
 export type DashboardTopGroup = z.infer<typeof dashboardTopGroupSchema>
+export type DashboardSectorCount = z.infer<typeof dashboardSectorCountSchema>
+export type DashboardSourceCount = z.infer<typeof dashboardSourceCountSchema>
 export type DashboardSummary = z.infer<typeof dashboardSummarySchema>
 
 /**

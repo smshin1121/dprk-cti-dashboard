@@ -459,6 +459,77 @@
         "title": "DashboardMotivationCount",
         "type": "object"
       },
+      "DashboardSectorCount": {
+        "description": "One entry in ``DashboardSummary.top_sectors`` (PR #23 §6.A C2).\n\nMirror of ``DashboardMotivationCount`` on the\n``incident_sectors`` junction. ``count`` is\n``COUNT(DISTINCT incident_id)`` per sector — an incident with\nmultiple sector links contributes +1 to each sector's bucket but\nnever multiplies its own count within a single bucket. Ordered by\n``count DESC, sector_code ASC``; length bounded by ``top_n``.",
+        "examples": [
+          {
+            "count": 18,
+            "sector_code": "GOV"
+          }
+        ],
+        "properties": {
+          "count": {
+            "minimum": 0.0,
+            "title": "Count",
+            "type": "integer"
+          },
+          "sector_code": {
+            "title": "Sector Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sector_code",
+          "count"
+        ],
+        "title": "DashboardSectorCount",
+        "type": "object"
+      },
+      "DashboardSourceCount": {
+        "description": "One entry in ``DashboardSummary.top_sources`` — \"Leading\nContributors\" parity with lazarus.day (PR #23 §6.A C2 + §6.C C6).\n\n``report_count`` is ``COUNT(DISTINCT reports.id)`` per source\n(mirror of ``top_groups.report_count``). ``latest_report_date``\nis ``MAX(reports.published)`` for the source within the filter\nwindow — null only when the source has zero reports in window\n(which means the row would not surface in the first place;\nnullable in the schema for shape symmetry with other date\ncolumns). Ordered by ``report_count DESC, source_id ASC``;\nlength bounded by ``top_n``.",
+        "examples": [
+          {
+            "latest_report_date": "2026-04-12",
+            "report_count": 23,
+            "source_id": 7,
+            "source_name": "Mandiant"
+          }
+        ],
+        "properties": {
+          "latest_report_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Report Date"
+          },
+          "report_count": {
+            "minimum": 0.0,
+            "title": "Report Count",
+            "type": "integer"
+          },
+          "source_id": {
+            "title": "Source Id",
+            "type": "integer"
+          },
+          "source_name": {
+            "title": "Source Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_id",
+          "source_name",
+          "report_count"
+        ],
+        "title": "DashboardSourceCount",
+        "type": "object"
+      },
       "DashboardSummary": {
         "description": "Response for ``GET /api/v1/dashboard/summary``.\n\nPlan D6 lock: three scalar totals + three aggregate arrays. The\nshape is the minimum an FE KPI card view (§14 Phase 2 W1–W2)\nneeds — no nesting beyond one level, no per-day series (that\nlives on the analytics endpoints in Phase 3).",
         "examples": [
@@ -503,6 +574,34 @@
                 "report_count": 287
               }
             ],
+            "top_sectors": [
+              {
+                "count": 42,
+                "sector_code": "GOV"
+              },
+              {
+                "count": 31,
+                "sector_code": "FIN"
+              },
+              {
+                "count": 12,
+                "sector_code": "ENE"
+              }
+            ],
+            "top_sources": [
+              {
+                "latest_report_date": "2026-04-12",
+                "report_count": 23,
+                "source_id": 7,
+                "source_name": "Mandiant"
+              },
+              {
+                "latest_report_date": "2026-03-28",
+                "report_count": 17,
+                "source_id": 12,
+                "source_name": "Chainalysis"
+              }
+            ],
             "total_actors": 12,
             "total_incidents": 154,
             "total_reports": 1204
@@ -528,6 +627,20 @@
               "$ref": "#/components/schemas/DashboardTopGroup"
             },
             "title": "Top Groups",
+            "type": "array"
+          },
+          "top_sectors": {
+            "items": {
+              "$ref": "#/components/schemas/DashboardSectorCount"
+            },
+            "title": "Top Sectors",
+            "type": "array"
+          },
+          "top_sources": {
+            "items": {
+              "$ref": "#/components/schemas/DashboardSourceCount"
+            },
+            "title": "Top Sources",
             "type": "array"
           },
           "total_actors": {
@@ -3725,6 +3838,8 @@
                       "incidents_by_motivation": [],
                       "reports_by_year": [],
                       "top_groups": [],
+                      "top_sectors": [],
+                      "top_sources": [],
                       "total_actors": 0,
                       "total_incidents": 0,
                       "total_reports": 0
@@ -3767,6 +3882,34 @@
                           "group_id": 5,
                           "name": "Kimsuky",
                           "report_count": 287
+                        }
+                      ],
+                      "top_sectors": [
+                        {
+                          "count": 42,
+                          "sector_code": "GOV"
+                        },
+                        {
+                          "count": 31,
+                          "sector_code": "FIN"
+                        },
+                        {
+                          "count": 12,
+                          "sector_code": "ENE"
+                        }
+                      ],
+                      "top_sources": [
+                        {
+                          "latest_report_date": "2026-04-12",
+                          "report_count": 23,
+                          "source_id": 7,
+                          "source_name": "Mandiant"
+                        },
+                        {
+                          "latest_report_date": "2026-03-28",
+                          "report_count": 17,
+                          "source_id": 12,
+                          "source_name": "Chainalysis"
                         }
                       ],
                       "total_actors": 12,

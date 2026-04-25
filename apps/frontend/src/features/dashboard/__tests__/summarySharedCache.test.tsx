@@ -37,6 +37,8 @@ const SUMMARY_BODY = {
   top_groups: [
     { group_id: 1, name: 'Lazarus Group', report_count: 3 },
   ],
+  top_sectors: [],
+  top_sources: [],
 }
 
 function makeWrapper() {

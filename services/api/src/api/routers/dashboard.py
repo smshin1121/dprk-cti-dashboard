@@ -107,6 +107,25 @@ def _validate_group_ids(items: list[int] | None) -> list[int] | None:
                                         "report_count": 287,
                                     },
                                 ],
+                                "top_sectors": [
+                                    {"sector_code": "GOV", "count": 42},
+                                    {"sector_code": "FIN", "count": 31},
+                                    {"sector_code": "ENE", "count": 12},
+                                ],
+                                "top_sources": [
+                                    {
+                                        "source_id": 7,
+                                        "source_name": "Mandiant",
+                                        "report_count": 23,
+                                        "latest_report_date": "2026-04-12",
+                                    },
+                                    {
+                                        "source_id": 12,
+                                        "source_name": "Chainalysis",
+                                        "report_count": 17,
+                                        "latest_report_date": "2026-03-28",
+                                    },
+                                ],
                             },
                         },
                         "empty": {
@@ -118,6 +137,8 @@ def _validate_group_ids(items: list[int] | None) -> list[int] | None:
                                 "reports_by_year": [],
                                 "incidents_by_motivation": [],
                                 "top_groups": [],
+                                "top_sectors": [],
+                                "top_sources": [],
                             },
                         },
                     }

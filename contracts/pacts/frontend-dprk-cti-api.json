@@ -1572,6 +1572,20 @@
               "report_count": 412
             }
           ],
+          "top_sectors": [
+            {
+              "count": 1,
+              "sector_code": "GOV"
+            }
+          ],
+          "top_sources": [
+            {
+              "latest_report_date": "2026-03-15",
+              "report_count": 1,
+              "source_id": 1,
+              "source_name": "Mandiant"
+            }
+          ],
           "total_actors": 12,
           "total_incidents": 154,
           "total_reports": 1204
@@ -1669,6 +1683,72 @@
               "matchers": [
                 {
                   "match": "integer"
+                }
+              ]
+            },
+            "$.top_sectors": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type",
+                  "min": 1
+                }
+              ]
+            },
+            "$.top_sectors[*].count": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "integer"
+                }
+              ]
+            },
+            "$.top_sectors[*].sector_code": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.top_sources": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type",
+                  "min": 1
+                }
+              ]
+            },
+            "$.top_sources[*].latest_report_date": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.top_sources[*].report_count": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "integer"
+                }
+              ]
+            },
+            "$.top_sources[*].source_id": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "integer"
+                }
+              ]
+            },
+            "$.top_sources[*].source_name": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
                 }
               ]
             },
