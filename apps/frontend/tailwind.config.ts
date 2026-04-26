@@ -38,6 +38,14 @@ export default {
           hover: 'hsl(var(--signal-hover))',
           fg: 'hsl(var(--signal-fg))',
         },
+        status: {
+          crit: 'hsl(var(--status-crit))',
+          warn: 'hsl(var(--status-warn))',
+          elev: 'hsl(var(--status-elev))',
+          ok: 'hsl(var(--status-ok))',
+          info: 'hsl(var(--status-info))',
+          special: 'hsl(var(--status-special))',
+        },
         grid: 'hsl(var(--grid))',
 
         // Border tokens — `border` keyword is reserved by Tailwind's
@@ -85,6 +93,23 @@ export default {
         lg: 'var(--radius)',
         md: 'calc(var(--radius) - 2px)',
         sm: 'calc(var(--radius) - 4px)',
+      },
+      fontFamily: {
+        sans: [
+          'Inter Variable',
+          'Inter',
+          'Segoe UI',
+          'ui-sans-serif',
+          'system-ui',
+          'sans-serif',
+        ],
+        mono: [
+          'JetBrains Mono',
+          'Geist Mono',
+          'ui-monospace',
+          'SFMono-Regular',
+          'monospace',
+        ],
       },
       keyframes: {
         'accordion-down': {

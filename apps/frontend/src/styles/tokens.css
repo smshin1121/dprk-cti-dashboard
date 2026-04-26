@@ -1,5 +1,5 @@
 /**
- * Design tokens (plan D4 lock).
+ * Design tokens (Monitor visual lock).
  *
  * Two layers:
  *
@@ -41,43 +41,50 @@
   :root {
     /* Semantic surface + text + accent (HSL triples; consumed via
      * Tailwind utilities like `bg-app`, `text-ink`, `border-card`). */
-    --app-bg: 210 20% 96%;
+    --app-bg: 220 8% 96%;
     --surface: 0 0% 100%;
-    --surface-elevated: 0 0% 100%;
-    --ink: 210 44% 13%;
-    --ink-muted: 215 16% 47%;
-    --ink-subtle: 215 20% 65%;
-    --border-card: 206 28% 88%;
-    --border-strong: 214 32% 82%;
-    --signal: 18 61% 48%;
-    --signal-hover: 18 61% 42%;
+    --surface-elevated: 220 6% 98%;
+    --ink: 220 10% 12%;
+    --ink-muted: 220 8% 40%;
+    --ink-subtle: 220 6% 55%;
+    --border-card: 220 10% 88%;
+    --border-strong: 220 10% 78%;
+    --signal: 190 75% 45%;
+    --signal-hover: 190 75% 38%;
     --signal-fg: 0 0% 100%;
-    --focus-ring: 18 61% 48%;
+    --focus-ring: 30 90% 50%;
+
+    --status-crit: 0 72% 48%;
+    --status-warn: 30 90% 50%;
+    --status-elev: 45 90% 48%;
+    --status-ok: 145 60% 40%;
+    --status-info: 190 75% 45%;
+    --status-special: 275 55% 50%;
 
     /* CTI brand aliases (back-compat with pre-Group-C Tailwind classes
      * `text-ink`, `border-grid` — grid == border-card now). */
-    --grid: 206 28% 88%;
+    --grid: 220 10% 88%;
 
     /* shadcn compatibility tokens (unchanged semantics). */
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    --background: 220 8% 96%;
+    --foreground: 220 10% 12%;
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card-foreground: 220 10% 12%;
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
+    --popover-foreground: 220 10% 12%;
+    --primary: 190 75% 45%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 220 6% 92%;
+    --secondary-foreground: 220 10% 12%;
+    --muted: 220 6% 90%;
+    --muted-foreground: 220 8% 40%;
+    --accent: 145 60% 40%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 72% 48%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 220 10% 88%;
+    --input: 220 10% 84%;
+    --ring: 190 75% 45%;
     --radius: 0.5rem;
   }
 
@@ -85,39 +92,46 @@
    * also inside the "system" media-query branch below, so one set of
    * overrides covers both paths. */
   [data-theme='dark'] {
-    --app-bg: 222 47% 6%;
-    --surface: 217 32% 12%;
-    --surface-elevated: 217 32% 16%;
-    --ink: 210 40% 98%;
-    --ink-muted: 215 20% 75%;
-    --ink-subtle: 215 20% 55%;
-    --border-card: 217 32% 22%;
-    --border-strong: 217 32% 32%;
-    --signal: 18 80% 62%;
-    --signal-hover: 18 80% 68%;
-    --signal-fg: 222 47% 6%;
-    --focus-ring: 18 80% 62%;
-    --grid: 217 32% 22%;
+    --app-bg: 220 6% 7%;
+    --surface: 220 6% 9%;
+    --surface-elevated: 220 6% 12%;
+    --ink: 0 0% 96%;
+    --ink-muted: 220 4% 65%;
+    --ink-subtle: 220 4% 45%;
+    --border-card: 220 6% 16%;
+    --border-strong: 220 6% 26%;
+    --signal: 190 80% 55%;
+    --signal-hover: 190 80% 62%;
+    --signal-fg: 220 6% 7%;
+    --focus-ring: 35 95% 60%;
+    --grid: 220 6% 16%;
 
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 210 40% 98%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 212.7 26.8% 83.9%;
+    --status-crit: 0 75% 58%;
+    --status-warn: 30 95% 60%;
+    --status-elev: 45 95% 58%;
+    --status-ok: 145 65% 52%;
+    --status-info: 190 80% 55%;
+    --status-special: 275 65% 62%;
+
+    --background: 220 6% 7%;
+    --foreground: 0 0% 96%;
+    --card: 220 6% 9%;
+    --card-foreground: 0 0% 96%;
+    --popover: 220 6% 12%;
+    --popover-foreground: 0 0% 96%;
+    --primary: 190 80% 55%;
+    --primary-foreground: 220 6% 7%;
+    --secondary: 220 6% 14%;
+    --secondary-foreground: 0 0% 96%;
+    --muted: 220 6% 11%;
+    --muted-foreground: 220 4% 60%;
+    --accent: 145 65% 52%;
+    --accent-foreground: 0 0% 96%;
+    --destructive: 0 75% 58%;
+    --destructive-foreground: 0 0% 96%;
+    --border: 220 6% 16%;
+    --input: 220 6% 14%;
+    --ring: 190 80% 55%;
   }
 
   /* System mode: same tokens, picked by media query. No JS needed
@@ -130,39 +144,46 @@
 
   @media (prefers-color-scheme: dark) {
     [data-theme='system'] {
-      --app-bg: 222 47% 6%;
-      --surface: 217 32% 12%;
-      --surface-elevated: 217 32% 16%;
-      --ink: 210 40% 98%;
-      --ink-muted: 215 20% 75%;
-      --ink-subtle: 215 20% 55%;
-      --border-card: 217 32% 22%;
-      --border-strong: 217 32% 32%;
-      --signal: 18 80% 62%;
-      --signal-hover: 18 80% 68%;
-      --signal-fg: 222 47% 6%;
-      --focus-ring: 18 80% 62%;
-      --grid: 217 32% 22%;
+      --app-bg: 220 6% 7%;
+      --surface: 220 6% 9%;
+      --surface-elevated: 220 6% 12%;
+      --ink: 0 0% 96%;
+      --ink-muted: 220 4% 65%;
+      --ink-subtle: 220 4% 45%;
+      --border-card: 220 6% 16%;
+      --border-strong: 220 6% 26%;
+      --signal: 190 80% 55%;
+      --signal-hover: 190 80% 62%;
+      --signal-fg: 220 6% 7%;
+      --focus-ring: 35 95% 60%;
+      --grid: 220 6% 16%;
 
-      --background: 222.2 84% 4.9%;
-      --foreground: 210 40% 98%;
-      --card: 222.2 84% 4.9%;
-      --card-foreground: 210 40% 98%;
-      --popover: 222.2 84% 4.9%;
-      --popover-foreground: 210 40% 98%;
-      --primary: 210 40% 98%;
-      --primary-foreground: 222.2 47.4% 11.2%;
-      --secondary: 217.2 32.6% 17.5%;
-      --secondary-foreground: 210 40% 98%;
-      --muted: 217.2 32.6% 17.5%;
-      --muted-foreground: 215 20.2% 65.1%;
-      --accent: 217.2 32.6% 17.5%;
-      --accent-foreground: 210 40% 98%;
-      --destructive: 0 62.8% 30.6%;
-      --destructive-foreground: 210 40% 98%;
-      --border: 217.2 32.6% 17.5%;
-      --input: 217.2 32.6% 17.5%;
-      --ring: 212.7 26.8% 83.9%;
+      --status-crit: 0 75% 58%;
+      --status-warn: 30 95% 60%;
+      --status-elev: 45 95% 58%;
+      --status-ok: 145 65% 52%;
+      --status-info: 190 80% 55%;
+      --status-special: 275 65% 62%;
+
+      --background: 220 6% 7%;
+      --foreground: 0 0% 96%;
+      --card: 220 6% 9%;
+      --card-foreground: 0 0% 96%;
+      --popover: 220 6% 12%;
+      --popover-foreground: 0 0% 96%;
+      --primary: 190 80% 55%;
+      --primary-foreground: 220 6% 7%;
+      --secondary: 220 6% 14%;
+      --secondary-foreground: 0 0% 96%;
+      --muted: 220 6% 11%;
+      --muted-foreground: 220 4% 60%;
+      --accent: 145 65% 52%;
+      --accent-foreground: 0 0% 96%;
+      --destructive: 0 75% 58%;
+      --destructive-foreground: 0 0% 96%;
+      --border: 220 6% 16%;
+      --input: 220 6% 14%;
+      --ring: 190 80% 55%;
     }
   }
 }
