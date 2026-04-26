@@ -15,6 +15,7 @@ apps/frontend/vite.config.d.ts
 .env
 .env.local
 *.env
+*.env.local
 !.env.example
 *.pyc
 *.pyo
