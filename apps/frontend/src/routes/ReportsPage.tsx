@@ -14,9 +14,12 @@
 
 import { useState } from 'react'
 
+import { ReportsViewModeToggle } from '../components/ReportsViewModeToggle'
 import { ListTable, type ListTableColumn } from '../features/lists/ListTable'
+import { ReportTimeline } from '../features/reports/ReportTimeline'
 import { useReportsList } from '../features/reports/useReportsList'
 import type { ReportItem } from '../lib/api/schemas'
+import { useReportsViewModeStore } from '../stores/reportsViewMode'
 import { cn } from '../lib/utils'
 
 const PAGE_SIZE = 50
@@ -61,6 +64,7 @@ export function ReportsPage(): JSX.Element {
   const currentCursor = cursorStack[cursorStack.length - 1]
 
   const query = useReportsList({ cursor: currentCursor, limit: PAGE_SIZE })
+  const viewMode = useReportsViewModeStore((s) => s.mode)
 
   const state = query.isLoading
     ? 'loading'
@@ -70,6 +74,7 @@ export function ReportsPage(): JSX.Element {
         ? 'empty'
         : 'populated'
 
+  const rows = query.data?.items ?? []
   const nextCursor = query.data?.next_cursor ?? null
   const hasPrev = cursorStack.length > 1
   const hasNext = nextCursor != null
@@ -80,19 +85,31 @@ export function ReportsPage(): JSX.Element {
       aria-labelledby="reports-heading"
       className="flex flex-col gap-4 p-6"
     >
-      <h1 id="reports-heading" className="text-xl font-semibold">
-        Reports
-      </h1>
+      <header className="flex items-center justify-between gap-3">
+        <h1 id="reports-heading" className="text-xl font-semibold">
+          Reports
+        </h1>
+        <ReportsViewModeToggle />
+      </header>
 
-      <ListTable
-        caption="Reports list"
-        columns={reportColumns}
-        rows={query.data?.items ?? []}
-        state={state}
-        error={query.error}
-        onRetry={() => void query.refetch()}
-        getRowKey={(row) => row.id}
-      />
+      {viewMode === 'list' ? (
+        <ListTable
+          caption="Reports list"
+          columns={reportColumns}
+          rows={rows}
+          state={state}
+          error={query.error}
+          onRetry={() => void query.refetch()}
+          getRowKey={(row) => row.id}
+        />
+      ) : (
+        <ReportTimeline
+          rows={rows}
+          state={state}
+          error={query.error}
+          onRetry={() => void query.refetch()}
+        />
+      )}
 
       <footer
         data-testid="reports-pagination"
