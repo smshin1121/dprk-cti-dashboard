@@ -85,14 +85,37 @@ describe('ReportTimeline — populated', () => {
     ).toBeInTheDocument()
   })
 
-  it('preserves BE order both across groups and within a group', () => {
+  it('groups same-month days under one month group', () => {
     render(<ReportTimeline rows={[r1, r2, r3]} state="populated" />)
+    // r1+r2+r3 all in 2026-04 → exactly ONE month group
+    const months = screen.getAllByTestId(/^reports-timeline-month-/)
+    expect(months).toHaveLength(1)
+    expect(
+      screen.getByTestId('reports-timeline-month-2026-04'),
+    ).toBeInTheDocument()
+  })
+
+  it('produces a separate month group when month boundary crosses', () => {
+    const r4: ReportItem = { ...r1, id: 4, published: '2026-03-31' }
+    render(<ReportTimeline rows={[r1, r2, r3, r4]} state="populated" />)
+    expect(
+      screen.getByTestId('reports-timeline-month-2026-04'),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByTestId('reports-timeline-month-2026-03'),
+    ).toBeInTheDocument()
+  })
+
+  it('preserves BE order across month groups, day groups, and within a group', () => {
+    const r4: ReportItem = { ...r1, id: 4, published: '2026-03-31' }
+    render(<ReportTimeline rows={[r1, r2, r3, r4]} state="populated" />)
     const items = screen.getAllByTestId(/^reports-timeline-item-/)
-    // BE order: r1 (id=1, day=04-26) → r2 (id=2, day=04-26) → r3 (id=3, day=04-25)
+    // BE order: r1 (id=1, 04-26) → r2 (id=2, 04-26) → r3 (id=3, 04-25) → r4 (id=4, 03-31)
     expect(items.map((el) => el.getAttribute('data-testid'))).toEqual([
       'reports-timeline-item-1',
       'reports-timeline-item-2',
       'reports-timeline-item-3',
+      'reports-timeline-item-4',
     ])
   })
 

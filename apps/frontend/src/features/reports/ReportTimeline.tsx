@@ -35,25 +35,58 @@ export interface ReportTimelineProps {
 }
 
 interface DayGroup {
-  day: string
+  day: string // 'YYYY-MM-DD' or '—' fallback
   items: ReportItem[]
 }
 
-/** Fold a BE-ordered (DESC by published) list into adjacent
- * same-day groups WITHOUT re-sorting — preserves the BE's
- * id-tiebreak within a day. */
-function groupByDay(rows: readonly ReportItem[]): DayGroup[] {
-  const groups: DayGroup[] = []
+interface MonthGroup {
+  month: string // 'YYYY-MM' or '—' fallback
+  days: DayGroup[]
+}
+
+/** Two-level fold: BE-ordered (DESC by published, id) list →
+ * month groups → day groups → items. WITHOUT re-sorting at any
+ * level, so the BE's id-tiebreak within a day carries through. */
+function groupByMonthAndDay(rows: readonly ReportItem[]): MonthGroup[] {
+  const months: MonthGroup[] = []
   for (const row of rows) {
     const day = row.published ?? '—'
-    const last = groups[groups.length - 1]
-    if (last && last.day === day) {
-      last.items.push(row)
+    const month = day === '—' ? '—' : day.slice(0, 7) // 'YYYY-MM'
+    const lastMonth = months[months.length - 1]
+    const monthGroup =
+      lastMonth && lastMonth.month === month
+        ? lastMonth
+        : (months.push({ month, days: [] }), months[months.length - 1])
+    const lastDay = monthGroup.days[monthGroup.days.length - 1]
+    if (lastDay && lastDay.day === day) {
+      lastDay.items.push(row)
     } else {
-      groups.push({ day, items: [row] })
+      monthGroup.days.push({ day, items: [row] })
     }
   }
-  return groups
+  return months
+}
+
+/** 'YYYY-MM' → localized 'Apr 2026' (or '2026년 4월' under
+ * ko-KR). Renders '—' verbatim when the month is the fallback
+ * sentinel. UTC TZ to avoid any +/- 1 day drift around month
+ * boundaries on browsers in non-UTC zones. */
+function formatMonthHeading(month: string): string {
+  if (month === '—') return month
+  const date = new Date(`${month}-01T00:00:00Z`)
+  return date.toLocaleDateString(undefined, {
+    month: 'short',
+    year: 'numeric',
+    timeZone: 'UTC',
+  })
+}
+
+/** 'YYYY-MM-DD' → trailing 'DD' label. The ISO date is also
+ * preserved verbatim in the data-testid for tests. */
+function formatDayHeading(day: string): string {
+  if (day === '—') return day
+  const parts = day.split('-')
+  return parts[2] ?? day
 }
 
 export function ReportTimeline({
@@ -79,45 +112,65 @@ export function ReportTimeline({
     )
   }
 
-  const groups = groupByDay(rows)
+  const months = groupByMonthAndDay(rows)
   return (
     <ol
       data-testid="reports-timeline"
       data-state="populated"
-      className="flex flex-col gap-6"
+      className="flex flex-col gap-8"
     >
-      {groups.map((group) => (
-        <li key={group.day} data-testid={`reports-timeline-day-${group.day}`}>
-          <h3 className="mb-2 font-mono text-xs uppercase tracking-wider text-ink-muted">
-            {group.day}
-          </h3>
-          <ol className="flex flex-col gap-3 border-l border-border-card pl-5">
-            {group.items.map((row) => (
+      {months.map((monthGroup) => (
+        <li
+          key={monthGroup.month}
+          data-testid={`reports-timeline-month-${monthGroup.month}`}
+        >
+          <h2 className="mb-3 text-base font-semibold text-ink">
+            {formatMonthHeading(monthGroup.month)}
+          </h2>
+          <ol className="flex flex-col gap-6">
+            {monthGroup.days.map((dayGroup) => (
               <li
-                key={row.id}
-                data-testid={`reports-timeline-item-${row.id}`}
-                className="relative"
+                key={dayGroup.day}
+                data-testid={`reports-timeline-day-${dayGroup.day}`}
               >
-                <span
-                  aria-hidden="true"
-                  className="absolute -left-[23px] top-2 inline-block h-2 w-2 rounded-full bg-signal"
-                />
-                <a
-                  href={row.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="block font-medium text-signal hover:underline"
-                >
-                  {row.title}
-                </a>
-                <div className="mt-0.5 flex flex-wrap items-center gap-x-3 text-xs text-ink-muted">
-                  <span data-testid={`reports-timeline-source-${row.id}`}>
-                    {row.source_name ?? '—'}
-                  </span>
-                  <span className="font-mono" data-testid={`reports-timeline-tlp-${row.id}`}>
-                    {row.tlp ?? '—'}
-                  </span>
-                </div>
+                <h3 className="mb-2 font-mono text-xs uppercase tracking-wider text-ink-muted">
+                  {formatDayHeading(dayGroup.day)}
+                </h3>
+                <ol className="flex flex-col gap-3 border-l border-border-card pl-5">
+                  {dayGroup.items.map((row) => (
+                    <li
+                      key={row.id}
+                      data-testid={`reports-timeline-item-${row.id}`}
+                      className="relative"
+                    >
+                      <span
+                        aria-hidden="true"
+                        className="absolute -left-[23px] top-2 inline-block h-2 w-2 rounded-full bg-signal"
+                      />
+                      <a
+                        href={row.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="block font-medium text-signal hover:underline"
+                      >
+                        {row.title}
+                      </a>
+                      <div className="mt-0.5 flex flex-wrap items-center gap-x-3 text-xs text-ink-muted">
+                        <span
+                          data-testid={`reports-timeline-source-${row.id}`}
+                        >
+                          {row.source_name ?? '—'}
+                        </span>
+                        <span
+                          className="font-mono"
+                          data-testid={`reports-timeline-tlp-${row.id}`}
+                        >
+                          {row.tlp ?? '—'}
+                        </span>
+                      </div>
+                    </li>
+                  ))}
+                </ol>
               </li>
             ))}
           </ol>
