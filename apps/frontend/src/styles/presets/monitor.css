@@ -1,0 +1,147 @@
+/**
+ * Preset: Monitor: tactical SOC / world-monitor / neutral-black.
+ *
+ * Active only when `html[data-preset="monitor"]`. Overrides the
+ * semantic HSL tokens declared in `../tokens.css`.
+ *
+ * Reference: `worldmonitor-7-mar-2026 (1).jpg` (user-provided
+ * reference, 2026-04-26). Linear γ as structural base + 4 tactical
+ * SOC adjustments:
+ *   1. neutral-black background (saturation ~6%, near-pure-grey
+ *      black) instead of Linear's indigo-trace `240 50% 1%`
+ *   2. low-contrast flat panel borders (≤ 9% lightness step from
+ *      surface, no shadow elevation)
+ *   3. multi-status accent palette (red/orange/yellow/green/cyan/
+ *      purple) as preset-scoped `--status-*` tokens, ready to
+ *      promote into shared tokens.css if Monitor wins
+ *   4. mono-metadata emphasis — JetBrains Mono primary, Inter
+ *      Variable for body
+ *
+ * NOT for production. PR #25 Step 1 comparison candidate. If
+ * Monitor wins, palette + status tokens promote into `tokens.css`
+ * and this file + the overlay/store are deleted (Group A cleanup).
+ *
+ * Designed by Claude (2026-04-26) at user request — "클로드
+ * 디자인을 써보는건 어떨까".
+ */
+
+:root[data-preset="monitor"] {
+  /* Surface — neutral cool-grey, no brand tint */
+  --app-bg: 220 8% 96%;
+  --surface: 0 0% 100%;
+  --surface-elevated: 220 6% 98%;
+  --ink: 220 10% 12%;
+  --ink-muted: 220 8% 40%;
+  --ink-subtle: 220 6% 55%;
+  --border-card: 220 10% 88%;
+  --border-strong: 220 10% 78%;
+
+  /* Primary signal — info-cyan (active monitoring, neither alarm
+   * nor success-loaded). Focus ring switches to amber for
+   * unmistakable active-focus contrast against the cyan signal. */
+  --signal: 190 75% 45%;
+  --signal-hover: 190 75% 38%;
+  --signal-fg: 0 0% 100%;
+  --focus-ring: 30 90% 50%;
+
+  --grid: 220 10% 88%;
+
+  /* Typography — body sans + mono-heavy metadata posture */
+  --preset-font-sans: "Inter Variable", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --preset-font-display: "Inter Variable", "Inter", ui-sans-serif, sans-serif;
+  --preset-font-mono: "JetBrains Mono", "Geist Mono", ui-monospace, SFMono-Regular, monospace;
+
+  /* Multi-status accent palette (Monitor-specific extension).
+   * Maps to the worldmonitor reference's 6-category map-point
+   * legend: High / Elevated / Monitoring / Base / Datacenter /
+   * Aircraft. Components reading these via `var(--status-*)` will
+   * fall back to undefined under other presets — intentional, the
+   * tokens promote into tokens.css if Monitor wins. */
+  --status-crit: 0 72% 48%;
+  --status-warn: 30 90% 50%;
+  --status-elev: 45 90% 48%;
+  --status-ok: 145 60% 40%;
+  --status-info: 190 75% 45%;
+  --status-special: 275 55% 50%;
+
+  /* shadcn compat (light) */
+  --background: 220 8% 96%;
+  --foreground: 220 10% 12%;
+  --card: 0 0% 100%;
+  --card-foreground: 220 10% 12%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 220 10% 12%;
+  --primary: 190 75% 45%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 220 6% 92%;
+  --secondary-foreground: 220 10% 12%;
+  --muted: 220 6% 90%;
+  --muted-foreground: 220 8% 40%;
+  --accent: 145 60% 40%;
+  --accent-foreground: 0 0% 100%;
+  --destructive: 0 72% 48%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 220 10% 88%;
+  --input: 220 10% 84%;
+  --ring: 190 75% 45%;
+}
+
+:root[data-preset="monitor"][data-theme="dark"],
+:root[data-preset="monitor"][data-theme="system"] {
+  /* Surface — near-pure neutral-black. Saturation 6% on a 220 hue
+   * keeps the imperceptible cool gray of the worldmonitor
+   * reference without the indigo-tint Linear adopts. Surface
+   * elevation is only ~5% lightness step → flat panel posture, no
+   * shadow needed. */
+  --app-bg: 220 6% 7%;
+  --surface: 220 6% 9%;
+  --surface-elevated: 220 6% 12%;
+  --ink: 0 0% 96%;
+  --ink-muted: 220 4% 65%;
+  --ink-subtle: 220 4% 45%;
+
+  /* Borders — visible at close distance only. The 9% lightness
+   * step from surface (16 vs 9) keeps panel divisions readable
+   * but not card-outlined. */
+  --border-card: 220 6% 16%;
+  --border-strong: 220 6% 26%;
+
+  /* Primary signal — cyan info, brighter for dark contrast.
+   * Focus-ring amber stays vivid against neutral-black bg. */
+  --signal: 190 80% 55%;
+  --signal-hover: 190 80% 62%;
+  --signal-fg: 220 6% 7%;
+  --focus-ring: 35 95% 60%;
+
+  --grid: 220 6% 16%;
+
+  /* Multi-status accent palette (dark variants — saturation up,
+   * lightness up for legibility on near-black bg) */
+  --status-crit: 0 75% 58%;
+  --status-warn: 30 95% 60%;
+  --status-elev: 45 95% 58%;
+  --status-ok: 145 65% 52%;
+  --status-info: 190 80% 55%;
+  --status-special: 275 65% 62%;
+
+  /* shadcn compat (dark) */
+  --background: 220 6% 7%;
+  --foreground: 0 0% 96%;
+  --card: 220 6% 9%;
+  --card-foreground: 0 0% 96%;
+  --popover: 220 6% 12%;
+  --popover-foreground: 0 0% 96%;
+  --primary: 190 80% 55%;
+  --primary-foreground: 220 6% 7%;
+  --secondary: 220 6% 14%;
+  --secondary-foreground: 0 0% 96%;
+  --muted: 220 6% 11%;
+  --muted-foreground: 220 4% 60%;
+  --accent: 145 65% 52%;
+  --accent-foreground: 0 0% 96%;
+  --destructive: 0 75% 58%;
+  --destructive-foreground: 0 0% 96%;
+  --border: 220 6% 16%;
+  --input: 220 6% 14%;
+  --ring: 190 80% 55%;
+}

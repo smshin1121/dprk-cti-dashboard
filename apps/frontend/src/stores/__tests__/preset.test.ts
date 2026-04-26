@@ -32,7 +32,7 @@ describe('usePresetStore.setPreset', () => {
   beforeEach(resetPreset)
   afterEach(resetPreset)
 
-  it.each(['sentry', 'wired', 'linear'] as const)(
+  it.each(['sentry', 'wired', 'linear', 'monitor'] as const)(
     'writes %s to data-preset and localStorage',
     (preset) => {
       usePresetStore.getState().setPreset(preset)

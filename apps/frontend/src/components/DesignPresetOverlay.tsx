@@ -15,12 +15,14 @@ import { DESIGN_PRESETS, usePresetStore } from '../stores/preset'
 import '../styles/presets/sentry.css'
 import '../styles/presets/wired.css'
 import '../styles/presets/linear.css'
+import '../styles/presets/monitor.css'
 
 const LABELS: Record<DesignPreset, string> = {
   default: 'Default (current)',
   sentry: 'Sentry (purple, ops)',
   wired: 'WIRED (newsprint)',
   linear: 'Linear (indigo)',
+  monitor: 'Monitor (tactical SOC)',
 }
 
 export function DesignPresetOverlay(): JSX.Element {

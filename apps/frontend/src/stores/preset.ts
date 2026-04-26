@@ -23,7 +23,13 @@ import { create } from 'zustand'
 
 export const PRESET_STORAGE_KEY = 'dprk-cti.design-preset'
 
-export const DESIGN_PRESETS = ['default', 'sentry', 'wired', 'linear'] as const
+export const DESIGN_PRESETS = [
+  'default',
+  'sentry',
+  'wired',
+  'linear',
+  'monitor',
+] as const
 export type DesignPreset = (typeof DESIGN_PRESETS)[number]
 
 export function isValidPreset(value: unknown): value is DesignPreset {
@@ -31,7 +37,8 @@ export function isValidPreset(value: unknown): value is DesignPreset {
     value === 'default' ||
     value === 'sentry' ||
     value === 'wired' ||
-    value === 'linear'
+    value === 'linear' ||
+    value === 'monitor'
   )
 }
 
