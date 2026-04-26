@@ -22,6 +22,7 @@
  *     races during logout).
  */
 
+import { lazy, Suspense } from 'react'
 import { useTranslation } from 'react-i18next'
 import { NavLink, Outlet } from 'react-router-dom'
 
@@ -36,6 +37,14 @@ const NAV_ITEMS = [
   { to: '/incidents', key: 'shell.nav.incidents' },
   { to: '/actors', key: 'shell.nav.actors' },
 ] as const
+
+const DesignPresetOverlay = import.meta.env.DEV
+  ? lazy(() =>
+      import('../components/DesignPresetOverlay').then((module) => ({
+        default: module.DesignPresetOverlay,
+      })),
+    )
+  : null
 
 export function Shell(): JSX.Element {
   // Plan D4 URL-state sync (PR #13 Group E). Runs on every
@@ -75,6 +84,11 @@ export function Shell(): JSX.Element {
       <main data-testid="shell-main" className="flex-1">
         <Outlet />
       </main>
+      {DesignPresetOverlay ? (
+        <Suspense fallback={null}>
+          <DesignPresetOverlay />
+        </Suspense>
+      ) : null}
     </div>
   )
 }

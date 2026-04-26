@@ -1,0 +1,91 @@
+/**
+ * Preset: Linear: modern-SaaS / precise / indigo.
+ *
+ * Active only when `html[data-preset="linear"]`. Overrides the
+ * semantic HSL tokens declared in `../tokens.css`.
+ *
+ * Source: `apps/frontend/src/styles/design-candidates/linear/DESIGN.md`
+ * (getdesign.md fetch, 2026-04-24). Linear ships both dark-first
+ * marketing surfaces AND explicit light-mode neutrals.
+ *
+ * NOT for production. Step 1 comparison only.
+ */
+
+:root[data-preset="linear"] {
+  --app-bg: 180 6% 97%;
+  --surface: 0 0% 100%;
+  --surface-elevated: 210 13% 96%;
+  --ink: 240 50% 1%;
+  --ink-muted: 216 6% 44%;
+  --ink-subtle: 216 6% 57%;
+  --border-card: 214 19% 85%;
+  --border-strong: 0 0% 90%;
+  --signal: 233 55% 60%;
+  --signal-hover: 240 100% 72%;
+  --signal-fg: 0 0% 100%;
+  --focus-ring: 240 100% 78%;
+
+  --grid: 214 19% 85%;
+
+  --preset-font-sans: "Inter Variable", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --preset-font-display: "Inter Variable", "Inter", ui-sans-serif, sans-serif;
+  --preset-font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+
+  --background: 180 6% 97%;
+  --foreground: 240 50% 1%;
+  --card: 0 0% 100%;
+  --card-foreground: 240 50% 1%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 240 50% 1%;
+  --primary: 233 55% 60%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 210 13% 96%;
+  --secondary-foreground: 240 50% 1%;
+  --muted: 210 13% 94%;
+  --muted-foreground: 216 6% 44%;
+  --accent: 240 100% 72%;
+  --accent-foreground: 0 0% 100%;
+  --destructive: 0 72% 51%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 214 19% 85%;
+  --input: 214 19% 82%;
+  --ring: 233 55% 60%;
+}
+
+:root[data-preset="linear"][data-theme="dark"],
+:root[data-preset="linear"][data-theme="system"] {
+  --app-bg: 240 50% 1%;
+  --surface: 210 3% 10%;
+  --surface-elevated: 210 7% 6%;
+  --ink: 180 6% 97%;
+  --ink-muted: 214 19% 85%;
+  --ink-subtle: 216 6% 57%;
+  --border-card: 214 9% 15%;
+  --border-strong: 240 4% 22%;
+  --signal: 233 55% 60%;
+  --signal-hover: 240 100% 72%;
+  --signal-fg: 0 0% 100%;
+  --focus-ring: 240 100% 78%;
+
+  --grid: 214 9% 15%;
+
+  --background: 240 50% 1%;
+  --foreground: 180 6% 97%;
+  --card: 210 3% 10%;
+  --card-foreground: 180 6% 97%;
+  --popover: 210 3% 10%;
+  --popover-foreground: 180 6% 97%;
+  --primary: 233 55% 60%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 240 4% 18%;
+  --secondary-foreground: 180 6% 97%;
+  --muted: 240 4% 14%;
+  --muted-foreground: 216 6% 57%;
+  --accent: 240 100% 72%;
+  --accent-foreground: 0 0% 100%;
+  --destructive: 0 62% 55%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 214 9% 15%;
+  --input: 240 4% 18%;
+  --ring: 233 55% 60%;
+}
