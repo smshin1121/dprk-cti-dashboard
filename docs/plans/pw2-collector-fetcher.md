@@ -79,6 +79,7 @@ New code:
 ```text
 services/worker/src/worker/raw_acquisition/
   __init__.py
+  __main__.py                # dispatches python -m worker.raw_acquisition -> cli.main()
   cli.py                    # python -m worker.raw_acquisition fetch [...]
   collector.py              # selects URLs from reports.url_canonical, deduplicates, batches
   fetcher.py                # generic raw fetcher (URL-shaped, not feed-shaped); see Section 1
@@ -133,7 +134,7 @@ One JSON object per line. Newline-delimited. Append-only. UTF-8.
   "url_canonical": "https://example.invalid/report.pdf",
   "fetcher": "httpx",
   "user_agent": "dprk-cti-collector/0.1 (+contact@example)",
-  "outcome": "ok | failed | skipped_dedupe | skipped_robots",
+  "outcome": "ok | failed",
   "http_status": 200,
   "content_type": "application/pdf",
   "content_length": 482113,
@@ -151,7 +152,7 @@ One JSON object per line. Newline-delimited. Append-only. UTF-8.
 
 Field semantics:
 
-- Failure rows leave `sha256/object_path/content_*` null, set `outcome=failed`, and fill `category` + `category_detail`.
+- Failure rows leave `sha256/object_path/content_*` null, set `outcome=failed`, and fill `category` + `category_detail`. A robots-denied URL is represented as `outcome=failed`, `category=robots_disallowed`; there is no separate skipped outcome.
 - Successful rows that hit an existing object via sha256 dedupe set `outcome=ok`, `category=duplicate` (advisory), and **`dedupe_of_sha256`** to the canonical sha. The `object_path` points at the existing object; no new bytes are written.
 - `category=duplicate` is a successful, advisory marker on the ledger. It is **not** counted in `_missing.json` (see Section 7).
 
@@ -168,8 +169,8 @@ Field semantics:
     "reports_with_url": 3401,
     "fetched_ok_unique_objects": 2120,
     "fetched_ok_dedupe_advisories": 47,
-    "missing": 1281,
-    "coverage_pct": 62.3
+    "missing": 1234,
+    "coverage_pct": 63.7
   },
   "by_category": {
     "not_found": 410,
@@ -179,7 +180,7 @@ Field semantics:
     "download_error": 121,
     "parse_error": 0,
     "unsupported_media": 17,
-    "other": 213
+    "other": 166
   },
   "items": [
     {
@@ -354,7 +355,7 @@ P-W2 implementation PR is mergeable when all of:
 - [ ] `services/worker/src/worker/raw_acquisition/` ships with the modules listed in Section 4.
 - [ ] All Section 12 unit tests pass.
 - [ ] At least one integration test passes on CI (mocked transport).
-- [ ] Pilot run on dev DB produces a `_index.jsonl` and `_missing.json` consistent with Section 11 measurement; coverage >= 60% **OR** a categorized `_missing.json` whose `by_category` sum + `fetched_ok_*` totals account for 100% of the URL set, with each category having a documented next-step path.
+- [ ] Pilot run on dev DB produces a `_index.jsonl` and `_missing.json` consistent with Section 11 measurement; coverage >= 60%. The `_missing.json.by_category` sum plus `fetched_ok_*` totals must still account for 100% of the URL set. If coverage is below 60%, Section 14 risk escalation is triggered; the gate is not weakened by category completeness alone.
 - [ ] `.gitignore` updated for `raw_data/objects/`, `raw_data/runs/`, JSONL/JSON.
 - [ ] No DB migration. No API route. No UI route. No new DB table.
 - [ ] PR body links to PR #25 (P-W1) and Section 14.1 sign-off as the policy reference.
