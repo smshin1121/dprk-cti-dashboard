@@ -89,8 +89,8 @@ services/worker/src/worker/raw_acquisition/
   missing.py                # build _missing.json from _index.jsonl
   coverage.py               # measure coverage % over reports.url_canonical
   config.py                 # env vars, budgets, user agent string
-tests/unit/test_raw_acquisition_*.py
-tests/integration/test_raw_acquisition_e2e.py
+services/worker/tests/unit/test_raw_acquisition_*.py
+services/worker/tests/integration/test_raw_acquisition_e2e.py
 ```
 
 Reuse stance:
@@ -227,7 +227,7 @@ Any expansion of this enum requires a plan amendment, not a code-only change.
 ## 9. Idempotency + Resume Rules
 
 - Run is keyed by `run_id` (ULID/UUID). Multiple concurrent runs are not supported in P-W2.
-- Resume: a new run reads the existing `_index.jsonl`, skips reports whose latest attempt was `ok` and whose `object_path` (or `dedupe_of_sha256` target) still exists, and re-attempts everything else under per-run budget caps.
+- Resume: a new run reads the existing `_index.jsonl`, builds the latest attempt keyed by `(report_id, url_canonical)`, skips only current report/URL pairs whose latest attempt was `ok` and whose `object_path` (or `dedupe_of_sha256` target) still exists, and re-attempts everything else under per-run budget caps. If a report's `url_canonical` changes, old bytes remain historical evidence but do **not** cover the new URL or count toward the 60% coverage gate.
 - Per-URL attempt cap: 3 across all runs (configurable). After cap, category is locked unless explicitly reset via CLI flag.
 - Per-run budget: max wall-time, max URLs attempted, max total bytes. Defaults conservative; tuned in pilot run.
 - Robots.txt cache TTL: 24 hours per host.
