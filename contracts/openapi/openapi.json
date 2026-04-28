@@ -1129,7 +1129,7 @@
         "type": "object"
       },
       "IncidentsTrendBucket": {
-        "description": "One monthly bucket in ``IncidentsTrendResponse.buckets``.\n\nSame ``month`` shape as ``TrendBucket`` (strict ``YYYY-MM``,\nzero-padded). Outer ``count`` is the total distinct incidents in\nthe bucket and equals ``sum(series[].count)`` — the\n``INCIDENTS_TREND_UNKNOWN_KEY`` slice absorbs incidents that have\nno junction row so the invariant holds without dropping data.",
+        "description": "One monthly bucket in ``IncidentsTrendResponse.buckets``.\n\nSame ``month`` shape as ``TrendBucket`` (strict ``YYYY-MM``,\nzero-padded). Outer ``count`` is the total distinct incidents in\nthe bucket. ``series`` entries count category memberships, so\n``sum(series[].count)`` may exceed ``count`` when an incident has\nmultiple motivations or sectors. The\n``INCIDENTS_TREND_UNKNOWN_KEY`` slice absorbs incidents that have\nno junction row so they are not dropped.",
         "examples": [
           {
             "count": 18,
@@ -1177,7 +1177,7 @@
         "type": "object"
       },
       "IncidentsTrendResponse": {
-        "description": "Response for ``GET /api/v1/analytics/incidents_trend``.\n\nDistinct from ``TrendResponse``: the fact table is ``incidents``\n(not ``reports``), bucketed by ``date_trunc('month',\nincidents.reported)`` with ``incidents.reported IS NOT NULL``\nupstream of the junction join (see ``tables.py:258-267``). Each\nbucket carries a ``series`` slice of motivation or sector counts\nsumming to the outer ``count``. Plan PR #23 §6.A C1 lock.\n\n``group_by`` echoes the request's required query parameter\n(``\"motivation\"`` or ``\"sector\"``) so the FE doesn't need to thread\nit back through the response wrapper.\n\nZero-count months are **omitted**, not zero-filled — same\nconvention as ``TrendResponse``.",
+        "description": "Response for ``GET /api/v1/analytics/incidents_trend``.\n\nDistinct from ``TrendResponse``: the fact table is ``incidents``\n(not ``reports``), bucketed by ``date_trunc('month',\nincidents.reported)`` with ``incidents.reported IS NOT NULL``\nupstream of the junction join (see ``tables.py:258-267``). Each\nbucket carries a ``series`` slice of motivation or sector\nmembership counts. The outer bucket ``count`` remains a distinct\nincident total. Plan PR #23 C1 lock.\n\n``group_by`` echoes the request's required query parameter\n(``\"motivation\"`` or ``\"sector\"``) so the FE doesn't need to thread\nit back through the response wrapper.\n\nZero-count months are **omitted**, not zero-filled -- same\nconvention as ``TrendResponse``.",
         "examples": [
           {
             "buckets": [
@@ -3182,7 +3182,7 @@
     },
     "/api/v1/analytics/incidents_trend": {
       "get": {
-        "description": "Distinct incidents per calendar month of ``incidents.reported`` within the filter window, sliced by motivation or sector via the required ``group_by`` query parameter (``motivation`` | ``sector``). Outer ``count`` per bucket equals ``sum(series[].count)`` — incidents with no junction row land in a sentinel ``key='unknown'`` slice rather than being dropped. Distinct from ``/analytics/trend`` because the fact table is ``incidents`` (not ``reports``); the two endpoints answer different analytical questions and do not share an envelope. Plan PR #23 §6.A C1 lock.",
+        "description": "Distinct incidents per calendar month of ``incidents.reported`` within the filter window, sliced by motivation or sector via the required ``group_by`` query parameter (``motivation`` | ``sector``). Outer ``count`` per bucket is the distinct incident total; ``series`` counts category memberships and may sum above the outer count for multi-category incidents. Incidents with no junction row land in a sentinel ``key='unknown'`` slice rather than being dropped. Distinct from ``/analytics/trend`` because the fact table is ``incidents`` (not ``reports``); the two endpoints answer different analytical questions and do not share an envelope. Plan PR #23 C1 lock.",
         "operationId": "incidents_trend_endpoint_api_v1_analytics_incidents_trend_get",
         "parameters": [
           {

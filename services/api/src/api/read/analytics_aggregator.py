@@ -296,32 +296,21 @@ async def compute_incidents_trend(
     """Build the monthly incidents trend payload, sliced by motivation or sector.
 
     Distinct from ``compute_trend``: fact table is ``incidents`` (not
-    ``reports``), bucketed by ``incidents.reported`` (NOT NULL only —
+    ``reports``), bucketed by ``incidents.reported`` (NOT NULL only --
     same upstream filter as the list-endpoint cursor convention; see
     ``tables.py:258-261``). Each bucket carries a ``series`` slice of
-    motivation or sector counts that sum to the outer ``count``. PR #23
-    §6.A C1 lock.
+    motivation or sector membership counts. PR #23 C1 lock.
 
-    Invariant: ``sum(series[].count) == outer count`` per bucket.
-    Holds because the aggregation is ``COUNT(*)`` on the LEFT-joined
-    rowset — incidents with no junction row contribute one row whose
-    ``key`` falls back to ``INCIDENTS_TREND_UNKNOWN_KEY`` via COALESCE,
-    not a dropped row.
-
-    Outer ``count`` semantics: it is the **number of junction rows**
-    in the bucket, NOT the number of distinct incidents. An incident
-    linked to N motivations (or N sectors) contributes one row per
-    link, so outer ``count`` increases by N and each of the N series
-    keys gains +1 — preserving ``sum(series.count) == outer count``.
-    This matches the standard stacked-area chart reading ("each
-    incident lives in every category it belongs to") and is
-    deliberately distinct from ``dashboard_aggregator.top_sectors``,
-    which uses ``COUNT(DISTINCT incident_id)`` because a ranked-list
-    widget needs distinct-incident semantics. Multi-junction
-    over-counting is pinned by ``test_sector_invariant_two_links``.
+    Outer ``count`` semantics: it is the **number of distinct
+    incidents** in the month. An incident linked to N motivations (or
+    N sectors) contributes +1 to the outer monthly count and +1 to
+    each relevant series key, so ``sum(series[].count)`` may exceed
+    the outer count for multi-category incidents. Incidents with no
+    junction row still contribute to the outer count and land in the
+    ``INCIDENTS_TREND_UNKNOWN_KEY`` slice via COALESCE.
 
     ``group_ids`` is accepted for API uniformity with the other
-    analytics endpoints but is a documented no-op — the schema has no
+    analytics endpoints but is a documented no-op -- the schema has no
     path from ``incidents`` to ``groups`` (same constraint as
     ``compute_geo`` and ``compute_dashboard_summary``'s
     ``incidents_by_motivation`` aggregate).
@@ -342,11 +331,21 @@ async def compute_incidents_trend(
         key_source, sa.literal(INCIDENTS_TREND_UNKNOWN_KEY)
     ).label("key")
 
-    stmt = (
+    monthly_stmt = (
+        sa.select(
+            month_col,
+            sa.func.count(sa.distinct(incidents_table.c.id)).label("count"),
+        )
+        .where(incidents_table.c.reported.is_not(None))
+        .group_by(month_col)
+        .order_by(month_col.asc())
+    )
+
+    series_stmt = (
         sa.select(
             month_col,
             series_key,
-            sa.func.count().label("count"),
+            sa.func.count(sa.distinct(incidents_table.c.id)).label("count"),
         )
         .select_from(
             incidents_table.outerjoin(
@@ -358,29 +357,40 @@ async def compute_incidents_trend(
         .order_by(month_col.asc(), series_key.asc())
     )
     if date_from is not None:
-        stmt = stmt.where(incidents_table.c.reported >= date_from)
+        monthly_stmt = monthly_stmt.where(incidents_table.c.reported >= date_from)
+        series_stmt = series_stmt.where(incidents_table.c.reported >= date_from)
     if date_to is not None:
-        stmt = stmt.where(incidents_table.c.reported <= date_to)
+        monthly_stmt = monthly_stmt.where(incidents_table.c.reported <= date_to)
+        series_stmt = series_stmt.where(incidents_table.c.reported <= date_to)
 
-    rows = (await session.execute(stmt)).all()
+    monthly_rows = (await session.execute(monthly_stmt)).all()
+    series_rows = (await session.execute(series_stmt)).all()
 
     # Fold flat (month, key, count) tuples into nested buckets. The
     # SQL ORDER BY ascending pins month order; series order is
     # likewise stable but the test surface re-sorts by key for
     # readability so the aggregator does not promise series order.
     buckets: dict[str, dict[str, object]] = {}
-    for row in rows:
+    for row in monthly_rows:
         if row.month is None:
-            # Defensive — `IS NOT NULL` filter should already exclude
+            # Defensive -- `IS NOT NULL` filter should already exclude
             # this. Belt-and-braces in case a dialect returns NULL for
             # the month expression itself.
+            continue
+        buckets[row.month] = {
+            "month": row.month,
+            "count": int(row.count),
+            "series": [],
+        }
+
+    for row in series_rows:
+        if row.month is None:
             continue
         bucket = buckets.setdefault(
             row.month,
             {"month": row.month, "count": 0, "series": []},
         )
         slice_count = int(row.count)
-        bucket["count"] = int(bucket["count"]) + slice_count
         series_list: list[dict[str, object]] = bucket["series"]  # type: ignore[assignment]
         series_list.append({"key": row.key, "count": slice_count})
 

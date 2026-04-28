@@ -350,12 +350,14 @@ async def geo_endpoint(
         "within the filter window, sliced by motivation or sector via "
         "the required ``group_by`` query parameter "
         "(``motivation`` | ``sector``). Outer ``count`` per bucket "
-        "equals ``sum(series[].count)`` — incidents with no junction "
-        "row land in a sentinel ``key='unknown'`` slice rather than "
-        "being dropped. Distinct from ``/analytics/trend`` because the "
+        "is the distinct incident total; ``series`` counts category "
+        "memberships and may sum above the outer count for multi-"
+        "category incidents. Incidents with no junction row land in a "
+        "sentinel ``key='unknown'`` slice rather than being dropped. "
+        "Distinct from ``/analytics/trend`` because the "
         "fact table is ``incidents`` (not ``reports``); the two "
         "endpoints answer different analytical questions and do not "
-        "share an envelope. Plan PR #23 §6.A C1 lock."
+        "share an envelope. Plan PR #23 C1 lock."
     ),
     responses={
         200: {

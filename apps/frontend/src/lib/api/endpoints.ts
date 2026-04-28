@@ -185,12 +185,12 @@ export function getTrend(
 }
 
 /**
- * `GET /api/v1/analytics/incidents_trend` — PR #23 §6.A C1.
+ * `GET /api/v1/analytics/incidents_trend` -- PR #23 C1.
  *
- * Distinct from `getTrend`: fact table is incidents (not reports);
- * each bucket carries a `series` array keyed by motivation or sector
- * with `sum(series.count) === outer count`. `groupBy` is REQUIRED;
- * BE returns 422 if missing or not in the Literal set.
+ * Distinct from `getTrend`: fact table is incidents (not reports).
+ * The outer bucket count is distinct incidents; series sums can exceed
+ * it when incidents belong to multiple motivations or sectors. `groupBy`
+ * is REQUIRED; BE returns 422 if missing or not in the Literal set.
  */
 export function getIncidentsTrend(
   filters: AnalyticsFilters,

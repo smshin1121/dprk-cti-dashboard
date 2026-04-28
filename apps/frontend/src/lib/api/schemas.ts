@@ -259,10 +259,10 @@ export const trendResponseSchema = z.object({
  * Sentinel `key` value emitted when an incident has no row in the
  * `incident_motivations` / `incident_sectors` junction. Mirrors the BE
  * constant `INCIDENTS_TREND_UNKNOWN_KEY` in
- * `services/api/src/api/schemas/read.py`. The bucket is never dropped —
- * those rows fold into this single key so `sum(series[].count) == outer
- * count` holds for every bucket. FE renders this as a non-clickable
- * "Unassigned" segment per plan PR #23 §6.A C1.
+ * `services/api/src/api/schemas/read.py`. The bucket is never dropped:
+ * those rows fold into this single key so uncategorized incidents stay
+ * visible. FE renders this as a non-clickable "Unassigned" segment per
+ * plan PR #23 C1.
  */
 export const INCIDENTS_TREND_UNKNOWN_KEY = 'unknown'
 
@@ -276,9 +276,9 @@ export const incidentsTrendSeriesItemSchema = z.object({
 export const incidentsTrendBucketSchema = z.object({
   /** Strict `YYYY-MM` (zero-padded) — same shape as `trendBucketSchema`. */
   month: z.string().regex(/^\d{4}-\d{2}$/),
-  /** Total distinct incidents in this bucket; equals `sum(series.count)`
-   *  (the `unknown` slice absorbs missing-junction rows so this holds
-   *  without dropping data). */
+  /** Total distinct incidents in this bucket. Series counts are
+   *  category memberships, so their sum can exceed this value when an
+   *  incident has multiple motivations or sectors. */
   count: z.number().int().gte(0),
   series: z.array(incidentsTrendSeriesItemSchema),
 })

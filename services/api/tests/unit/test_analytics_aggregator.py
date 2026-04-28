@@ -691,12 +691,13 @@ class TestGeoPopulated:
 #
 # Distinct from ``compute_trend``: fact table is ``incidents`` (not
 # ``reports``), bucketed by ``incidents.reported``. Each bucket carries a
-# ``series`` slice of motivation or sector counts, and the invariant
-# ``sum(series[].count) == outer count`` holds — incidents with no
+# ``series`` slice of motivation or sector membership counts. Outer
+# ``count`` is the distinct incident total; multi-category incidents can
+# make ``sum(series[].count)`` exceed the outer count. Incidents with no
 # junction row land in the ``INCIDENTS_TREND_UNKNOWN_KEY`` slice rather
 # than being dropped. ``incidents.reported IS NULL`` rows ARE excluded
 # upstream of the junction (cursor-convention parity, ``tables.py:258``).
-# Plan PR #23 §6.A C1 lock.
+# Plan PR #23 C1 lock.
 
 
 class TestIncidentsTrendMotivation:
@@ -731,11 +732,12 @@ class TestIncidentsTrendMotivation:
         buckets = {b["month"]: b for b in result["buckets"]}
         assert set(buckets.keys()) == {"2026-02", "2026-03"}
 
-        # Per-bucket invariant: sum(series.count) == outer count.
+        # This single-motivation fixture has series sum equal the distinct
+        # outer count; multi-category divergence is pinned separately.
         for month, bucket in buckets.items():
             series_total = sum(item["count"] for item in bucket["series"])
             assert series_total == bucket["count"], (
-                f"invariant broken for {month}: outer={bucket['count']}, "
+                f"single-category fixture mismatch for {month}: outer={bucket['count']}, "
                 f"series sum={series_total}, series={bucket['series']}"
             )
 
@@ -756,18 +758,10 @@ class TestIncidentsTrendSector:
     async def test_sector_invariant_holds_per_bucket(
         self, session: AsyncSession
     ) -> None:
-        # Mar 2026: 4 incidents — 2 Government, 1 Finance, 1 Energy.
-        # An incident with TWO sector links must NOT inflate the outer
-        # bucket count (COUNT DISTINCT incident_id) but the slices may
-        # each list the incident — series sums can exceed outer when the
-        # invariant we want is "outer = distinct incidents", not "outer =
-        # sum(series)". Plan §6.A C1 actually pins the invariant at sum
-        # form — so a multi-sector incident must be folded down to one
-        # canonical bucket OR each junction row counted once with outer
-        # being sum(series). The aggregator picks **sum form**: the
-        # invariant ``sum(series.count) == outer count`` holds by
-        # COUNT(*) on junction rows (not COUNT DISTINCT), with each
-        # incident contributing once per junction row.
+        # Mar 2026: 4 incidents - 2 Government, 1 Finance, 1 Energy.
+        # All incidents have one sector in this fixture, so series sum
+        # equals the distinct incident total. Multi-sector behavior is
+        # pinned separately below.
         i_gov_a = await _seed_incident(
             session, title="i-gov-a", reported=dt.date(2026, 3, 2)
         )
@@ -797,7 +791,8 @@ class TestIncidentsTrendSector:
             f"sum(series.count)={series_total} != outer={mar['count']}; "
             f"series={mar['series']}"
         )
-        # Outer count is 4 (one count per junction row); slices sum to 4.
+        # Outer count is 4 distinct incidents; this fixture has one sector
+        # per incident, so slices also sum to 4.
         assert mar["count"] == 4
         assert sorted(mar["series"], key=lambda s: s["key"]) == [
             {"key": "ENE", "count": 1},
@@ -809,14 +804,9 @@ class TestIncidentsTrendSector:
     async def test_sector_invariant_two_links(
         self, session: AsyncSession
     ) -> None:
-        # Pin the sum-form invariant explicitly for the multi-junction
-        # case the aggregator's docstring references: ONE incident
-        # linked to TWO sectors contributes +2 to the outer bucket
-        # count and +1 to each of the two series keys. This is the
-        # standard stacked-area reading ("each incident lives in every
-        # category it belongs to") and is deliberately distinct from
-        # ``dashboard_aggregator.top_sectors`` which uses
-        # ``COUNT(DISTINCT incident_id)``.
+        # Pin the multi-junction contract: ONE incident linked to TWO
+        # sectors contributes +1 to the outer distinct incident count
+        # and +1 to each series key. Series sum can exceed outer count.
         i_dual = await _seed_incident(
             session, title="i-dual", reported=dt.date(2026, 3, 5)
         )
@@ -827,11 +817,11 @@ class TestIncidentsTrendSector:
         buckets = {b["month"]: b for b in result["buckets"]}
         mar = buckets["2026-03"]
 
-        # ONE incident, but outer count is 2 (one row per junction
-        # link). sum(series) == outer holds.
-        assert mar["count"] == 2
+        # ONE incident, so outer count is 1. It appears in two sector
+        # slices, so sum(series) is 2.
+        assert mar["count"] == 1
         series_total = sum(item["count"] for item in mar["series"])
-        assert series_total == mar["count"]
+        assert series_total == 2
         assert sorted(mar["series"], key=lambda s: s["key"]) == [
             {"key": "FIN", "count": 1},
             {"key": "GOV", "count": 1},

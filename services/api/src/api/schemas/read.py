@@ -633,15 +633,13 @@ class TrendResponse(BaseModel):
 
 
 INCIDENTS_TREND_UNKNOWN_KEY = "unknown"
-"""Sentinel ``key`` value for ``IncidentsTrendSeriesItem`` when an
-incident has no row in the ``incident_motivations`` /
-``incident_sectors`` junction. The bucket is **never dropped** — those
-rows are folded into this single key so that
-``sum(series[].count) == outer count`` holds for every bucket. FE
-renders this as a non-clickable "Unassigned" segment per plan PR #23
-§6.A C1. BE and FE share the literal string; see Zod mirror at
-``apps/frontend/src/lib/api/schemas.ts``.
-"""
+"""Sentinel ``key`` value emitted when an incident has no row in the
+``incident_motivations`` / ``incident_sectors`` junction. The bucket is
+**never dropped**: rows are folded into this single key so uncategorized
+incidents remain visible in both the outer distinct count and the
+series. FE renders this as a non-clickable "Unassigned" segment per
+plan PR #23 C1. BE and FE share the literal string; see Zod mirror at
+``apps/frontend/src/lib/api/schemas.ts``."""
 
 
 class IncidentsTrendSeriesItem(BaseModel):
@@ -667,9 +665,11 @@ class IncidentsTrendBucket(BaseModel):
 
     Same ``month`` shape as ``TrendBucket`` (strict ``YYYY-MM``,
     zero-padded). Outer ``count`` is the total distinct incidents in
-    the bucket and equals ``sum(series[].count)`` — the
+    the bucket. ``series`` entries count category memberships, so
+    ``sum(series[].count)`` may exceed ``count`` when an incident has
+    multiple motivations or sectors. The
     ``INCIDENTS_TREND_UNKNOWN_KEY`` slice absorbs incidents that have
-    no junction row so the invariant holds without dropping data.
+    no junction row so they are not dropped.
     """
 
     model_config = ConfigDict(
@@ -701,14 +701,15 @@ class IncidentsTrendResponse(BaseModel):
     (not ``reports``), bucketed by ``date_trunc('month',
     incidents.reported)`` with ``incidents.reported IS NOT NULL``
     upstream of the junction join (see ``tables.py:258-267``). Each
-    bucket carries a ``series`` slice of motivation or sector counts
-    summing to the outer ``count``. Plan PR #23 §6.A C1 lock.
+    bucket carries a ``series`` slice of motivation or sector
+    membership counts. The outer bucket ``count`` remains a distinct
+    incident total. Plan PR #23 C1 lock.
 
     ``group_by`` echoes the request's required query parameter
     (``"motivation"`` or ``"sector"``) so the FE doesn't need to thread
     it back through the response wrapper.
 
-    Zero-count months are **omitted**, not zero-filled — same
+    Zero-count months are **omitted**, not zero-filled -- same
     convention as ``TrendResponse``.
     """
 

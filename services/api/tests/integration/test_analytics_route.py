@@ -689,11 +689,12 @@ class TestIncidentsTrendHappy:
         buckets = {b["month"]: b for b in body["buckets"]}
         assert set(buckets.keys()) == {"2026-02", "2026-03"}
 
-        # Per-bucket invariant.
+        # This single-motivation fixture has series sum equal the distinct
+        # outer count; multi-category divergence is pinned separately.
         for month, bucket in buckets.items():
             series_total = sum(item["count"] for item in bucket["series"])
             assert series_total == bucket["count"], (
-                f"invariant broken for {month}: outer={bucket['count']}, "
+                f"single-category fixture mismatch for {month}: outer={bucket['count']}, "
                 f"sum(series)={series_total}, series={bucket['series']}"
             )
 
@@ -804,6 +805,35 @@ class TestIncidentsTrendHappy:
             }
         ]
 
+    async def test_sector_multi_link_keeps_outer_count_distinct(
+        self,
+        analytics_client: AsyncClient,
+        make_session_cookie,
+        real_engine: AsyncEngine,
+    ) -> None:
+        await _seed_incident(
+            real_engine,
+            title="i-dual-sector",
+            reported=dt.date(2026, 3, 5),
+            sectors=["GOV", "FIN"],
+        )
+
+        cookie = await _cookie(make_session_cookie)
+        resp = await analytics_client.get(
+            "/api/v1/analytics/incidents_trend?group_by=sector",
+            cookies={"dprk_cti_session": cookie},
+        )
+
+        assert resp.status_code == 200
+        body = resp.json()
+        buckets = {b["month"]: b for b in body["buckets"]}
+        mar = buckets["2026-03"]
+        assert mar["count"] == 1
+        assert sum(item["count"] for item in mar["series"]) == 2
+        assert sorted(mar["series"], key=lambda s: s["key"]) == [
+            {"key": "FIN", "count": 1},
+            {"key": "GOV", "count": 1},
+        ]
 
 # ---------------------------------------------------------------------------
 # Rate limit — 60/min bucket shared with the other read routes
