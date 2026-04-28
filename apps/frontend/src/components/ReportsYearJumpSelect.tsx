@@ -10,14 +10,14 @@
  *
  * Year list spans `REPORT_DATA_START_YEAR` (2009 — earliest
  * report in the workbook) through the current calendar year. Any
- * date_from outside this list still renders correctly via the "All
- * years" fallback (selected when dateFrom doesn't match any of the
- * full-year spans this select produces).
+ * non-year-aligned ranges from the FilterBar render as "Custom
+ * range" so the UI does not claim the list is unfiltered.
  */
 
 import { useFilterStore } from '../stores/filters'
 
 const REPORT_DATA_START_YEAR = 2009
+const CUSTOM_RANGE_VALUE = 'custom'
 
 function listReportYearsDesc(): readonly string[] {
   const current = new Date().getFullYear()
@@ -30,16 +30,18 @@ function listReportYearsDesc(): readonly string[] {
 
 /** Detect whether the active date range exactly matches one full
  * calendar year — if so, that year is the "current" select value;
- * otherwise the select shows "All years" and changing it
- * overwrites the existing range. */
+ * null bounds mean "All years"; all other non-year-aligned ranges
+ * render as "Custom range". */
 function detectActiveYear(
   dateFrom: string | null,
   dateTo: string | null,
 ): string {
   if (dateFrom == null || dateTo == null) return ''
-  if (!/^\d{4}-01-01$/.test(dateFrom)) return ''
-  if (!/^\d{4}-12-31$/.test(dateTo)) return ''
-  if (dateFrom.slice(0, 4) !== dateTo.slice(0, 4)) return ''
+  if (!/^\d{4}-01-01$/.test(dateFrom)) return CUSTOM_RANGE_VALUE
+  if (!/^\d{4}-12-31$/.test(dateTo)) return CUSTOM_RANGE_VALUE
+  if (dateFrom.slice(0, 4) !== dateTo.slice(0, 4)) {
+    return CUSTOM_RANGE_VALUE
+  }
   return dateFrom.slice(0, 4)
 }
 
@@ -61,6 +63,8 @@ export function ReportsYearJumpSelect(): JSX.Element {
           const y = e.target.value
           if (y === '') {
             setDateRange(null, null)
+          } else if (y === CUSTOM_RANGE_VALUE) {
+            return
           } else {
             setDateRange(`${y}-01-01`, `${y}-12-31`)
           }
@@ -68,6 +72,9 @@ export function ReportsYearJumpSelect(): JSX.Element {
         className="rounded-md border border-border-card bg-surface px-2 py-1 text-ink hover:border-border-strong focus:outline-none focus:ring-2 focus:ring-signal"
       >
         <option value="">All years</option>
+        {value === CUSTOM_RANGE_VALUE ? (
+          <option value={CUSTOM_RANGE_VALUE}>Custom range</option>
+        ) : null}
         {years.map((y) => (
           <option key={y} value={y}>
             {y}

@@ -57,11 +57,24 @@ describe('ReportsYearJumpSelect', () => {
     ).toBe('2025')
   })
 
-  it('falls back to "All years" when the active range is not a full calendar year', () => {
+  it('shows "Custom range" when the active range is not a full calendar year', () => {
     useFilterStore.setState({ dateFrom: '2025-06-01', dateTo: '2025-09-30' })
     render(<ReportsYearJumpSelect />)
-    expect(
-      (screen.getByTestId('reports-year-jump') as HTMLSelectElement).value,
-    ).toBe('')
+    const select = screen.getByTestId('reports-year-jump') as HTMLSelectElement
+    expect(select.value).toBe('custom')
+    expect(screen.getByRole('option', { name: 'Custom range' })).toBeVisible()
+  })
+
+  it('selecting "All years" from a custom range clears dateFrom + dateTo', async () => {
+    useFilterStore.setState({ dateFrom: '2025-06-01', dateTo: '2025-09-30' })
+    render(<ReportsYearJumpSelect />)
+
+    await userEvent
+      .setup()
+      .selectOptions(screen.getByTestId('reports-year-jump'), '')
+
+    const state = useFilterStore.getState()
+    expect(state.dateFrom).toBeNull()
+    expect(state.dateTo).toBeNull()
   })
 })
