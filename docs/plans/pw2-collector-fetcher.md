@@ -4,7 +4,7 @@
 
 **Base:** `main` at `b03b3e6` (PR #21 merged). Independent of #22/#23/#24/#26-visual. Depends on P-W1 (PR #25) being signed off - the policy contract this phase implements.
 
-**Why this phase exists:** P-W1 locked the wiki/raw-data policy but ships no code. P-W2 is the first phase where bytes start flowing - known report URLs (`reports.url_canonical`) become deduped, hashed, traceable artifacts on local disk, and every failure is categorized rather than silent. Without this layer, every later phase (parser, extractor, validator, integrator) would have to re-derive provenance or accept undeclared coverage gaps.
+**Why this phase exists:** P-W1 locked the wiki/raw-data policy but ships no code. P-W2 is the first phase where bytes start flowing - known fetchable report URLs (HTTP(S) targets already present in `reports`) become deduped, hashed, traceable artifacts on local disk, and every failure is categorized rather than silent. Without this layer, every later phase (parser, extractor, validator, integrator) would have to re-derive provenance or accept undeclared coverage gaps.
 
 **Non-goal:** P-W2 does not parse, summarize, extract, or store anything in the database. P-W2 produces raw bytes plus a structured fetch log on local disk, nothing else.
 
@@ -14,7 +14,7 @@
 
 Invariants this phase commits to:
 
-1. **Fetcher input is the existing `reports.url_canonical` set.** P-W2 does not discover new URLs via web search, RSS expansion, or sitemap crawl. Those expansions are P-W3+ topics.
+1. **Fetcher input is the existing fetchable HTTP(S) report URL set.** For each report, P-W2 uses `reports.url_canonical` when it is HTTP(S); if `url_canonical` is a non-fetchable identity such as `urn:stix:...`, P-W2 may use `reports.url` when that field is HTTP(S). Rows with neither HTTP(S) field are excluded from fetch attempts and from the 60% coverage denominator, with a `non_fetchable_url_count` recorded in the run summary. P-W2 does not discover new URLs via web search, RSS expansion, or sitemap crawl. Those expansions are P-W3+ topics.
 2. **Raw bytes are immutable.** Once stored under `raw_data/objects/sha256/<aa>/<sha>` they are never modified. Re-fetch producing different bytes creates a new object; both records remain in the ledger.
 3. **Every URL attempt is recorded.** Success or failure, the attempt becomes a row in `raw_data/_index.jsonl`. There is no silent skip, no swallowed exception.
 4. **Every failure is categorized.** The category enum is closed (see Section 8). `other` is permitted but should trigger a follow-up issue, not an accumulated dump.
@@ -33,7 +33,7 @@ What already exists on `main@b03b3e6` that P-W2 builds on or adapts around:
 - `services/worker/src/worker/ingest/taxii/fetcher.py` - similar TAXII-flavored fetcher; same caveat.
 - `services/worker/src/worker/ingest/staging_writer.py:44` - `INSERT ... ON CONFLICT DO NOTHING` idempotency pattern (postgres + sqlite dialect-aware). Pattern reusable for any future DB mirroring; **not used in P-W2**.
 - `services/worker/src/worker/ingest/audit.py` - row-level structured event log shape. Pattern reusable for the per-run summary.
-- `reports.url_canonical` (UNIQUE) - ingest target set, ~3458 rows on the dev DB. Coverage gate in Section 11 is over the subset where `url_canonical IS NOT NULL`.
+- `reports.url_canonical` (UNIQUE) - ingest identity set, ~3458 rows on the dev DB. Some rows can be non-fetchable identities (e.g., TAXII-promoted `urn:stix:...`) while `reports.url` carries the HTTP(S) ATT&CK page. Coverage gate in Section 11 is over the derived HTTP(S) fetch-target subset, not every non-null canonical.
 - `data/dictionaries/` - exists for normalization tables. Safe to add a P-W2 fixture/dictionary (e.g., known-paywall hosts, JS-required-host hints) here.
 - `.gitignore` - does not currently ignore `raw_data/`. P-W2 will add the relevant entries.
 
@@ -49,11 +49,11 @@ What does NOT exist yet:
 
 ## 2. Goals
 
-1. Ship a `worker/raw_acquisition/` module that, given the current `reports.url_canonical` set, produces:
+1. Ship a `worker/raw_acquisition/` module that, given the current HTTP(S) fetch-target subset derived from `reports.url_canonical` / `reports.url`, produces:
    - Deduped raw artifacts in `raw_data/objects/sha256/<first2>/<sha256>`.
    - One JSONL line per fetch attempt in `raw_data/_index.jsonl` (success or failure).
    - A categorized `raw_data/_missing.json` rebuildable from the JSONL ledger.
-2. Achieve **>= 60% raw artifact acquisition** across reports where `url_canonical IS NOT NULL`. The remaining <= 40% must be categorized in `_missing.json`, not silently absent.
+2. Achieve **>= 60% raw artifact acquisition** across reports with a derived HTTP(S) fetch target. The remaining <= 40% must be categorized in `_missing.json`, not silently absent.
 3. Document one CLI entry point that is idempotent, resumable, and budget-bounded (max attempts, max bytes, max wall time).
 4. Keep all of the above behind feature flags / opt-in env vars; default `main` runtime behavior unchanged.
 
@@ -66,7 +66,7 @@ What does NOT exist yet:
 - **No new DB table.** Durable output is on-disk (`_index.jsonl`, `_missing.json`, `raw_data/objects/...`). A worker-side DB mirror of fetch attempts is intentionally Deferred to P-W6 auditor; not in P-W2 scope.
 - No frontend route, API endpoint, or UI surface.
 - No scheduled job (Prefect/cron) wiring. P-W2 ships the CLI; scheduling is opt-in for P-W6+.
-- No URL discovery beyond `reports.url_canonical`. (Wayback Machine fallback is recorded as a candidate field only - see Section 14 risk register.)
+- No URL discovery beyond existing `reports.url_canonical` / `reports.url` values. (Wayback Machine fallback is recorded as a candidate field only - see Section 14 risk register.)
 - No headless browser / Playwright fetcher. JS-required URLs are categorized and skipped in P-W2; resolution is P-W2.1+ behind a separate flag.
 - No paywall bypass.
 
@@ -81,13 +81,13 @@ services/worker/src/worker/raw_acquisition/
   __init__.py
   __main__.py                # dispatches python -m worker.raw_acquisition -> cli.main()
   cli.py                    # python -m worker.raw_acquisition fetch [...]
-  collector.py              # selects URLs from reports.url_canonical, deduplicates, batches
+  collector.py              # derives HTTP(S) fetch targets from reports.url_canonical/url
   fetcher.py                # generic raw fetcher (URL-shaped, not feed-shaped); see Section 1
   hashing.py                # sha256 streaming hasher + path layout
   index.py                  # _index.jsonl writer (atomic appends)
   classify.py               # exception/response -> failure category
   missing.py                # build _missing.json from _index.jsonl
-  coverage.py               # measure coverage % over reports.url_canonical
+  coverage.py               # measure coverage % over HTTP(S) fetch target set
   config.py                 # env vars, budgets, user agent string
 services/worker/tests/unit/test_raw_acquisition_*.py
 services/worker/tests/integration/test_raw_acquisition_e2e.py
@@ -152,6 +152,7 @@ One JSON object per line. Newline-delimited. Append-only. UTF-8.
 
 Field semantics:
 
+- `url` is the HTTP(S) fetch target. `url_canonical` remains the report identity key and can differ when a non-fetchable canonical (for example `urn:stix:...`) falls back to an HTTP(S) `reports.url` value. Rows with no HTTP(S) target are not attempted and are counted only in the run summary `non_fetchable_url_count`.
 - Failure rows leave `sha256/object_path/content_*` null, set `outcome=failed`, and fill `category` + `category_detail`. A robots-denied URL is represented as `outcome=failed`, `category=robots_disallowed`; there is no separate skipped outcome.
 - Successful rows that hit an existing object via sha256 dedupe set `outcome=ok`, `category=duplicate` (advisory), and **`dedupe_of_sha256`** to the canonical sha. The `object_path` points at the existing object; no new bytes are written.
 - `category=duplicate` is a successful, advisory marker on the ledger. It is **not** counted in `_missing.json` (see Section 7).
@@ -166,11 +167,12 @@ Field semantics:
   "url_set_sha256": "f00d...",
   "generated_at": "2026-05-01T12:40:00Z",
   "totals": {
-    "reports_with_url": 3401,
+    "fetch_targets": 3401,
     "fetched_ok_unique_objects": 2120,
     "fetched_ok_dedupe_advisories": 47,
     "missing": 1234,
-    "coverage_pct": 63.7
+    "coverage_pct": 63.7,
+    "non_fetchable_url_count": 57
   },
   "by_category": {
     "not_found": 410,
@@ -227,7 +229,7 @@ Any expansion of this enum requires a plan amendment, not a code-only change.
 ## 9. Idempotency + Resume Rules
 
 - Run is keyed by `run_id` (ULID/UUID). Multiple concurrent runs are not supported in P-W2.
-- Resume: a new run reads the existing `_index.jsonl`, builds the latest attempt keyed by `(report_id, url_canonical)`, skips only current report/URL pairs whose latest attempt was `ok` and whose `object_path` (or `dedupe_of_sha256` target) still exists, and re-attempts everything else under per-run budget caps. If a report's `url_canonical` changes, old bytes remain historical evidence but do **not** cover the new URL or count toward the 60% coverage gate.
+- Resume: a new run reads the existing `_index.jsonl`, builds the latest attempt keyed by `(report_id, fetch_url)`, skips only current report/fetch-URL pairs whose latest attempt was `ok` and whose `object_path` (or `dedupe_of_sha256` target) still exists, and re-attempts everything else under per-run budget caps. If a report's derived `fetch_url` changes, old bytes remain historical evidence but do **not** cover the new URL or count toward the 60% coverage gate.
 - Per-URL attempt cap: 3 across all runs (configurable). After cap, category is locked unless explicitly reset via CLI flag.
 - Per-run budget: max wall-time, max URLs attempted, max total bytes. Defaults conservative; tuned in pilot run.
 - Robots.txt cache TTL: 24 hours per host.
@@ -262,16 +264,18 @@ All commands are idempotent. `fetch` resumes from last `_index.jsonl` state.
 
 ## 11. Coverage Measurement Methodology
 
-Coverage is **ledger-state coverage** keyed by the input URL set:
+Coverage is **ledger-state coverage** keyed by the HTTP(S) fetch-target set:
 
 ```
-url_set_sha256 = sha256(sorted_join("\n", reports.url_canonical WHERE url_canonical IS NOT NULL))
-coverage_pct   = fetched_ok_count / reports_with_url_count * 100
+fetch_targets  = existing report rows with an HTTP(S) fetch URL:
+                 url_canonical if HTTP(S), else url if HTTP(S), else excluded
+url_set_sha256 = sha256(sorted_join("\n", report_id + " " + fetch_url))
+coverage_pct   = fetched_ok_count / fetch_target_count * 100
 ```
 
 Where:
 
-- `reports_with_url_count` = `SELECT COUNT(*) FROM reports WHERE url_canonical IS NOT NULL`.
+- `fetch_target_count` = count of reports with a derived HTTP(S) fetch target (`url_canonical` if HTTP(S), else `url` if HTTP(S)). Reports with only a non-fetchable identity such as `urn:stix:...` are excluded from this denominator and counted in the run summary as `non_fetchable_url_count`.
 - `fetched_ok_count` = number of distinct `report_id` whose **latest** `_index.jsonl` row at run-end has `outcome=ok` AND whose `object_path` (or `dedupe_of_sha256` target) exists on disk.
 
 The coverage figure is the ledger state at run-end, not just the rows written by the current run. A resume run that adds the final 5% to push from 55% to 60% is exactly the intended workflow.
@@ -280,14 +284,14 @@ The 60% gate is satisfied when:
 
 1. `url_set_sha256` is recorded in the run summary, AND
 2. `coverage_pct >= 60.0` for that `url_set_sha256` ledger state, AND
-3. The 100% remainder is fully classified across `_missing.json.by_category` (sum of categories + `fetched_ok_*` totals = `reports_with_url`).
+3. The 100% remainder is fully classified across `_missing.json.by_category` (sum of categories + `fetched_ok_*` totals = `fetch_targets`).
 
 Reproducibility requires the run summary to record:
 
 1. `url_set_sha256`.
 2. `run_id`.
 3. The configuration (user agent, budgets, retry caps).
-4. The DB snapshot identifier (e.g., a content hash of `(reports.id, reports.url_canonical)` ordered).
+4. The DB snapshot identifier (e.g., a content hash of `(reports.id, fetch_url)` ordered).
 
 Coverage reports are emitted to `raw_data/runs/<run_id>/summary.json`.
 
@@ -355,7 +359,7 @@ P-W2 implementation PR is mergeable when all of:
 - [ ] `services/worker/src/worker/raw_acquisition/` ships with the modules listed in Section 4.
 - [ ] All Section 12 unit tests pass.
 - [ ] At least one integration test passes on CI (mocked transport).
-- [ ] Pilot run on dev DB produces a `_index.jsonl` and `_missing.json` consistent with Section 11 measurement; coverage >= 60%. The `_missing.json.by_category` sum plus `fetched_ok_*` totals must still account for 100% of the URL set. If coverage is below 60%, Section 14 risk escalation is triggered; the gate is not weakened by category completeness alone.
+- [ ] Pilot run on dev DB produces a `_index.jsonl` and `_missing.json` consistent with Section 11 measurement; coverage >= 60%. The `_missing.json.by_category` sum plus `fetched_ok_*` totals must still account for 100% of the HTTP(S) fetch-target set; `non_fetchable_url_count` is reported separately and never weakens the 60% gate. If coverage is below 60%, Section 14 risk escalation is triggered; the gate is not weakened by category completeness alone.
 - [ ] `.gitignore` updated for `raw_data/objects/`, `raw_data/runs/`, JSONL/JSON.
 - [ ] No DB migration. No API route. No UI route. No new DB table.
 - [ ] PR body links to PR #25 (P-W1) and Section 14.1 sign-off as the policy reference.
@@ -386,6 +390,6 @@ P-W2 plan PR is ready for sign-off when:
 - [ ] The user agrees that the existing `worker.ingest.fetcher` is **pattern reuse, not direct reuse**, and a new generic raw fetcher is part of P-W2 scope.
 - [ ] The user agrees that `category=duplicate` is a successful-row advisory and is **not** an `_missing.json` category.
 - [ ] The user agrees that **no new DB table** is in P-W2 scope; DB mirroring is Deferred to P-W6.
-- [ ] The user agrees that coverage is measured as ledger-state coverage at run-end, keyed by `url_set_sha256`, and the 60% gate applies to that ledger state.
+- [ ] The user agrees that coverage is measured as ledger-state coverage at run-end, keyed by `url_set_sha256`, and the 60% gate applies to that HTTP(S) fetch-target ledger state, excluding non-fetchable identities reported via `non_fetchable_url_count`.
 - [ ] The user accepts the closed 8-category failure enum (`duplicate` removed) and the `other`-triggers-issue rule.
 - [ ] The user accepts that P-W2 plan PR ships no code, no test, no CI change.
