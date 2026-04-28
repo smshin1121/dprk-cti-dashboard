@@ -36,7 +36,8 @@ function detectActiveYear(
   dateFrom: string | null,
   dateTo: string | null,
 ): string {
-  if (dateFrom == null || dateTo == null) return ''
+  if (dateFrom == null && dateTo == null) return ''
+  if (dateFrom == null || dateTo == null) return CUSTOM_RANGE_VALUE
   if (!/^\d{4}-01-01$/.test(dateFrom)) return CUSTOM_RANGE_VALUE
   if (!/^\d{4}-12-31$/.test(dateTo)) return CUSTOM_RANGE_VALUE
   if (dateFrom.slice(0, 4) !== dateTo.slice(0, 4)) {
