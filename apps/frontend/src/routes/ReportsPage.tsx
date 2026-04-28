@@ -12,7 +12,7 @@
  * goes back. Initial load uses no cursor.
  */
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import { ReportsViewModeToggle } from '../components/ReportsViewModeToggle'
 import { ReportsYearJumpSelect } from '../components/ReportsYearJumpSelect'
@@ -21,9 +21,15 @@ import { ReportTimeline } from '../features/reports/ReportTimeline'
 import { useReportsList } from '../features/reports/useReportsList'
 import type { ReportItem } from '../lib/api/schemas'
 import { useReportsViewModeStore } from '../stores/reportsViewMode'
+import { useFilterStore } from '../stores/filters'
 import { cn } from '../lib/utils'
 
 const PAGE_SIZE = 50
+
+interface CursorState {
+  filterKey: string
+  stack: (string | undefined)[]
+}
 
 const reportColumns: readonly ListTableColumn<ReportItem>[] = [
   {
@@ -57,12 +63,30 @@ const reportColumns: readonly ListTableColumn<ReportItem>[] = [
 ] as const
 
 export function ReportsPage(): JSX.Element {
+  const dateFrom = useFilterStore((s) => s.dateFrom)
+  const dateTo = useFilterStore((s) => s.dateTo)
+  const filterKey = `${dateFrom ?? ''}|${dateTo ?? ''}`
+  const [cursorState, setCursorState] = useState<CursorState>({
+    filterKey,
+    stack: [undefined],
+  })
+
   // Each entry is the cursor used to fetch the corresponding page.
   // `undefined` marks the first page. On Next we push; on Prev we pop.
-  const [cursorStack, setCursorStack] = useState<(string | undefined)[]>([
-    undefined,
-  ])
+  // When the date filter changes, the current cursor is stale for the
+  // new keyset. Derive first-page state synchronously so no request is
+  // issued with a new date range and an old opaque cursor.
+  const cursorStack =
+    cursorState.filterKey === filterKey ? cursorState.stack : [undefined]
   const currentCursor = cursorStack[cursorStack.length - 1]
+
+  useEffect(() => {
+    setCursorState((state) =>
+      state.filterKey === filterKey
+        ? state
+        : { filterKey, stack: [undefined] },
+    )
+  }, [filterKey])
 
   const query = useReportsList({ cursor: currentCursor, limit: PAGE_SIZE })
   const viewMode = useReportsViewModeStore((s) => s.mode)
@@ -124,8 +148,16 @@ export function ReportsPage(): JSX.Element {
           data-testid="reports-prev"
           disabled={!hasPrev}
           onClick={() =>
-            setCursorStack((stack) =>
-              stack.length > 1 ? stack.slice(0, -1) : stack,
+            setCursorState((state) =>
+              state.filterKey !== filterKey
+                ? { filterKey, stack: [undefined] }
+                : {
+                    filterKey,
+                    stack:
+                      state.stack.length > 1
+                        ? state.stack.slice(0, -1)
+                        : state.stack,
+                  },
             )
           }
           className={cn(paginationBtn)}
@@ -138,7 +170,13 @@ export function ReportsPage(): JSX.Element {
           disabled={!hasNext}
           onClick={() =>
             nextCursor != null
-              ? setCursorStack((stack) => [...stack, nextCursor])
+              ? setCursorState((state) => ({
+                  filterKey,
+                  stack:
+                    state.filterKey === filterKey
+                      ? [...state.stack, nextCursor]
+                      : [undefined, nextCursor],
+                }))
               : undefined
           }
           className={cn(paginationBtn)}

@@ -73,6 +73,14 @@ describe('ReportsYearJumpSelect', () => {
     expect(screen.getByRole('option', { name: 'Custom range' })).toBeVisible()
   })
 
+  it('shows "Custom range" for full-year filters outside the rendered year list', () => {
+    useFilterStore.setState({ dateFrom: '2008-01-01', dateTo: '2008-12-31' })
+    render(<ReportsYearJumpSelect />)
+    const select = screen.getByTestId('reports-year-jump') as HTMLSelectElement
+    expect(select.value).toBe('custom')
+    expect(screen.getByRole('option', { name: 'Custom range' })).toBeVisible()
+  })
+
   it('selecting "All years" from a custom range clears dateFrom + dateTo', async () => {
     useFilterStore.setState({ dateFrom: '2025-06-01', dateTo: '2025-09-30' })
     render(<ReportsYearJumpSelect />)

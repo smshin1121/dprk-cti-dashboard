@@ -43,7 +43,15 @@ function detectActiveYear(
   if (dateFrom.slice(0, 4) !== dateTo.slice(0, 4)) {
     return CUSTOM_RANGE_VALUE
   }
-  return dateFrom.slice(0, 4)
+  const year = dateFrom.slice(0, 4)
+  const numericYear = Number(year)
+  if (
+    numericYear < REPORT_DATA_START_YEAR ||
+    numericYear > new Date().getFullYear()
+  ) {
+    return CUSTOM_RANGE_VALUE
+  }
+  return year
 }
 
 export function ReportsYearJumpSelect(): JSX.Element {

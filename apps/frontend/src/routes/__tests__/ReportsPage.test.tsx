@@ -1,5 +1,5 @@
 import { QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
 import {
@@ -113,6 +113,34 @@ describe('ReportsPage', () => {
     await waitFor(() => expect(spy).toHaveBeenCalledTimes(2))
     const second = new URL(String(spy.mock.calls[1][0]))
     expect(second.searchParams.get('date_from')).toBe('2026-01-01')
+  })
+
+  it('changing date range resets stale pagination cursors', async () => {
+    const spy = vi.spyOn(global, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          items: [lazarusReport],
+          next_cursor: 'cur-page-2',
+        }),
+        { status: 200 },
+      ),
+    )
+    renderWithRouter()
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(1))
+
+    await userEvent.setup().click(screen.getByTestId('reports-next'))
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(2))
+    const second = new URL(String(spy.mock.calls[1][0]))
+    expect(second.searchParams.get('cursor')).toBe('cur-page-2')
+
+    act(() => {
+      useFilterStore.getState().setDateRange('2024-01-01', '2024-12-31')
+    })
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(3))
+    const third = new URL(String(spy.mock.calls[2][0]))
+    expect(third.searchParams.get('date_from')).toBe('2024-01-01')
+    expect(third.searchParams.get('date_to')).toBe('2024-12-31')
+    expect(third.searchParams.get('cursor')).toBeNull()
   })
 
   it('mounts the view-mode toggle in the header', async () => {
