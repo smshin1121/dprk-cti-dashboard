@@ -71,6 +71,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import os
+import platform
 import sys
 import uuid
 from pathlib import Path
@@ -457,6 +458,14 @@ async def _main_async(args: argparse.Namespace) -> int:
     return EXIT_CONFIG_ERROR
 
 
+def _run_async(coro):  # noqa: ANN001
+    """Run an async coroutine, using SelectorEventLoop on Windows."""
+    if platform.system() == "Windows":
+        loop_factory = asyncio.SelectorEventLoop
+        return asyncio.run(coro, loop_factory=loop_factory)
+    return asyncio.run(coro)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Synchronous CLI entry point.
 
@@ -465,7 +474,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     """
     parser = build_parser()
     args = parser.parse_args(argv)
-    return asyncio.run(_main_async(args))
+    return _run_async(_main_async(args))
 
 
 if __name__ == "__main__":  # pragma: no cover — module entry path

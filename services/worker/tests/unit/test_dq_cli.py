@@ -16,7 +16,9 @@ Covers the CLI contract:
 
 from __future__ import annotations
 
+import asyncio
 import io
+import platform
 import uuid
 from pathlib import Path
 
@@ -29,6 +31,7 @@ from worker.data_quality.cli import (
     EXIT_CONFIG_ERROR,
     EXIT_OK,
     EXIT_REPORT_STUB,
+    _run_async,
     build_parser,
     decide_exit_code,
     main,
@@ -385,6 +388,46 @@ class TestRunReport:
 # ---------------------------------------------------------------------------
 # main() dispatcher — CLI contract
 # ---------------------------------------------------------------------------
+
+
+def test_run_async_applies_selector_loop_on_windows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_run(coro, **kwargs):  # noqa: ANN001, ANN003
+        captured["loop_factory"] = kwargs.get("loop_factory")
+        coro.close()
+        return "sentinel"
+
+    async def _noop() -> None:
+        return None
+
+    monkeypatch.setattr(platform, "system", lambda: "Windows")
+    monkeypatch.setattr(asyncio, "run", fake_run)
+
+    assert _run_async(_noop()) == "sentinel"
+    assert captured["loop_factory"] is asyncio.SelectorEventLoop
+
+
+def test_run_async_omits_loop_factory_on_non_windows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_run(coro, **kwargs):  # noqa: ANN001, ANN003
+        captured["kwargs"] = dict(kwargs)
+        coro.close()
+        return "sentinel"
+
+    async def _noop() -> None:
+        return None
+
+    monkeypatch.setattr(platform, "system", lambda: "Linux")
+    monkeypatch.setattr(asyncio, "run", fake_run)
+
+    assert _run_async(_noop()) == "sentinel"
+    assert captured["kwargs"] == {}
 
 
 class TestMainDispatcher:
