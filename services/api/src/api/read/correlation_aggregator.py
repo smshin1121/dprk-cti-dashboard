@@ -37,6 +37,7 @@ Positive lag = X leads Y by k months.
 
 from __future__ import annotations
 
+import datetime as dt
 import math
 from dataclasses import dataclass
 from datetime import date
@@ -50,11 +51,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from statsmodels.stats.multitest import multipletests
 
 from ..tables import (
+    codenames_table,
     correlation_coverage_table,
+    groups_table,
     incident_countries_table,
     incident_motivations_table,
     incident_sectors_table,
     incidents_table,
+    report_codenames_table,
     reports_table,
 )
 from .repositories import _resolve_dialect
@@ -153,6 +157,65 @@ class _GridCell:
 # ---------------------------------------------------------------------------
 
 
+async def resolve_default_date_window(
+    session: AsyncSession,
+    *,
+    requested_from: date | None,
+    requested_to: date | None,
+) -> tuple[date, date]:
+    """Resolve omitted ``date_from`` / ``date_to`` to the DB min/max bounds.
+
+    Per spec §7.3 query-param table — an omitted date defaults to the
+    earliest / latest available across the union of source roots
+    (``reports.published`` and ``incidents.reported``). Hardcoded
+    fallback only when both source tables are empty.
+
+    Returns ``(resolved_from, resolved_to)``; passes through the caller's
+    explicit values unchanged.
+    """
+    if requested_from is not None and requested_to is not None:
+        return (requested_from, requested_to)
+
+    # Compute the union min / max only if at least one is missing.
+    min_reports_row = (
+        await session.execute(sa.select(sa.func.min(reports_table.c.published)))
+    ).first()
+    max_reports_row = (
+        await session.execute(sa.select(sa.func.max(reports_table.c.published)))
+    ).first()
+    min_incidents_row = (
+        await session.execute(sa.select(sa.func.min(incidents_table.c.reported)))
+    ).first()
+    max_incidents_row = (
+        await session.execute(sa.select(sa.func.max(incidents_table.c.reported)))
+    ).first()
+
+    candidate_mins: list[date] = []
+    candidate_maxs: list[date] = []
+    for row in (min_reports_row, min_incidents_row):
+        val = row[0] if row else None
+        if isinstance(val, date) and not isinstance(val, dt.datetime):
+            candidate_mins.append(val)
+        elif isinstance(val, dt.datetime):
+            candidate_mins.append(val.date())
+    for row in (max_reports_row, max_incidents_row):
+        val = row[0] if row else None
+        if isinstance(val, date) and not isinstance(val, dt.datetime):
+            candidate_maxs.append(val)
+        elif isinstance(val, dt.datetime):
+            candidate_maxs.append(val.date())
+
+    fallback_from = date(2010, 1, 1)
+    fallback_to = date(2010, 12, 31)
+
+    db_min = min(candidate_mins) if candidate_mins else fallback_from
+    db_max = max(candidate_maxs) if candidate_maxs else fallback_to
+
+    resolved_from = requested_from if requested_from is not None else db_min
+    resolved_to = requested_to if requested_to is not None else db_max
+    return (resolved_from, resolved_to)
+
+
 async def compute_correlation_series_catalog(
     session: AsyncSession,
 ) -> dict[str, list[dict[str, str]]]:
@@ -173,6 +236,27 @@ async def compute_correlation_series_catalog(
         }
         for entry in _BASE_CATALOG
     ]
+
+    # Per-group series (reports-rooted) — attribution chain
+    # reports → report_codenames → codenames → groups
+    group_rows = (
+        await session.execute(
+            sa.select(groups_table.c.id, groups_table.c.name)
+            .order_by(groups_table.c.id.asc())
+        )
+    ).all()
+    for row in group_rows:
+        if row.id is None:
+            continue
+        series.append(
+            {
+                "id": f"reports.by_group.{row.id}",
+                "label_ko": f"보고서 (그룹={row.name}) (월별)",
+                "label_en": f"Reports by group={row.name} (monthly)",
+                "root": "reports.published",
+                "bucket": BUCKET_GRANULARITY,
+            }
+        )
 
     # Per-motivation series (incidents-rooted)
     motivation_rows = (
@@ -252,9 +336,9 @@ class _SeriesResolver:
 
     series_id: str
     root: Literal["reports.published", "incidents.reported"]
-    # Filters applied to the source row count per bucket. Built as
-    # SQLAlchemy expressions at resolve time.
-    extra_filter: sa.sql.ColumnElement[bool] | None = None
+    # If the series filters reports by attributed group (via report_codenames
+    # → codenames → groups EXISTS chain), this carries the group_id.
+    group_id: int | None = None
     # If the series joins through a junction table (motivation / sector /
     # country), this is the table to join against and the column to
     # filter by + value.
@@ -263,12 +347,18 @@ class _SeriesResolver:
     junction_value: str | None = None
 
 
-def _resolve_series(series_id: str) -> _SeriesResolver:
+async def _resolve_series(
+    session: AsyncSession, series_id: str
+) -> _SeriesResolver:
     """Map a catalog series id to a resolved query plan.
 
-    Raises ``SeriesNotFoundError`` for unknown IDs. Catalog drift is
-    handled at the router boundary (router validates against the live
-    catalog before calling compute_correlation).
+    Validates that the suffix value (group_id, motivation, sector,
+    country) actually exists in the corresponding dimension table —
+    raises ``SeriesNotFoundError`` for unknown IDs OR known prefixes
+    with non-existent suffixes (e.g. ``incidents.by_country.NOT_REAL``).
+    This closes the prefix-bypass gap: known prefix + bogus suffix used
+    to silently resolve to a query plan that returned all-zero/suppressed
+    cells.
     """
     if series_id == "reports.total":
         return _SeriesResolver(series_id=series_id, root="reports.published")
@@ -276,8 +366,39 @@ def _resolve_series(series_id: str) -> _SeriesResolver:
     if series_id == "incidents.total":
         return _SeriesResolver(series_id=series_id, root="incidents.reported")
 
+    if series_id.startswith("reports.by_group."):
+        suffix = series_id[len("reports.by_group."):]
+        try:
+            group_id = int(suffix)
+        except ValueError as exc:
+            raise SeriesNotFoundError(series_id) from exc
+        # Existence check — group_id must be present in groups table.
+        exists_row = (
+            await session.execute(
+                sa.select(groups_table.c.id).where(groups_table.c.id == group_id)
+            )
+        ).first()
+        if exists_row is None:
+            raise SeriesNotFoundError(series_id)
+        return _SeriesResolver(
+            series_id=series_id,
+            root="reports.published",
+            group_id=group_id,
+        )
+
     if series_id.startswith("incidents.by_motivation."):
         key = series_id[len("incidents.by_motivation."):]
+        if not key:
+            raise SeriesNotFoundError(series_id)
+        exists_row = (
+            await session.execute(
+                sa.select(incident_motivations_table.c.motivation)
+                .where(incident_motivations_table.c.motivation == key)
+                .limit(1)
+            )
+        ).first()
+        if exists_row is None:
+            raise SeriesNotFoundError(series_id)
         return _SeriesResolver(
             series_id=series_id,
             root="incidents.reported",
@@ -288,6 +409,17 @@ def _resolve_series(series_id: str) -> _SeriesResolver:
 
     if series_id.startswith("incidents.by_sector."):
         key = series_id[len("incidents.by_sector."):]
+        if not key:
+            raise SeriesNotFoundError(series_id)
+        exists_row = (
+            await session.execute(
+                sa.select(incident_sectors_table.c.sector_code)
+                .where(incident_sectors_table.c.sector_code == key)
+                .limit(1)
+            )
+        ).first()
+        if exists_row is None:
+            raise SeriesNotFoundError(series_id)
         return _SeriesResolver(
             series_id=series_id,
             root="incidents.reported",
@@ -298,6 +430,17 @@ def _resolve_series(series_id: str) -> _SeriesResolver:
 
     if series_id.startswith("incidents.by_country."):
         key = series_id[len("incidents.by_country."):]
+        if not key:
+            raise SeriesNotFoundError(series_id)
+        exists_row = (
+            await session.execute(
+                sa.select(incident_countries_table.c.country_iso2)
+                .where(incident_countries_table.c.country_iso2 == key)
+                .limit(1)
+            )
+        ).first()
+        if exists_row is None:
+            raise SeriesNotFoundError(series_id)
         return _SeriesResolver(
             series_id=series_id,
             root="incidents.reported",
@@ -307,6 +450,27 @@ def _resolve_series(series_id: str) -> _SeriesResolver:
         )
 
     raise SeriesNotFoundError(series_id)
+
+
+def _reports_group_exists_clause(group_id: int) -> sa.sql.ColumnElement[bool]:
+    """EXISTS subquery: report has a codename attributed to this group.
+
+    Mirrors the analytics_aggregator pattern (avoids JOIN inflation when
+    a report has multiple codenames in the same group).
+    """
+    return sa.exists(
+        sa.select(sa.literal(1))
+        .select_from(
+            report_codenames_table.join(
+                codenames_table,
+                codenames_table.c.id == report_codenames_table.c.codename_id,
+            )
+        )
+        .where(
+            report_codenames_table.c.report_id == reports_table.c.id,
+            codenames_table.c.group_id == group_id,
+        )
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -362,6 +526,8 @@ async def _query_monthly_counts(
             )
             .group_by("bucket")
         )
+        if resolver.group_id is not None:
+            stmt = stmt.where(_reports_group_exists_clause(resolver.group_id))
     else:
         # incidents.reported — distinct incident count per month
         select_from: sa.sql.FromClause = incidents_table
@@ -853,8 +1019,8 @@ async def compute_correlation(
         InsufficientSampleError: when effective_n < 30 at lag 0
         SeriesNotFoundError: when x or y is not in the catalog
     """
-    x_resolver = _resolve_series(x)
-    y_resolver = _resolve_series(y)
+    x_resolver = await _resolve_series(session, x)
+    y_resolver = await _resolve_series(session, y)
 
     x_grid = await _build_dense_calendar_grid(
         session, resolver=x_resolver, date_from=date_from, date_to=date_to

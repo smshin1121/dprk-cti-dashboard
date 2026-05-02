@@ -34,6 +34,7 @@ from ..read.correlation_aggregator import (
     SeriesNotFoundError,
     compute_correlation,
     compute_correlation_series_catalog,
+    resolve_default_date_window,
 )
 from ..schemas.correlation import (
     CorrelationCatalogResponse,
@@ -215,15 +216,16 @@ async def correlation_endpoint(
             ],
         )
 
-    # Default the window to a wide capture if not supplied — the aggregator
-    # tolerates the dense grid construction over any window, but a missing
-    # date_from could yield a 200-year grid which would dominate the runtime.
-    # We intentionally default to a 15-year window (2010-01 .. today) which
-    # covers our DB span (per phase_status.md DB span 2009-07-08 → 2026-04-12).
-    if date_from is None:
-        date_from = date(2010, 1, 1)
-    if date_to is None:
-        date_to = date.today()
+    # Default the window to DB min/max per spec §7.3 query-param table.
+    # An omitted date_from resolves to ``min(reports.published)`` AND
+    # ``min(incidents.reported)`` whichever is earlier; date_to symmetric.
+    # This makes the response deterministic for "give me everything"
+    # queries instead of drifting with date.today().
+    resolved_from, resolved_to = await resolve_default_date_window(
+        session, requested_from=date_from, requested_to=date_to
+    )
+    date_from = resolved_from
+    date_to = resolved_to
 
     if date_from > date_to:
         raise HTTPException(

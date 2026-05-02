@@ -48,6 +48,8 @@ round-trip cleanly through the CI reversibility step.
 
 from __future__ import annotations
 
+import datetime as dt
+
 from alembic import op
 import sqlalchemy as sa
 
@@ -59,7 +61,27 @@ depends_on = None
 
 
 _BASELINE_FLOOR_MONTH = "1900-01"
-_FALLBACK_EARLIEST_MONTH = "2009-01"  # used in sqlite tests when source tables are empty
+_FALLBACK_EARLIEST_MONTH = "2009-01"  # used when source tables are empty
+
+
+def _coerce_to_year_month(value: object) -> tuple[int, int] | None:
+    """Coerce a ``MIN(<date>)`` query result into ``(year, month)``.
+
+    PG returns a ``date``/``datetime`` object; sqlite typically returns a
+    string in ISO-8601 format because raw ``sa.text`` queries do not
+    bind to a typed column. Handle both — and ``None`` for empty tables.
+    """
+    if value is None:
+        return None
+    if isinstance(value, (dt.datetime, dt.date)):
+        return (value.year, value.month)
+    if isinstance(value, str):
+        try:
+            parsed = dt.date.fromisoformat(value[:10])
+        except ValueError:
+            return None
+        return (parsed.year, parsed.month)
+    return None
 
 
 def _seed_no_data_for_root(
@@ -76,22 +98,24 @@ def _seed_no_data_for_root(
     Dialect-portable: PG and sqlite both support the date arithmetic via
     a Python-side bucket generator, so the migration computes the month
     range in Python and issues parameterized INSERTs. This avoids
-    Postgres-only generate_series.
+    Postgres-only generate_series. The earliest-date result type
+    differs between dialects (PG returns date, sqlite returns string)
+    so ``_coerce_to_year_month`` normalizes both shapes.
     """
     earliest_row = bind.execute(
         sa.text(
             f"SELECT MIN({source_column}) AS earliest FROM {source_table}"  # noqa: S608
         )
     ).fetchone()
-    earliest_date = earliest_row.earliest if earliest_row else None
+    earliest_value = earliest_row.earliest if earliest_row else None
 
-    if earliest_date is None:
+    coerced = _coerce_to_year_month(earliest_value)
+    if coerced is None:
         earliest_year, earliest_month = (
             int(part) for part in _FALLBACK_EARLIEST_MONTH.split("-")
         )
     else:
-        earliest_year = earliest_date.year
-        earliest_month = earliest_date.month
+        earliest_year, earliest_month = coerced
 
     floor_year, floor_month = (
         int(part) for part in _BASELINE_FLOOR_MONTH.split("-")

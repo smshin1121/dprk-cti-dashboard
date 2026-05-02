@@ -161,11 +161,15 @@ def test_lag_in_range_validates() -> None:
 
 
 def _full_response() -> dict[str, object]:
-    cell = {
-        "lag": 0,
-        "pearson": _populated_block(),
-        "spearman": _populated_block(),
-    }
+    """Build a full 49-cell lag-grid payload (DTO invariant: lags -24..+24)."""
+    lag_grid = [
+        {
+            "lag": k,
+            "pearson": _populated_block(),
+            "spearman": _populated_block(),
+        }
+        for k in range(-24, 25)
+    ]
     return {
         "x": "reports.total",
         "y": "incidents.total",
@@ -173,13 +177,37 @@ def _full_response() -> dict[str, object]:
         "date_to": dt.date(2024, 12, 31),
         "alpha": 0.05,
         "effective_n": 36,
-        "lag_grid": [cell],
+        "lag_grid": lag_grid,
         "interpretation": {
             "caveat": "Correlation does not imply causation.",
             "methodology_url": "/docs/methodology/correlation",
             "warnings": [],
         },
     }
+
+
+def _short_lag_grid_response() -> dict[str, object]:
+    """Build a payload with only 1 lag cell to test the invariant rejection."""
+    cell = {
+        "lag": 0,
+        "pearson": _populated_block(),
+        "spearman": _populated_block(),
+    }
+    payload = _full_response()
+    payload["lag_grid"] = [cell]
+    return payload
+
+
+def _scrambled_lag_grid_response() -> dict[str, object]:
+    """49 cells but lags out of order — should fail invariant check."""
+    payload = _full_response()
+    grid = payload["lag_grid"]  # type: ignore[assignment]
+    assert isinstance(grid, list)
+    grid_list = list(grid)
+    # Swap two lags so the order is violated
+    grid_list[0], grid_list[10] = grid_list[10], grid_list[0]
+    payload["lag_grid"] = grid_list
+    return payload
 
 
 def test_full_response_validates() -> None:
@@ -229,3 +257,15 @@ def test_extra_top_level_field_rejected() -> None:
     payload["unexpected"] = "leak"
     with pytest.raises(ValidationError):
         CorrelationResponse.model_validate(payload)
+
+
+def test_short_lag_grid_rejected() -> None:
+    """49-cell invariant — fewer than 49 cells must fail validation."""
+    with pytest.raises(ValidationError):
+        CorrelationResponse.model_validate(_short_lag_grid_response())
+
+
+def test_scrambled_lag_grid_rejected() -> None:
+    """49-cell invariant — lags must be in ascending -24..+24 order."""
+    with pytest.raises(ValidationError):
+        CorrelationResponse.model_validate(_scrambled_lag_grid_response())

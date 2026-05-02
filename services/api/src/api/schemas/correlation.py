@@ -142,8 +142,18 @@ class CorrelationInterpretation(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+_EXPECTED_LAG_GRID_LENGTH = 49
+_EXPECTED_LAGS = list(range(-24, 25))  # -24, -23, ..., 0, ..., 23, 24
+
+
 class CorrelationResponse(BaseModel):
-    """The locked 200 response shape for GET /api/v1/analytics/correlation."""
+    """The locked 200 response shape for GET /api/v1/analytics/correlation.
+
+    Spec §4.4 + §5.3: lag_grid always has exactly 49 cells with sorted
+    lags -24..+24. The model validator below pins the invariant so any
+    aggregator regression that drops/duplicates/reorders cells is
+    caught at validation time, not in production.
+    """
 
     model_config = ConfigDict(extra="forbid", strict=True)
 
@@ -153,5 +163,18 @@ class CorrelationResponse(BaseModel):
     date_to: date
     alpha: Annotated[float, Field(gt=0.0, lt=1.0)]
     effective_n: Annotated[int, Field(ge=0)]
-    lag_grid: list[CorrelationLagCell]
+    lag_grid: Annotated[
+        list[CorrelationLagCell],
+        Field(min_length=_EXPECTED_LAG_GRID_LENGTH, max_length=_EXPECTED_LAG_GRID_LENGTH),
+    ]
     interpretation: CorrelationInterpretation
+
+    @model_validator(mode="after")
+    def _validate_lag_grid_invariant(self) -> CorrelationResponse:
+        actual_lags = [cell.lag for cell in self.lag_grid]
+        if actual_lags != _EXPECTED_LAGS:
+            raise ValueError(
+                f"lag_grid must contain exactly the 49 lags -24..+24 in "
+                f"ascending order; got {actual_lags!r}"
+            )
+        return self

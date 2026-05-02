@@ -540,7 +540,7 @@
       },
       "CorrelationResponse": {
         "additionalProperties": false,
-        "description": "The locked 200 response shape for GET /api/v1/analytics/correlation.",
+        "description": "The locked 200 response shape for GET /api/v1/analytics/correlation.\n\nSpec §4.4 + §5.3: lag_grid always has exactly 49 cells with sorted\nlags -24..+24. The model validator below pins the invariant so any\naggregator regression that drops/duplicates/reorders cells is\ncaught at validation time, not in production.",
         "properties": {
           "alpha": {
             "exclusiveMaximum": 1.0,
@@ -570,6 +570,8 @@
             "items": {
               "$ref": "#/components/schemas/CorrelationLagCell"
             },
+            "maxItems": 49,
+            "minItems": 49,
             "title": "Lag Grid",
             "type": "array"
           },
