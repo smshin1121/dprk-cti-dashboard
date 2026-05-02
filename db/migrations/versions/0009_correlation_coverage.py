@@ -54,15 +54,16 @@ import sys
 from alembic import op
 import sqlalchemy as sa
 
-# Match env.py sys.path convention — the migrations dir is already on
-# the path; we extend it to versions/ so the seed helper is importable
-# without requiring versions/__init__.py (Alembic loads each migration
-# file by path, not as a package).
-_VERSIONS_DIR = os.path.dirname(os.path.abspath(__file__))
-if _VERSIONS_DIR not in sys.path:
-    sys.path.insert(0, _VERSIONS_DIR)
+# env.py adds db/migrations/ to sys.path so the helper module sitting at
+# db/migrations/correlation_seed.py is importable directly. The helper
+# lives OUTSIDE versions/ deliberately: Alembic scans every .py file in
+# versions/ as a candidate revision, and a non-revision file there
+# breaks `alembic upgrade head` (Codex r3 H1).
+_MIGRATIONS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _MIGRATIONS_DIR not in sys.path:
+    sys.path.insert(0, _MIGRATIONS_DIR)
 
-from tools_correlation_seed import seed_correlation_no_data  # noqa: E402
+from correlation_seed import seed_correlation_no_data  # noqa: E402
 
 
 revision = "0009_correlation_coverage"

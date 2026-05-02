@@ -123,6 +123,7 @@ async def test_correlation_route_401_without_cookie(
 async def test_correlation_route_422_identical_series(
     correlation_client: AsyncClient, make_session_cookie
 ) -> None:
+    """Pin EXACT 422 envelope shape per spec §7.3 (Codex r3 M2)."""
     cookie = await make_session_cookie(roles=["analyst"])
     response = await correlation_client.get(
         "/api/v1/analytics/correlation",
@@ -131,11 +132,16 @@ async def test_correlation_route_422_identical_series(
     )
     assert response.status_code == 422
     body = response.json()
-    assert body["detail"][0]["type"] == "value_error.identical_series"
-    assert body["detail"][0]["loc"] == ["query", "y"]
-    assert body["detail"][0]["ctx"] == {
-        "x": "reports.total",
-        "y": "reports.total",
+    # Envelope is exactly { "detail": [single-entry] } — no extra entries
+    assert body == {
+        "detail": [
+            {
+                "loc": ["query", "y"],
+                "msg": "x and y must be different series IDs",
+                "type": "value_error.identical_series",
+                "ctx": {"x": "reports.total", "y": "reports.total"},
+            }
+        ]
     }
 
 
@@ -143,6 +149,7 @@ async def test_correlation_route_422_identical_series(
 async def test_correlation_route_422_date_to_before_date_from(
     correlation_client: AsyncClient, make_session_cookie
 ) -> None:
+    """Pin EXACT 422 envelope shape (Codex r3 M2)."""
     cookie = await make_session_cookie(roles=["analyst"])
     response = await correlation_client.get(
         "/api/v1/analytics/correlation",
@@ -156,8 +163,19 @@ async def test_correlation_route_422_date_to_before_date_from(
     )
     assert response.status_code == 422
     body = response.json()
-    assert body["detail"][0]["type"] == "value_error"
-    assert body["detail"][0]["loc"] == ["query", "date_to"]
+    assert body == {
+        "detail": [
+            {
+                "loc": ["query", "date_to"],
+                "msg": "date_to must be on or after date_from",
+                "type": "value_error",
+                "ctx": {
+                    "date_from": "2024-12-31",
+                    "date_to": "2020-01-01",
+                },
+            }
+        ]
+    }
 
 
 @pytest.mark.asyncio
@@ -166,7 +184,7 @@ async def test_correlation_route_422_unknown_series(
     real_engine: AsyncEngine,
     make_session_cookie,
 ) -> None:
-    """Catalog existence check rejects unknown junction values."""
+    """Pin EXACT 422 envelope shape for unknown series (Codex r3 M2)."""
     await _seed_minimal(real_engine)
     cookie = await make_session_cookie(roles=["analyst"])
     response = await correlation_client.get(
@@ -181,9 +199,15 @@ async def test_correlation_route_422_unknown_series(
     )
     assert response.status_code == 422
     body = response.json()
-    assert body["detail"][0]["type"] == "value_error"
-    assert body["detail"][0]["loc"] == ["query", "y"]
-    assert "incidents.by_country.NOT_REAL" in body["detail"][0]["msg"]
+    assert body == {
+        "detail": [
+            {
+                "loc": ["query", "y"],
+                "msg": "series id 'incidents.by_country.NOT_REAL' not in catalog",
+                "type": "value_error",
+            }
+        ]
+    }
 
 
 @pytest.mark.asyncio

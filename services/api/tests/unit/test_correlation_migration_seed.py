@@ -21,16 +21,16 @@ import pytest
 import sqlalchemy as sa
 from sqlalchemy.engine import Engine
 
-# Migration helper lives in db/migrations/versions/. Alembic does not
-# treat versions/ as a Python package (no __init__.py); env.py adds the
-# migrations dir to sys.path at runtime, but for unit tests we add the
-# versions/ dir directly so the helper imports cleanly.
+# Migration helper lives at db/migrations/correlation_seed.py (NOT under
+# versions/, because Alembic scans every .py in versions/ as a revision —
+# Codex r3 H1). env.py adds db/migrations/ to sys.path at runtime;
+# for unit tests we mirror that injection.
 _REPO_ROOT = Path(__file__).resolve().parents[4]
-_VERSIONS_DIR = _REPO_ROOT / "db" / "migrations" / "versions"
-if str(_VERSIONS_DIR) not in sys.path:
-    sys.path.insert(0, str(_VERSIONS_DIR))
+_MIGRATIONS_DIR = _REPO_ROOT / "db" / "migrations"
+if str(_MIGRATIONS_DIR) not in sys.path:
+    sys.path.insert(0, str(_MIGRATIONS_DIR))
 
-from tools_correlation_seed import seed_correlation_no_data  # noqa: E402
+from correlation_seed import seed_correlation_no_data  # noqa: E402
 
 
 @pytest.fixture

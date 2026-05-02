@@ -1,56 +1,24 @@
-"""Warning-trigger + router-422 tests for correlation (PR #28 r1 follow-up).
+"""Pure-function tests for the correlation aggregator (no DB).
 
-Closes Codex r1 MEDIUM findings:
-- BH-FDR family-scope edge cases (m_method=49 / 34 / 0)
-- Router 422 envelopes (identical_series / date_to<date_from / unknown series)
-- §6.2 warning vocabulary triggers (low_count_suppressed_cells, outlier_influence,
-  cross_rooted_pair, sparse_window, identity_or_containment_suspected)
+Covers:
+- BH-FDR family scope edge cases (m_method = 49 / 34 / 0)
+- §6.2 warning vocabulary triggers (each code independently)
+- The r4 lock that m_method == 0 produces no synthetic warning
+
+Router 422 envelope tests live in tests/integration/test_correlation_route.py
+because they require the full app pipeline (cookie auth + get_db override).
 """
 
 from __future__ import annotations
 
-import datetime as dt
-from collections.abc import AsyncIterator
-
 import pytest
-import pytest_asyncio
-import sqlalchemy as sa
-from httpx import ASGITransport, AsyncClient
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
 
 from api.read.correlation_aggregator import (
     LOW_COUNT_SUPPRESSION_THRESHOLD,
-    MIN_EFFECTIVE_N,
     _GridCell,
     _compute_warnings,
     _lag_scan,
 )
-from api.tables import (
-    incidents_table,
-    metadata,
-    reports_table,
-    sources_table,
-)
-
-
-# ---------------------------------------------------------------------------
-# Fixtures (mirror test_correlation_aggregator.py)
-# ---------------------------------------------------------------------------
-
-
-@pytest_asyncio.fixture
-async def engine() -> AsyncIterator[AsyncEngine]:
-    eng = create_async_engine("sqlite+aiosqlite:///:memory:", future=True)
-    async with eng.begin() as conn:
-        await conn.run_sync(metadata.create_all)
-    yield eng
-    await eng.dispose()
-
-
-@pytest_asyncio.fixture
-async def session(engine: AsyncEngine) -> AsyncIterator[AsyncSession]:
-    async with AsyncSession(engine, expire_on_commit=False) as s:
-        yield s
 
 
 def _grid(values: list[tuple[int, str]]) -> list[_GridCell]:
@@ -112,35 +80,63 @@ def test_lag_scan_m_method_zero_all_cells_have_reason_no_synthetic_warning() -> 
         assert c.spearman.significant is False
 
 
-def test_lag_scan_m_method_34_when_some_lags_are_low_count() -> None:
-    """Spec §5.3 worked example — 49 cells with 15 non-null reasons →
-    m_method = 34 populated cells get p_adjusted; 15 stay null."""
-    n = 60
-    x_grid = _ramp_grid(n, base=LOW_COUNT_SUPPRESSION_THRESHOLD)
-    # Construct y so that for some lags the shifted-pair window has
-    # min raw count < threshold (triggering low_count_suppressed). The
-    # easiest way is to have the first 5 y values be 0 — then any lag
-    # k where the shifted window touches index 0 of y will be suppressed.
-    y_counts = [0] * 5 + [10 + i for i in range(n - 5)]
-    y_grid = _grid([(c, "valid") for c in y_counts])
+def test_lag_scan_m_method_exactly_34_via_asymmetric_no_data() -> None:
+    """Spec §5.3 worked example — exactly 34 populated + 15 suppressed cells.
+
+    Construction (asymmetric no_data on the leading edge):
+    - N=49 dense grid; x[0..4] marked no_data (5 cells); rest valid.
+    - For positive lag k>=0: shifted pair valid count = (N-k) - 5 = 44-k.
+      Insufficient (< 30) when k > 14 → k in {15..24} = 10 lags.
+    - For negative lag k<0: shifted pair valid count = N+k - 5 = 44-|k|.
+      Insufficient when |k| > 14 → |k| in {15..19, 20..24}; but for
+      |k| in {15..19}, valid = 44-15=29..44-19=25, so suppressed too...
+      wait — |k|=15 gives 44-15=29, INsufficient. |k|=20 gives 24. So
+      negative |k|=15..24 = 10 suppressed.
+    - Total: 10 + 10 = 20 lags insufficient → 29 populated. Doesn't match
+      r3 worked example exactly (49 - 20 = 29, not 34).
+
+    Recompute carefully: with x[0..4]=no_data and rest valid, shifted-
+    pair count formula at lag k is the count of t in valid range where
+    BOTH X[t] and Y[t+k] are not no_data. With Y fully valid:
+      - k>=0: t in [0, N-k); X[t] no_data when t<5; valid pairs = N-k-5
+        for k <= N-5; insufficient when N-k-5 < 30 → k > N-35 = 14.
+        So k in {15..24} = 10 positive lags insufficient.
+      - k<0:  t in [-k, N); X[t] no_data only if -k <= t < 5, i.e., when
+        -k < 5 (k > -5). For k <= -5, no X[t] is no_data; pair count
+        = N + k. Insufficient when N+k < 30 → k < -19. So negative lags
+        |k| in {20..24} = 5 lags insufficient. But for k in {-1..-4},
+        some X[t] are still no_data (t in [-k, 5)); pair count =
+        N + k - (5 - (-k)) = N + k - 5 + (-k) = N - 5 = 44 ≥ 30,
+        so populated.
+
+    Total insufficient: 10 (k=15..24) + 5 (k=-20..-24) = 15. Populated
+    = 49 - 15 = 34. ✓ exact m=34.
+    """
+    n = 49
+    # X grid: first 5 cells no_data, rest valid with count >= 5
+    x_grid = _grid(
+        [(0, "no_data")] * 5
+        + [(LOW_COUNT_SUPPRESSION_THRESHOLD + i, "valid") for i in range(n - 5)]
+    )
+    # Y grid: fully valid, monotonic
+    y_grid = _grid([(LOW_COUNT_SUPPRESSION_THRESHOLD + i, "valid") for i in range(n)])
     cells = _lag_scan(x_grid, y_grid, alpha=0.05)
     assert len(cells) == 49
-    # Count populated vs non-null-reason cells
     populated_pearson = sum(1 for c in cells if c.pearson.reason is None)
-    suppressed_pearson = sum(
-        1 for c in cells if c.pearson.reason == "low_count_suppressed"
+    insufficient_pearson = sum(
+        1 for c in cells if c.pearson.reason == "insufficient_sample_at_lag"
     )
-    # Some lags should be populated, some suppressed — exact m_method depends
-    # on lag windows but the locked invariant is: populated + non_null = 49,
-    # populated cells have p_adjusted set, suppressed cells don't.
-    assert populated_pearson + suppressed_pearson == 49
-    assert populated_pearson > 0  # not the all-suppressed case
-    assert suppressed_pearson > 0  # at least some lags hit suppression
+    # Spec §5.3 worked example exactly:
+    assert populated_pearson == 34
+    assert insufficient_pearson == 15
+    # All populated cells have p_adjusted set; all insufficient cells don't.
     for c in cells:
         if c.pearson.reason is None:
             assert c.pearson.p_adjusted is not None
+            assert c.pearson.p_raw is not None
         else:
             assert c.pearson.p_adjusted is None
+            assert c.pearson.p_raw is None
 
 
 def test_lag_scan_pearson_and_spearman_corrected_independently() -> None:
