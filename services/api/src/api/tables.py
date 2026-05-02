@@ -422,6 +422,28 @@ audit_log_table = sa.Table(
 )
 
 
+# ---------------------------------------------------------------------------
+# correlation_coverage (migration 0009 — Phase 3 Slice 3 D-1)
+# ---------------------------------------------------------------------------
+# See docs/plans/phase-3-slice-3-correlation.md §4.2 + pr28-correlation-be.md §4.
+# Backs the no_data vs zero_count cell-type contract on the dense YYYY-MM grid.
+
+correlation_coverage_table = sa.Table(
+    "correlation_coverage",
+    metadata,
+    sa.Column("series_root", sa.Text(), nullable=False),
+    sa.Column("bucket", sa.Text(), nullable=False),
+    sa.Column("status", sa.Text(), nullable=False),
+    sa.PrimaryKeyConstraint(
+        "series_root", "bucket", name="pk_correlation_coverage"
+    ),
+    sa.CheckConstraint(
+        "status IN ('valid', 'no_data')",
+        name="correlation_coverage_status_allowed",
+    ),
+)
+
+
 __all__ = [
     "audit_log_table",
     "codenames_table",

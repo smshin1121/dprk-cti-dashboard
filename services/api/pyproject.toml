@@ -22,6 +22,14 @@ dependencies = [
   "opentelemetry-instrumentation-sqlalchemy>=0.48b0",
   "opentelemetry-instrumentation-httpx>=0.48b0",
   "slowapi>=0.1.9",
+  # Phase 3 Slice 3 D-1 correlation analysis (PR #28).
+  # Pinned floors per docs/plans/phase-3-slice-3-correlation.md §11 PR A:
+  #   scipy>=1.11        — pearsonr/spearmanr return SignificanceResult dataclass
+  #   statsmodels>=0.14  — tsa.stattools.adfuller stable
+  #   numpy>=1.24        — required by both, pinned for reproducibility
+  "scipy>=1.11,<2",
+  "statsmodels>=0.14,<0.16",
+  "numpy>=1.24,<3",
 ]
 
 [build-system]
