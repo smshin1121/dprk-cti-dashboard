@@ -48,104 +48,27 @@ round-trip cleanly through the CI reversibility step.
 
 from __future__ import annotations
 
-import datetime as dt
+import os
+import sys
 
 from alembic import op
 import sqlalchemy as sa
+
+# Match env.py sys.path convention — the migrations dir is already on
+# the path; we extend it to versions/ so the seed helper is importable
+# without requiring versions/__init__.py (Alembic loads each migration
+# file by path, not as a package).
+_VERSIONS_DIR = os.path.dirname(os.path.abspath(__file__))
+if _VERSIONS_DIR not in sys.path:
+    sys.path.insert(0, _VERSIONS_DIR)
+
+from tools_correlation_seed import seed_correlation_no_data  # noqa: E402
 
 
 revision = "0009_correlation_coverage"
 down_revision = "0008_staging_decision_reason"
 branch_labels = None
 depends_on = None
-
-
-_BASELINE_FLOOR_MONTH = "1900-01"
-_FALLBACK_EARLIEST_MONTH = "2009-01"  # used when source tables are empty
-
-
-def _coerce_to_year_month(value: object) -> tuple[int, int] | None:
-    """Coerce a ``MIN(<date>)`` query result into ``(year, month)``.
-
-    PG returns a ``date``/``datetime`` object; sqlite typically returns a
-    string in ISO-8601 format because raw ``sa.text`` queries do not
-    bind to a typed column. Handle both — and ``None`` for empty tables.
-    """
-    if value is None:
-        return None
-    if isinstance(value, (dt.datetime, dt.date)):
-        return (value.year, value.month)
-    if isinstance(value, str):
-        try:
-            parsed = dt.date.fromisoformat(value[:10])
-        except ValueError:
-            return None
-        return (parsed.year, parsed.month)
-    return None
-
-
-def _seed_no_data_for_root(
-    bind: sa.engine.Connection,
-    *,
-    series_root: str,
-    source_table: str,
-    source_column: str,
-) -> None:
-    """Compute earliest source-table date and insert no_data rows for
-    months strictly before that earliest month. The earliest month is
-    inclusive; we mark only the prior months as no_data.
-
-    Dialect-portable: PG and sqlite both support the date arithmetic via
-    a Python-side bucket generator, so the migration computes the month
-    range in Python and issues parameterized INSERTs. This avoids
-    Postgres-only generate_series. The earliest-date result type
-    differs between dialects (PG returns date, sqlite returns string)
-    so ``_coerce_to_year_month`` normalizes both shapes.
-    """
-    earliest_row = bind.execute(
-        sa.text(
-            f"SELECT MIN({source_column}) AS earliest FROM {source_table}"  # noqa: S608
-        )
-    ).fetchone()
-    earliest_value = earliest_row.earliest if earliest_row else None
-
-    coerced = _coerce_to_year_month(earliest_value)
-    if coerced is None:
-        earliest_year, earliest_month = (
-            int(part) for part in _FALLBACK_EARLIEST_MONTH.split("-")
-        )
-    else:
-        earliest_year, earliest_month = coerced
-
-    floor_year, floor_month = (
-        int(part) for part in _BASELINE_FLOOR_MONTH.split("-")
-    )
-
-    rows: list[dict[str, str]] = []
-    year, month = floor_year, floor_month
-    while (year, month) < (earliest_year, earliest_month):
-        rows.append(
-            {
-                "series_root": series_root,
-                "bucket": f"{year:04d}-{month:02d}",
-                "status": "no_data",
-            }
-        )
-        month += 1
-        if month > 12:
-            year += 1
-            month = 1
-
-    if not rows:
-        return
-
-    bind.execute(
-        sa.text(
-            "INSERT INTO correlation_coverage (series_root, bucket, status) "
-            "VALUES (:series_root, :bucket, :status)"
-        ),
-        rows,
-    )
 
 
 def upgrade() -> None:
@@ -172,13 +95,13 @@ def upgrade() -> None:
 
     bind = op.get_bind()
 
-    _seed_no_data_for_root(
+    seed_correlation_no_data(
         bind,
         series_root="reports.published",
         source_table="reports",
         source_column="published",
     )
-    _seed_no_data_for_root(
+    seed_correlation_no_data(
         bind,
         series_root="incidents.reported",
         source_table="incidents",
