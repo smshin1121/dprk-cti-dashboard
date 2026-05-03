@@ -155,6 +155,7 @@ describe('DashboardHero', () => {
     expect(label.className).toMatch(/\btracking-caption\b/)
     expect(label.className).toMatch(/\buppercase\b/)
     expect(label.className).toMatch(/\bfont-cta\b/)
+    expect(label.className).toMatch(/(?:^|\s)text-\[10px\](?:\s|$)/)
   })
 
   it('pins display-md vocabulary on the sub-headline', () => {
@@ -166,9 +167,12 @@ describe('DashboardHero', () => {
     )
     const sub = screen.getByTestId('dashboard-hero-subheading')
     // display-md per DESIGN.md typography.display-md: font-display
-    // (500) NEVER bold + tracking-display.
+    // (500) NEVER bold + tracking-display + text-2xl (24px on the
+    // Tailwind ladder — closest to display-md 26px without an
+    // arbitrary-value class).
     expect(sub.className).toMatch(/\bfont-display\b/)
     expect(sub.className).toMatch(/\btracking-display\b/)
+    expect(sub.className).toMatch(/\btext-2xl\b/)
     // Negative guard — Ferrari display NEVER bold.
     expect(sub.className).not.toMatch(/\bfont-bold\b/)
     expect(sub.className).not.toMatch(/\bfont-semibold\b/)
