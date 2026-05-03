@@ -20,11 +20,15 @@
  * canvas-elevated (#303030). All chart series colors below MUST
  * pass WCAG 1.4.11's 3:1 contrast floor against canvas-elevated
  * (the harder of the two surfaces) so chart marks stay legible.
- * Translucent fills (e.g. IncidentsStackedArea fillOpacity 0.85)
+ * Translucent fills (e.g. IncidentsStackedArea fillOpacity 0.90)
  * mix with the underlying surface — the per-color contrast values
- * below are computed against the OPAQUE color; consumers using
- * fillOpacity must bias toward the high-contrast slots (0-4) and
- * keep alpha >= 0.80 to preserve the floor.
+ * below are computed against the OPAQUE color. Rose (slot 3) is
+ * the worst-case slot for alpha blending: at fillOpacity 0.80 it
+ * computes to 2.81:1 (FAIL), at the 0.85046 inflection point it
+ * just touches 3.0:1, at 0.90 it computes to 3.19:1 (PASS with
+ * margin). Consumers using fillOpacity MUST set alpha >= 0.90 to
+ * preserve the floor across all 9 slots; lower alphas crash rose
+ * and other warm slots below WCAG 3:1.
  *
  * Tol Muted's canonical hex set was the reference (Paul Tol §SRON
  * Qualitative > Muted, https://personal.sron.nl/~pault/), but
