@@ -48,7 +48,7 @@ export function ReportFeed(): JSX.Element {
         data-testid="report-feed-loading"
         role="status"
         aria-busy="true"
-        className="h-64 animate-pulse rounded border border-border-card bg-surface"
+        className="editorial-band-light h-64 animate-pulse rounded-none border border-border-card bg-surface"
       />
     )
   }
@@ -58,7 +58,7 @@ export function ReportFeed(): JSX.Element {
       <div
         data-testid="report-feed-error"
         role="alert"
-        className="flex h-64 flex-col items-center justify-center gap-3 rounded border border-border-card bg-surface p-6"
+        className="flex h-64 flex-col items-center justify-center gap-3 rounded-none border border-border-card bg-surface p-6"
       >
         <p className="text-sm text-ink-muted">{t('dashboard.error')}</p>
         <button
@@ -66,8 +66,8 @@ export function ReportFeed(): JSX.Element {
           data-testid="report-feed-retry"
           onClick={() => void refetch()}
           className={cn(
-            'rounded border border-border-card bg-app px-3 py-1.5 text-xs text-ink',
-            'hover:border-signal focus:outline-none focus:ring-2 focus:ring-ring',
+            'rounded-none border border-border-card bg-app px-3 py-1.5 text-xs font-cta uppercase tracking-cta text-ink',
+            'hover:border-border-strong focus:outline-none focus:ring-2 focus:ring-ring',
           )}
         >
           {t('list.retry')}
@@ -82,7 +82,7 @@ export function ReportFeed(): JSX.Element {
     return (
       <section
         data-testid="report-feed-empty"
-        className="flex h-64 flex-col items-center justify-center gap-2 rounded border border-border-card bg-surface p-6"
+        className="editorial-band-light flex h-64 flex-col items-center justify-center gap-2 rounded-none border border-border-card bg-surface p-6"
       >
         <h3 className="text-sm font-semibold text-ink">
           {t('dashboard.reportFeed.title')}
@@ -96,7 +96,7 @@ export function ReportFeed(): JSX.Element {
     <section
       data-testid="report-feed"
       aria-labelledby="report-feed-heading"
-      className="rounded border border-border-card bg-surface p-4"
+      className="editorial-band-light rounded-none border border-border-card bg-surface p-4"
     >
       <h3
         id="report-feed-heading"

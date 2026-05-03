@@ -63,7 +63,7 @@ export function ListTable<T>({
   return (
     <div
       data-testid="list-table-populated"
-      className="overflow-x-auto rounded-none border border-border-card bg-surface"
+      className="editorial-band-light overflow-x-auto rounded-none border border-border-card bg-surface"
     >
       <table className="w-full text-sm text-ink">
         <caption className="sr-only">{caption}</caption>
@@ -114,7 +114,7 @@ function LoadingBody<T>({ caption, columns }: LoadingBodyProps<T>): JSX.Element 
       data-testid="list-table-loading"
       aria-busy="true"
       aria-label={caption}
-      className="overflow-hidden rounded-none border border-border-card bg-surface"
+      className="editorial-band-light overflow-hidden rounded-none border border-border-card bg-surface"
     >
       {/* Skeleton rows — 5 lines, enough to suggest scale but not
           claim a real row count. */}
@@ -189,7 +189,7 @@ function EmptyBody<T>({ caption, columns: _columns }: EmptyBodyProps<T>): JSX.El
     <div
       data-testid="list-table-empty"
       aria-label={caption}
-      className="rounded-none border border-border-card bg-surface p-6 text-center text-sm text-ink-muted"
+      className="editorial-band-light rounded-none border border-border-card bg-surface p-6 text-center text-sm text-ink-muted"
     >
       No rows match the current filters.
     </div>

@@ -105,7 +105,7 @@ export function ReportTimeline({
     return (
       <div
         data-testid="reports-timeline-empty"
-        className="rounded-none border border-border-card bg-surface p-6 text-center text-sm text-ink-muted"
+        className="editorial-band-light rounded-none border border-border-card bg-surface p-6 text-center text-sm text-ink-muted"
       >
         No reports match the current filters.
       </div>
@@ -117,7 +117,7 @@ export function ReportTimeline({
     <ol
       data-testid="reports-timeline"
       data-state="populated"
-      className="flex flex-col gap-8"
+      className="editorial-band-light flex flex-col gap-8 bg-app p-6"
     >
       {months.map((monthGroup) => (
         <li
@@ -185,7 +185,7 @@ function TimelineSkeleton(): JSX.Element {
     <ol
       data-testid="reports-timeline-skeleton"
       aria-busy="true"
-      className="flex flex-col gap-6"
+      className="editorial-band-light flex flex-col gap-6 bg-app p-6"
     >
       {[0, 1].map((g) => (
         <li key={g}>

@@ -155,6 +155,10 @@ export default {
         // (DESIGN.md typography.caption-uppercase — section labels,
         // badges, status pills).
         caption: '0.1em',
+        // -1.6px tracking on number-display at 80px base = -0.02em
+        // (DESIGN.md typography.number-display + display-mega — KPI
+        // spec-cells, race-position cells, hero callouts).
+        'number-display': '-0.02em',
       },
       keyframes: {
         'accordion-down': {
