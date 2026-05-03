@@ -44,6 +44,7 @@
 import { AlertsDrawer } from '../features/dashboard/AlertsDrawer'
 import { AttackHeatmap } from '../features/dashboard/AttackHeatmap'
 import { ContributorsList } from '../features/dashboard/ContributorsList'
+import { DashboardHero } from '../features/dashboard/DashboardHero'
 import { GroupsMiniList } from '../features/dashboard/GroupsMiniList'
 import {
   MotivationStackedArea,
@@ -68,6 +69,12 @@ export function DashboardPage(): JSX.Element {
       <h1 id="dashboard-heading" className="sr-only">
         Dashboard
       </h1>
+
+      {/* Ferrari L4 hero — Option H1 (plan §6.1, commit 8). Editorial
+          number-display callout sized to the canvas above the KPI
+          strip. Shares the useDashboardSummary cache slot with
+          KPIStrip + 5 sibling widgets — no extra fetch. */}
+      <DashboardHero />
 
       {/* [B] KPI strip — full width */}
       <KPIStrip />

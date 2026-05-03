@@ -103,6 +103,14 @@
       "empty": "현재 알림이 없습니다.",
       "phaseNote": "Phase 4 예정 — 실시간 알림 연동 후 제공됩니다.",
       "close": "닫기"
+    },
+    "hero": {
+      "label": "현재 위협 노출",
+      "subheading": "DPRK CTI — 현재 위협 표면",
+      "ctaPrimary": "사건 둘러보기",
+      "ctaOutline": "보고서 둘러보기",
+      "loading": "사건 수 불러오는 중",
+      "populatedAria": "총 사건 수 {{count}}건"
     }
   }
 }

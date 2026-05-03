@@ -103,6 +103,14 @@
       "empty": "No alerts right now.",
       "phaseNote": "Phase 4 preview — requires real-time wiring.",
       "close": "Close"
+    },
+    "hero": {
+      "label": "Current Threat Surface",
+      "subheading": "DPRK CTI — current threat surface",
+      "ctaPrimary": "Browse incidents",
+      "ctaOutline": "Browse reports",
+      "loading": "Loading incident count",
+      "populatedAria": "Total incidents: {{count}}"
     }
   }
 }
