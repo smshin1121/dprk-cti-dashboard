@@ -28,6 +28,7 @@ import { useTranslation } from 'react-i18next'
 
 import { useGeo } from '../analytics/useGeo'
 import { cn } from '../../lib/utils'
+import { chartSeriesColor } from './_palette'
 
 const TOP_N = 10
 
@@ -41,7 +42,7 @@ export function LocationsRanked(): JSX.Element {
         data-testid="locations-ranked-loading"
         role="status"
         aria-busy="true"
-        className="h-64 animate-pulse rounded border border-border-card bg-surface"
+        className="h-64 animate-pulse rounded-none border border-border-card bg-surface"
       />
     )
   }
@@ -51,7 +52,7 @@ export function LocationsRanked(): JSX.Element {
       <div
         data-testid="locations-ranked-error"
         role="alert"
-        className="flex h-64 flex-col items-center justify-center gap-3 rounded border border-border-card bg-surface p-6"
+        className="flex h-64 flex-col items-center justify-center gap-3 rounded-none border border-border-card bg-surface p-6"
       >
         <p className="text-sm text-ink-muted">{t('dashboard.error')}</p>
         <button
@@ -59,8 +60,8 @@ export function LocationsRanked(): JSX.Element {
           data-testid="locations-ranked-retry"
           onClick={() => void refetch()}
           className={cn(
-            'rounded border border-border-card bg-app px-3 py-1.5 text-xs text-ink',
-            'hover:border-signal focus:outline-none focus:ring-2 focus:ring-ring',
+            'rounded-none border border-border-card bg-app px-3 py-1.5 text-xs font-cta uppercase tracking-cta text-ink',
+            'hover:border-border-strong focus:outline-none focus:ring-2 focus:ring-ring',
           )}
         >
           {t('list.retry')}
@@ -76,7 +77,7 @@ export function LocationsRanked(): JSX.Element {
     return (
       <section
         data-testid="locations-ranked-empty"
-        className="flex h-64 flex-col items-center justify-center gap-2 rounded border border-border-card bg-surface p-6"
+        className="flex h-64 flex-col items-center justify-center gap-2 rounded-none border border-border-card bg-surface p-6"
       >
         <h3 className="text-sm font-semibold text-ink">
           {t('dashboard.locationsRanked.title')}
@@ -96,7 +97,7 @@ export function LocationsRanked(): JSX.Element {
     <section
       data-testid="locations-ranked"
       aria-labelledby="locations-ranked-heading"
-      className="rounded border border-border-card bg-surface p-4"
+      className="rounded-none border border-border-card bg-surface p-4"
     >
       <h3
         id="locations-ranked-heading"
@@ -127,13 +128,16 @@ export function LocationsRanked(): JSX.Element {
                   </span>
                 </span>
               </div>
-              <div className="mt-1 h-1.5 w-full overflow-hidden rounded bg-app">
+              <div className="mt-1 h-1.5 w-full overflow-hidden rounded-none bg-app">
                 <div
                   data-testid={`locations-ranked-bar-${country.iso2}`}
                   role="presentation"
                   aria-hidden="true"
-                  className="h-full bg-signal"
-                  style={{ width: `${ratio}%` }}
+                  className="h-full"
+                  style={{
+                    width: `${ratio}%`,
+                    backgroundColor: chartSeriesColor(0),
+                  }}
                 />
               </div>
             </li>

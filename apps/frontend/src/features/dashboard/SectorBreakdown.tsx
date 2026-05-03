@@ -28,6 +28,7 @@ import { useTranslation } from 'react-i18next'
 
 import { cn } from '../../lib/utils'
 import { useDashboardSummary } from './useDashboardSummary'
+import { chartSeriesColor } from './_palette'
 
 export function SectorBreakdown(): JSX.Element {
   const { t } = useTranslation()
@@ -39,7 +40,7 @@ export function SectorBreakdown(): JSX.Element {
         data-testid="sector-breakdown-loading"
         role="status"
         aria-busy="true"
-        className="h-64 animate-pulse rounded border border-border-card bg-surface"
+        className="h-64 animate-pulse rounded-none border border-border-card bg-surface"
       />
     )
   }
@@ -49,7 +50,7 @@ export function SectorBreakdown(): JSX.Element {
       <div
         data-testid="sector-breakdown-error"
         role="alert"
-        className="flex h-64 flex-col items-center justify-center gap-3 rounded border border-border-card bg-surface p-6"
+        className="flex h-64 flex-col items-center justify-center gap-3 rounded-none border border-border-card bg-surface p-6"
       >
         <p className="text-sm text-ink-muted">{t('dashboard.error')}</p>
         <button
@@ -57,8 +58,8 @@ export function SectorBreakdown(): JSX.Element {
           data-testid="sector-breakdown-retry"
           onClick={() => void refetch()}
           className={cn(
-            'rounded border border-border-card bg-app px-3 py-1.5 text-xs text-ink',
-            'hover:border-signal focus:outline-none focus:ring-2 focus:ring-ring',
+            'rounded-none border border-border-card bg-app px-3 py-1.5 text-xs font-cta uppercase tracking-cta text-ink',
+            'hover:border-border-strong focus:outline-none focus:ring-2 focus:ring-ring',
           )}
         >
           {t('list.retry')}
@@ -73,7 +74,7 @@ export function SectorBreakdown(): JSX.Element {
     return (
       <section
         data-testid="sector-breakdown-empty"
-        className="flex h-64 flex-col items-center justify-center gap-2 rounded border border-border-card bg-surface p-6"
+        className="flex h-64 flex-col items-center justify-center gap-2 rounded-none border border-border-card bg-surface p-6"
       >
         <h3 className="text-sm font-semibold text-ink">
           {t('dashboard.sectorBreakdown.title')}
@@ -95,7 +96,7 @@ export function SectorBreakdown(): JSX.Element {
     <section
       data-testid="sector-breakdown"
       aria-labelledby="sector-breakdown-heading"
-      className="rounded border border-border-card bg-surface p-4"
+      className="rounded-none border border-border-card bg-surface p-4"
     >
       <h3
         id="sector-breakdown-heading"
@@ -125,13 +126,16 @@ export function SectorBreakdown(): JSX.Element {
                   {sector.count}
                 </span>
               </div>
-              <div className="mt-1 h-1.5 w-full overflow-hidden rounded bg-app">
+              <div className="mt-1 h-1.5 w-full overflow-hidden rounded-none bg-app">
                 <div
                   data-testid={`sector-breakdown-bar-${sector.sector_code}`}
                   role="presentation"
                   aria-hidden="true"
-                  className="h-full bg-signal"
-                  style={{ width: `${ratio}%` }}
+                  className="h-full"
+                  style={{
+                    width: `${ratio}%`,
+                    backgroundColor: chartSeriesColor(0),
+                  }}
                 />
               </div>
             </li>

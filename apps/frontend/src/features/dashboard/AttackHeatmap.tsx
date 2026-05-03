@@ -45,13 +45,25 @@ import { useFilterStore } from '../../stores/filters'
 export const DEFAULT_TOP_N = 30
 export const EXPANDED_TOP_N = 200
 
-const CELL_FILL_NO_DATA = 'hsl(210 10% 90%)'
+// Sequential ramp from canvas-elevated (low count) to Rosso Corsa
+// (high count). The ramp is the one place the heatmap uses Rosso
+// Corsa — it signals "highest tactic activity" which qualifies as a
+// priority highlight per plan §0.1 invariant 3 + DESIGN.md §Don'ts
+// (Rosso Corsa scarce; CTI domain mapping to "race-position
+// highlights").
+const CELL_FILL_NO_DATA = '#3a3a3a' // canvas-elevated +slight lift
+const CELL_FILL_HIGH = '#da291c' // Rosso Corsa (top intensity)
 
 function cellFill(count: number, maxCount: number): string {
   if (maxCount <= 0 || count <= 0) return CELL_FILL_NO_DATA
   const t = Math.min(1, count / maxCount)
-  const lightness = Math.round(85 - 55 * t)
-  return `hsl(350 70% ${lightness}%)`
+  // Linear interpolation in sRGB between #3a3a3a (no-data) and
+  // #da291c (Rosso Corsa). Good-enough perceptual ramp for a
+  // qualitative heatmap — no need for OKLCH at this density.
+  const r = Math.round(0x3a + (0xda - 0x3a) * t)
+  const g = Math.round(0x3a + (0x29 - 0x3a) * t)
+  const b = Math.round(0x3a + (0x1c - 0x3a) * t)
+  return `rgb(${r} ${g} ${b})`
 }
 
 function Skeleton(): JSX.Element {
@@ -60,7 +72,7 @@ function Skeleton(): JSX.Element {
       data-testid="attack-heatmap-loading"
       role="status"
       aria-busy="true"
-      className="h-64 animate-pulse rounded border border-border-card bg-surface"
+      className="h-64 animate-pulse rounded-none border border-border-card bg-surface"
     />
   )
 }
@@ -76,7 +88,7 @@ function ErrorCard({ onRetry, errorLabel, retryLabel }: ErrorCardProps): JSX.Ele
     <div
       data-testid="attack-heatmap-error"
       role="alert"
-      className="flex h-64 flex-col items-center justify-center gap-3 rounded border border-border-card bg-surface p-6"
+      className="flex h-64 flex-col items-center justify-center gap-3 rounded-none border border-border-card bg-surface p-6"
     >
       <p className="text-sm text-ink-muted">{errorLabel}</p>
       <button
@@ -84,8 +96,8 @@ function ErrorCard({ onRetry, errorLabel, retryLabel }: ErrorCardProps): JSX.Ele
         data-testid="attack-heatmap-retry"
         onClick={onRetry}
         className={cn(
-          'rounded border border-border-card bg-app px-3 py-1.5 text-xs text-ink',
-          'hover:border-signal focus:outline-none focus:ring-2 focus:ring-ring',
+          'rounded-none border border-border-card bg-app px-3 py-1.5 text-xs font-cta uppercase tracking-cta text-ink',
+          'hover:border-border-strong focus:outline-none focus:ring-2 focus:ring-ring',
         )}
       >
         {retryLabel}
@@ -135,7 +147,7 @@ export function AttackHeatmap(): JSX.Element {
       <section
         data-testid="attack-heatmap-empty"
         aria-labelledby="attack-heatmap-empty-heading"
-        className="flex h-64 flex-col items-center justify-center gap-3 rounded border border-border-card bg-surface p-6"
+        className="flex h-64 flex-col items-center justify-center gap-3 rounded-none border border-border-card bg-surface p-6"
       >
         <h3
           id="attack-heatmap-empty-heading"
@@ -151,8 +163,8 @@ export function AttackHeatmap(): JSX.Element {
           data-testid="attack-heatmap-empty-clear-filters"
           onClick={clearFilters}
           className={cn(
-            'rounded border border-signal bg-signal/10 px-3 py-1.5 text-xs font-medium text-signal',
-            'hover:bg-signal/20 focus:outline-none focus:ring-2 focus:ring-ring',
+            'rounded-none border border-border-card bg-app px-3 py-1.5 text-xs font-cta uppercase tracking-cta text-ink',
+            'hover:border-border-strong focus:outline-none focus:ring-2 focus:ring-ring',
           )}
         >
           {t('dashboard.attackHeatmap.clearFilters')}
@@ -166,7 +178,7 @@ export function AttackHeatmap(): JSX.Element {
       data-testid="attack-heatmap"
       aria-labelledby="attack-heatmap-heading"
       data-top-n={topN}
-      className="rounded border border-border-card bg-surface p-4"
+      className="rounded-none border border-border-card bg-surface p-4"
     >
       <header className="mb-3 flex items-center justify-between">
         <h3
@@ -180,8 +192,8 @@ export function AttackHeatmap(): JSX.Element {
           data-testid="attack-heatmap-toggle"
           onClick={() => setExpanded((e) => !e)}
           className={cn(
-            'rounded border border-border-card bg-app px-2 py-1 text-[10px] uppercase tracking-wider text-ink-muted',
-            'hover:border-signal hover:text-ink focus:outline-none focus:ring-2 focus:ring-ring',
+            'rounded-none border border-border-card bg-app px-2 py-1 text-[10px] font-cta uppercase tracking-cta text-ink-muted',
+            'hover:border-border-strong hover:text-ink focus:outline-none focus:ring-2 focus:ring-ring',
           )}
         >
           {expanded
@@ -200,7 +212,7 @@ export function AttackHeatmap(): JSX.Element {
           >
             <div
               role="rowheader"
-              className="w-24 shrink-0 rounded bg-app px-2 py-1.5 text-[11px] font-semibold text-ink"
+              className="w-24 shrink-0 rounded-none bg-app px-2 py-1.5 text-[11px] font-cta uppercase tracking-caption text-ink"
             >
               {row.tactic_id}
             </div>
@@ -212,7 +224,7 @@ export function AttackHeatmap(): JSX.Element {
                   data-technique-id={tech.technique_id}
                   data-count={tech.count}
                   title={`${tech.technique_id}: ${tech.count}`}
-                  className="flex min-w-[68px] items-center justify-between rounded border border-border-card px-2 py-1 text-[11px]"
+                  className="flex min-w-[68px] items-center justify-between rounded-none border border-border-card px-2 py-1 text-[11px]"
                   style={{ backgroundColor: cellFill(tech.count, maxCount) }}
                 >
                   <span className="font-mono text-ink">{tech.technique_id}</span>

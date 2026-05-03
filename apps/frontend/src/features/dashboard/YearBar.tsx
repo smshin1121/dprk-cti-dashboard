@@ -32,6 +32,7 @@ import { useTranslation } from 'react-i18next'
 
 import { cn } from '../../lib/utils'
 import { useDashboardSummary } from './useDashboardSummary'
+import { CHART_CHROME, chartSeriesColor } from './_palette'
 
 const CHART_WIDTH = 480
 const CHART_HEIGHT = 240
@@ -43,7 +44,7 @@ function YearTooltip({ active, payload, label }: YearTooltipProps): JSX.Element 
   return (
     <div
       data-testid="year-bar-tooltip"
-      className="rounded border border-border-card bg-surface px-2 py-1 text-xs text-ink shadow"
+      className="rounded-none border border-border-card bg-surface px-2 py-1 text-xs text-ink shadow"
     >
       <span className="font-semibold">{String(label ?? '')}</span>:{' '}
       <span>{String(payload[0].value ?? 0)}</span>
@@ -69,7 +70,7 @@ export function YearBar(): JSX.Element {
         data-testid="year-bar-loading"
         role="status"
         aria-busy="true"
-        className="h-64 animate-pulse rounded border border-border-card bg-surface"
+        className="h-64 animate-pulse rounded-none border border-border-card bg-surface"
       />
     )
   }
@@ -79,7 +80,7 @@ export function YearBar(): JSX.Element {
       <div
         data-testid="year-bar-error"
         role="alert"
-        className="flex h-64 flex-col items-center justify-center gap-3 rounded border border-border-card bg-surface p-6"
+        className="flex h-64 flex-col items-center justify-center gap-3 rounded-none border border-border-card bg-surface p-6"
       >
         <p className="text-sm text-ink-muted">{t('dashboard.error')}</p>
         <button
@@ -87,8 +88,8 @@ export function YearBar(): JSX.Element {
           data-testid="year-bar-retry"
           onClick={() => void refetch()}
           className={cn(
-            'rounded border border-border-card bg-app px-3 py-1.5 text-xs text-ink',
-            'hover:border-signal focus:outline-none focus:ring-2 focus:ring-ring',
+            'rounded-none border border-border-card bg-app px-3 py-1.5 text-xs font-cta uppercase tracking-cta text-ink',
+            'hover:border-border-strong focus:outline-none focus:ring-2 focus:ring-ring',
           )}
         >
           {t('list.retry')}
@@ -103,7 +104,7 @@ export function YearBar(): JSX.Element {
     return (
       <section
         data-testid="year-bar-empty"
-        className="flex h-64 flex-col items-center justify-center gap-2 rounded border border-border-card bg-surface p-6"
+        className="flex h-64 flex-col items-center justify-center gap-2 rounded-none border border-border-card bg-surface p-6"
       >
         <h3 className="text-sm font-semibold text-ink">
           {t('dashboard.yearBar.title')}
@@ -117,7 +118,7 @@ export function YearBar(): JSX.Element {
     <section
       data-testid="year-bar"
       aria-labelledby="year-bar-heading"
-      className="rounded border border-border-card bg-surface p-4"
+      className="rounded-none border border-border-card bg-surface p-4"
     >
       <h3
         id="year-bar-heading"
@@ -131,22 +132,25 @@ export function YearBar(): JSX.Element {
         data={chartData}
         margin={{ top: 8, right: 16, bottom: 20, left: 0 }}
       >
-        <CartesianGrid strokeDasharray="3 3" stroke="hsl(210 10% 85%)" />
+        <CartesianGrid strokeDasharray="3 3" stroke={CHART_CHROME.gridStroke} />
         <XAxis
           dataKey="year"
-          tick={{ fontSize: 11, fill: 'hsl(210 15% 40%)' }}
+          tick={{ fontSize: 11, fill: CHART_CHROME.axisTickFill }}
           tickLine={false}
         />
         <YAxis
-          tick={{ fontSize: 11, fill: 'hsl(210 15% 40%)' }}
+          tick={{ fontSize: 11, fill: CHART_CHROME.axisTickFill }}
           tickLine={false}
           axisLine={false}
         />
-        <Tooltip content={<YearTooltip />} cursor={{ fill: 'hsl(210 10% 95%)' }} />
+        <Tooltip
+          content={<YearTooltip />}
+          cursor={{ fill: 'rgba(255,255,255,0.06)' }}
+        />
         <Bar
           dataKey="count"
-          fill="hsl(210 70% 50%)"
-          radius={[4, 4, 0, 0]}
+          fill={chartSeriesColor(0)}
+          radius={[0, 0, 0, 0]}
           isAnimationActive={false}
           data-testid="year-bar-series"
         />
