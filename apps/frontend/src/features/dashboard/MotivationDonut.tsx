@@ -34,17 +34,7 @@ import { useTranslation } from 'react-i18next'
 
 import { cn } from '../../lib/utils'
 import { useDashboardSummary } from './useDashboardSummary'
-
-// Six colors — more than a realistic top-motivations set, so we
-// rotate safely. HSL rotation keeps them distinguishable.
-const COLORS = [
-  'hsl(210 70% 50%)',
-  'hsl(340 70% 55%)',
-  'hsl(150 65% 45%)',
-  'hsl(40 80% 50%)',
-  'hsl(280 60% 55%)',
-  'hsl(20 80% 55%)',
-]
+import { chartSeriesColor } from './_palette'
 
 const CHART_SIZE = 240
 const INNER_RADIUS = 60
@@ -58,7 +48,7 @@ function DonutTooltip({ active, payload }: DonutTooltipProps): JSX.Element | nul
   return (
     <div
       data-testid="motivation-donut-tooltip"
-      className="rounded border border-border-card bg-surface px-2 py-1 text-xs text-ink shadow"
+      className="rounded-none border border-border-card bg-surface px-2 py-1 text-xs text-ink shadow"
     >
       <span className="font-semibold">{String(item.name ?? '')}</span>:{' '}
       <span>{String(item.value ?? 0)}</span>
@@ -76,7 +66,7 @@ export function MotivationDonut(): JSX.Element {
         data-testid="motivation-donut-loading"
         role="status"
         aria-busy="true"
-        className="h-64 animate-pulse rounded border border-border-card bg-surface"
+        className="h-64 animate-pulse rounded-none border border-border-card bg-surface"
       />
     )
   }
@@ -86,7 +76,7 @@ export function MotivationDonut(): JSX.Element {
       <div
         data-testid="motivation-donut-error"
         role="alert"
-        className="flex h-64 flex-col items-center justify-center gap-3 rounded border border-border-card bg-surface p-6"
+        className="flex h-64 flex-col items-center justify-center gap-3 rounded-none border border-border-card bg-surface p-6"
       >
         <p className="text-sm text-ink-muted">{t('dashboard.error')}</p>
         <button
@@ -94,8 +84,8 @@ export function MotivationDonut(): JSX.Element {
           data-testid="motivation-donut-retry"
           onClick={() => void refetch()}
           className={cn(
-            'rounded border border-border-card bg-app px-3 py-1.5 text-xs text-ink',
-            'hover:border-signal focus:outline-none focus:ring-2 focus:ring-signal',
+            'rounded-none border border-border-card bg-app px-3 py-1.5 text-xs font-cta uppercase tracking-cta text-ink',
+            'hover:border-border-strong focus:outline-none focus:ring-2 focus:ring-ring',
           )}
         >
           {t('list.retry')}
@@ -111,7 +101,7 @@ export function MotivationDonut(): JSX.Element {
     return (
       <section
         data-testid="motivation-donut-empty"
-        className="flex h-64 flex-col items-center justify-center gap-2 rounded border border-border-card bg-surface p-6"
+        className="flex h-64 flex-col items-center justify-center gap-2 rounded-none border border-border-card bg-surface p-6"
       >
         <h3 className="text-sm font-semibold text-ink">
           {t('dashboard.motivationDonut.title')}
@@ -127,7 +117,7 @@ export function MotivationDonut(): JSX.Element {
     <section
       data-testid="motivation-donut"
       aria-labelledby="motivation-donut-heading"
-      className="rounded border border-border-card bg-surface p-4"
+      className="rounded-none border border-border-card bg-surface p-4"
     >
       <h3
         id="motivation-donut-heading"
@@ -150,7 +140,7 @@ export function MotivationDonut(): JSX.Element {
               data-testid={`motivation-donut-slice-${item.motivation}`}
               data-motivation={item.motivation}
               data-count={item.count}
-              fill={COLORS[index % COLORS.length]}
+              fill={chartSeriesColor(index)}
             />
           ))}
         </Pie>

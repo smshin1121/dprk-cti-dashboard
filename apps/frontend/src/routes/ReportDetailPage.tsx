@@ -47,7 +47,7 @@ export function ReportDetailPage(): JSX.Element {
         data-testid="report-detail-loading"
         role="status"
         aria-busy="true"
-        className="m-6 h-64 animate-pulse rounded-lg border border-border-card bg-surface"
+        className="m-6 h-64 animate-pulse rounded-none border border-border-card bg-surface"
       />
     )
   }
@@ -70,7 +70,7 @@ export function ReportDetailPage(): JSX.Element {
       data-testid="report-detail-page"
       data-report-id={report.id}
       aria-labelledby="report-detail-heading"
-      className="flex flex-col gap-6 p-6"
+      className="editorial-band-light flex flex-col gap-6 bg-app p-6 text-ink"
     >
       <header className="flex flex-col gap-2">
         <h1
@@ -145,7 +145,7 @@ export function ReportDetailPage(): JSX.Element {
         <section
           data-testid="report-detail-linked-incidents"
           aria-labelledby="linked-incidents-heading"
-          className="rounded border border-border-card bg-surface p-4"
+          className="rounded-none border border-border-card bg-surface p-4"
         >
           <h2
             id="linked-incidents-heading"
@@ -209,7 +209,7 @@ export function NotFoundPanel({ testId, kind }: NotFoundPanelProps): JSX.Element
   return (
     <section
       data-testid={testId}
-      className="m-6 rounded-lg border border-border-card bg-surface p-5"
+      className="m-6 rounded-none border border-border-card bg-surface p-5"
     >
       <h1 className="text-lg font-semibold">{label} not found</h1>
       <p className="mt-2 text-sm text-ink-muted">
@@ -230,7 +230,7 @@ export function ErrorPanel({ testId, onRetry }: ErrorPanelProps): JSX.Element {
     <section
       data-testid={testId}
       role="alert"
-      className="m-6 flex flex-col items-center justify-center gap-3 rounded-lg border border-border-card bg-surface p-6"
+      className="m-6 flex flex-col items-center justify-center gap-3 rounded-none border border-border-card bg-surface p-6"
     >
       <p className="text-sm text-ink-muted">
         Failed to load. Retry or pick another entry from the nav.
@@ -239,7 +239,7 @@ export function ErrorPanel({ testId, onRetry }: ErrorPanelProps): JSX.Element {
         type="button"
         data-testid={`${testId}-retry`}
         onClick={onRetry}
-        className="rounded border border-border-card bg-app px-3 py-1.5 text-xs text-ink hover:border-signal focus:outline-none focus:ring-2 focus:ring-signal"
+        className="rounded-none border border-border-card bg-app px-3 py-1.5 text-xs font-cta uppercase tracking-cta text-ink hover:border-border-strong focus:outline-none focus:ring-2 focus:ring-ring"
       >
         Retry
       </button>

@@ -38,7 +38,7 @@ export function ContributorsList(): JSX.Element {
         data-testid="contributors-list-loading"
         role="status"
         aria-busy="true"
-        className="h-64 animate-pulse rounded border border-border-card bg-surface"
+        className="h-64 animate-pulse rounded-none border border-border-card bg-surface"
       />
     )
   }
@@ -48,7 +48,7 @@ export function ContributorsList(): JSX.Element {
       <div
         data-testid="contributors-list-error"
         role="alert"
-        className="flex h-64 flex-col items-center justify-center gap-3 rounded border border-border-card bg-surface p-6"
+        className="flex h-64 flex-col items-center justify-center gap-3 rounded-none border border-border-card bg-surface p-6"
       >
         <p className="text-sm text-ink-muted">{t('dashboard.error')}</p>
         <button
@@ -56,8 +56,8 @@ export function ContributorsList(): JSX.Element {
           data-testid="contributors-list-retry"
           onClick={() => void refetch()}
           className={cn(
-            'rounded border border-border-card bg-app px-3 py-1.5 text-xs text-ink',
-            'hover:border-signal focus:outline-none focus:ring-2 focus:ring-signal',
+            'rounded-none border border-border-card bg-app px-3 py-1.5 text-xs font-cta uppercase tracking-cta text-ink',
+            'hover:border-border-strong focus:outline-none focus:ring-2 focus:ring-ring',
           )}
         >
           {t('list.retry')}
@@ -72,7 +72,7 @@ export function ContributorsList(): JSX.Element {
     return (
       <section
         data-testid="contributors-list-empty"
-        className="flex h-64 flex-col items-center justify-center gap-2 rounded border border-border-card bg-surface p-6"
+        className="flex h-64 flex-col items-center justify-center gap-2 rounded-none border border-border-card bg-surface p-6"
       >
         <h3 className="text-sm font-semibold text-ink">
           {t('dashboard.contributorsList.title')}
@@ -88,7 +88,7 @@ export function ContributorsList(): JSX.Element {
     <section
       data-testid="contributors-list"
       aria-labelledby="contributors-list-heading"
-      className="rounded border border-border-card bg-surface p-4"
+      className="rounded-none border border-border-card bg-surface p-4"
     >
       <h3
         id="contributors-list-heading"
@@ -125,7 +125,7 @@ export function ContributorsList(): JSX.Element {
                 </span>
               )}
             </div>
-            <span className="shrink-0 rounded bg-app px-2 py-0.5 text-xs font-mono text-ink-muted">
+            <span className="shrink-0 rounded-none bg-app px-2 py-0.5 text-xs font-mono text-ink-muted">
               {source.report_count}{' '}
               <span className="text-ink-subtle">
                 {t('dashboard.contributorsList.reportsSuffix')}

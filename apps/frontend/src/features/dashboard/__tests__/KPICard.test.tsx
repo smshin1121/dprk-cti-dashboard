@@ -51,10 +51,35 @@ describe('KPICard', () => {
     expect(screen.queryByTestId('kpi-card-retry')).not.toBeInTheDocument()
   })
 
-  it('uses semantic tokens on the outer surface (D4)', () => {
-    render(<KPICard label="Total Reports" state="empty" />)
+  it('renders empty state as a transparent Ferrari spec-cell (L3)', () => {
+    render(<KPICard label="Top Group" state="empty" />)
     const card = screen.getByTestId('kpi-card')
+    // Plan §5 maps KPICard to DESIGN.md `spec-cell` — transparent
+    // background, no card chrome. The error state retains chrome
+    // (separate test below), so the empty branch is the canonical
+    // pin for the editorial spec-cell behavior.
+    expect(card.className).not.toMatch(/\bbg-surface\b/)
+    expect(card.className).not.toMatch(/\bbg-white\b/)
+    expect(card.className).not.toMatch(/\bborder-border-card\b/)
+    // Number-display 80px tracking pinned on the value to guard
+    // against drift back to text-2xl pre-Ferrari typography.
+    // (Word-boundary `\b` does not work around bracket characters in
+    // arbitrary-value Tailwind classes, so we anchor on whitespace
+    // / start-of-string instead.)
+    const value = screen.getByTestId('kpi-card-value')
+    expect(value.className).toMatch(/(?:^|\s)text-\[80px\](?:\s|$)/)
+    expect(value.className).toMatch(/\btracking-number-display\b/)
+    expect(value.className).toMatch(/\bfont-cta\b/)
+  })
+
+  it('renders error state inside card chrome (status callout, not spec-cell)', () => {
+    render(<KPICard label="Total Reports" state="error" onRetry={() => {}} />)
+    const card = screen.getByTestId('kpi-card')
+    // Errors are first-class status — the chrome (border + surface)
+    // is preserved so the error reads as a callout against the
+    // editorial canvas, not as a transparent spec-cell.
     expect(card.className).toMatch(/\bbg-surface\b/)
+    expect(card.className).toMatch(/\bborder-border-card\b/)
     expect(card.className).not.toMatch(/\bbg-white\b/)
   })
 

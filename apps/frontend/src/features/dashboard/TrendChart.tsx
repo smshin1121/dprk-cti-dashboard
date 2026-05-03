@@ -39,6 +39,7 @@ import { useTranslation } from 'react-i18next'
 
 import { useTrend } from '../analytics/useTrend'
 import { cn } from '../../lib/utils'
+import { CHART_CHROME, chartSeriesColor } from './_palette'
 
 const CHART_WIDTH = 480
 const CHART_HEIGHT = 240
@@ -50,7 +51,7 @@ function TrendTooltip({ active, payload, label }: TrendTooltipProps): JSX.Elemen
   return (
     <div
       data-testid="trend-chart-tooltip"
-      className="rounded border border-border-card bg-surface px-2 py-1 text-xs text-ink shadow"
+      className="rounded-none border border-border-card bg-surface px-2 py-1 text-xs text-ink shadow"
     >
       <span className="font-semibold">{String(label ?? '')}</span>:{' '}
       <span>{String(payload[0].value ?? 0)}</span>
@@ -76,7 +77,7 @@ export function TrendChart(): JSX.Element {
         data-testid="trend-chart-loading"
         role="status"
         aria-busy="true"
-        className="h-64 animate-pulse rounded border border-border-card bg-surface"
+        className="h-64 animate-pulse rounded-none border border-border-card bg-surface"
       />
     )
   }
@@ -86,7 +87,7 @@ export function TrendChart(): JSX.Element {
       <div
         data-testid="trend-chart-error"
         role="alert"
-        className="flex h-64 flex-col items-center justify-center gap-3 rounded border border-border-card bg-surface p-6"
+        className="flex h-64 flex-col items-center justify-center gap-3 rounded-none border border-border-card bg-surface p-6"
       >
         <p className="text-sm text-ink-muted">{t('dashboard.error')}</p>
         <button
@@ -94,8 +95,8 @@ export function TrendChart(): JSX.Element {
           data-testid="trend-chart-retry"
           onClick={() => void refetch()}
           className={cn(
-            'rounded border border-border-card bg-app px-3 py-1.5 text-xs text-ink',
-            'hover:border-signal focus:outline-none focus:ring-2 focus:ring-signal',
+            'rounded-none border border-border-card bg-app px-3 py-1.5 text-xs font-cta uppercase tracking-cta text-ink',
+            'hover:border-border-strong focus:outline-none focus:ring-2 focus:ring-ring',
           )}
         >
           {t('list.retry')}
@@ -108,7 +109,7 @@ export function TrendChart(): JSX.Element {
     return (
       <section
         data-testid="trend-chart-empty"
-        className="flex h-64 flex-col items-center justify-center gap-2 rounded border border-border-card bg-surface p-6"
+        className="flex h-64 flex-col items-center justify-center gap-2 rounded-none border border-border-card bg-surface p-6"
       >
         <h3 className="text-sm font-semibold text-ink">
           {t('dashboard.trendChart.title')}
@@ -122,7 +123,7 @@ export function TrendChart(): JSX.Element {
     <section
       data-testid="trend-chart"
       aria-labelledby="trend-chart-heading"
-      className="rounded border border-border-card bg-surface p-4"
+      className="rounded-none border border-border-card bg-surface p-4"
     >
       <h3
         id="trend-chart-heading"
@@ -136,25 +137,25 @@ export function TrendChart(): JSX.Element {
         data={chartData}
         margin={{ top: 8, right: 16, bottom: 20, left: 0 }}
       >
-        <CartesianGrid strokeDasharray="3 3" stroke="hsl(210 10% 85%)" />
+        <CartesianGrid strokeDasharray="3 3" stroke={CHART_CHROME.gridStroke} />
         <XAxis
           dataKey="month"
-          tick={{ fontSize: 11, fill: 'hsl(210 15% 40%)' }}
+          tick={{ fontSize: 11, fill: CHART_CHROME.axisTickFill }}
           tickLine={false}
         />
         <YAxis
-          tick={{ fontSize: 11, fill: 'hsl(210 15% 40%)' }}
+          tick={{ fontSize: 11, fill: CHART_CHROME.axisTickFill }}
           tickLine={false}
           axisLine={false}
           allowDecimals={false}
         />
-        <Tooltip content={<TrendTooltip />} cursor={{ stroke: 'hsl(210 10% 85%)' }} />
+        <Tooltip content={<TrendTooltip />} cursor={{ stroke: CHART_CHROME.gridStroke }} />
         <Line
           type="monotone"
           dataKey="count"
-          stroke="hsl(210 70% 50%)"
+          stroke={chartSeriesColor(0)}
           strokeWidth={2}
-          dot={{ r: 3, fill: 'hsl(210 70% 50%)' }}
+          dot={{ r: 3, fill: chartSeriesColor(0) }}
           isAnimationActive={false}
           data-testid="trend-chart-series"
         />

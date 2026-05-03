@@ -60,17 +60,25 @@ const COUNTRY_FEATURES = feature(_topology, _topology.objects.countries).feature
 const VIEW_WIDTH = 960
 const VIEW_HEIGHT = 500
 
-// Fills — neutral gray for "no data / unknown", a simple sequential
-// scale 0..maxCount for populated countries. Avoids pulling in
-// d3-scale-chromatic for a single ramp.
-const NO_DATA_FILL = 'hsl(210 10% 85%)'
+// Fills — Ferrari sequential ramp from canvas-elevated (no-data) to
+// Tol cyan (high-count). Cyan is the dark-canvas-reordered slot 0
+// from _palette.ts — its 11.4:1 contrast against bg-app keeps
+// high-count countries legible. Rosso Corsa is reserved for DPRK
+// highlight and AttackHeatmap top intensity per plan §0.1
+// invariant 3.
+const NO_DATA_FILL = '#3a3a3a' // slightly lifted canvas-elevated
+const HIGH_COUNT_FILL = '#88CCEE' // Tol Muted cyan (dark-canvas slot 0)
 
 function countFill(count: number, maxCount: number): string {
   if (maxCount <= 0 || count <= 0) return NO_DATA_FILL
-  // Linear 0..1 → hsl lightness 70%..30%. Hue stays in signal blue.
+  // Linear interpolation in sRGB between NO_DATA_FILL (#3a3a3a) and
+  // HIGH_COUNT_FILL (#88CCEE). Single ramp keeps the sequential
+  // story coherent without pulling in d3-scale-chromatic.
   const t = Math.min(1, count / maxCount)
-  const lightness = Math.round(70 - 40 * t)
-  return `hsl(210 80% ${lightness}%)`
+  const r = Math.round(0x3a + (0x88 - 0x3a) * t)
+  const g = Math.round(0x3a + (0xcc - 0x3a) * t)
+  const b = Math.round(0x3a + (0xee - 0x3a) * t)
+  return `rgb(${r} ${g} ${b})`
 }
 
 function featureNumericId(f: (typeof COUNTRY_FEATURES)[number]): string {
@@ -102,7 +110,7 @@ export function WorldMap(): JSX.Element {
         data-testid="world-map-loading"
         role="status"
         aria-label={t('list.loading')}
-        className="h-96 animate-pulse rounded border border-border-card bg-surface"
+        className="h-96 animate-pulse rounded-none border border-border-card bg-surface"
       />
     )
   }
@@ -112,7 +120,7 @@ export function WorldMap(): JSX.Element {
       <div
         data-testid="world-map-error"
         role="alert"
-        className="flex h-96 flex-col items-center justify-center gap-3 rounded border border-border-card bg-surface p-6"
+        className="flex h-96 flex-col items-center justify-center gap-3 rounded-none border border-border-card bg-surface p-6"
       >
         <p className="text-sm text-ink-muted">{t('dashboard.error')}</p>
         <button
@@ -122,8 +130,8 @@ export function WorldMap(): JSX.Element {
             void refetch()
           }}
           className={cn(
-            'rounded border border-border-card bg-app px-3 py-1.5 text-xs text-ink',
-            'hover:border-signal focus:outline-none focus:ring-2 focus:ring-signal',
+            'rounded-none border border-border-card bg-app px-3 py-1.5 text-xs font-cta uppercase tracking-cta text-ink',
+            'hover:border-border-strong focus:outline-none focus:ring-2 focus:ring-ring',
           )}
         >
           {t('list.retry')}
@@ -137,7 +145,7 @@ export function WorldMap(): JSX.Element {
   return (
     <div
       data-testid="world-map"
-      className="relative rounded border border-border-card bg-surface p-2"
+      className="relative rounded-none border border-border-card bg-surface p-2"
     >
       <svg
         role="img"
@@ -173,7 +181,7 @@ export function WorldMap(): JSX.Element {
                     data-dprk={isDprk ? 'true' : undefined}
                     data-count={count}
                     fill={fill}
-                    stroke={isDprk ? 'hsl(10 80% 55%)' : 'hsl(210 10% 70%)'}
+                    stroke={isDprk ? '#da291c' : '#5a5a5a'}
                     strokeWidth={isDprk ? 1.5 : 0.4}
                   >
                     <title>{`${iso2 || numericId}: ${count}`}</title>
@@ -191,8 +199,8 @@ export function WorldMap(): JSX.Element {
                     cx={centroid[0]}
                     cy={centroid[1]}
                     r={4}
-                    fill="hsl(10 80% 55%)"
-                    stroke="white"
+                    fill="#da291c"
+                    stroke="#ffffff"
                     strokeWidth={1}
                   />
                 ))}

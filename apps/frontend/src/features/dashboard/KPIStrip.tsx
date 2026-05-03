@@ -79,7 +79,7 @@ export function KPIStrip(): JSX.Element {
     <section
       data-testid="kpi-strip"
       aria-labelledby="kpi-strip-heading"
-      className="flex flex-wrap gap-3 p-6"
+      className="flex flex-wrap gap-8 p-6"
     >
       <h2 id="kpi-strip-heading" className="sr-only">
         Key performance indicators

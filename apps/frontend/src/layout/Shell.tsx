@@ -3,23 +3,18 @@
  * structural top-nav (title + nav links + ⌘K trigger + user menu),
  * a FilterBar, and an <Outlet/> for the active route.
  *
- * Token usage (plan D4 lock): every color here goes through a
+ * Token usage (Ferrari L1 lock): every color here goes through a
  * semantic Tailwind class backed by CSS vars (bg-app, bg-surface,
- * text-ink, border-border-card, text-signal). Switching html[data-theme]
- * flips every surface in one repaint without touching component
- * code — Shell theme test pins this invariant.
+ * text-ink, border-border-card, text-signal). The Ferrari L1 commit
+ * collapsed the pre-Ferrari 3-mode theme to a single dark canvas;
+ * per-section light editorial bands are opt-in via the
+ * `editorial-band-light` class declared in styles/tokens.css.
  *
- * Group G relocation (plan D5):
- *   - Standalone ThemeToggle removed from the topbar; it now lives
- *     inside UserMenu's dropdown. `useThemeStore.cycleMode` stays
- *     the click handler so behavior is unchanged — only the mount
- *     location moved.
- *   - CommandPaletteButton added to the topbar (⌘K trigger; empty
- *     dialog skeleton per plan §1 non-goal).
- *   - UserMenu added to the topbar; renders only when authenticated
- *     (defensive — Shell normally renders only under RouteGate's
- *     auth branch, but UserMenu has its own null guard for mount
- *     races during logout).
+ * Topbar composition:
+ *   - CommandPaletteButton (⌘K trigger).
+ *   - UserMenu — renders only when authenticated (defensive — Shell
+ *     normally renders only under RouteGate's auth branch, but
+ *     UserMenu has its own null guard for mount races during logout).
  */
 
 import { useTranslation } from 'react-i18next'
@@ -48,12 +43,12 @@ export function Shell(): JSX.Element {
     <div className="flex min-h-screen flex-col bg-app text-ink">
       <header
         data-testid="shell-topnav"
-        className="flex items-center gap-6 border-b border-border-card bg-surface px-6 py-4"
+        className="flex items-center gap-6 border-b border-border-card bg-app px-6 py-4"
       >
-        <p className="text-sm font-bold uppercase tracking-[0.2em] text-signal">
+        <p className="text-sm font-cta uppercase tracking-caption text-signal">
           {t('shell.brand')}
         </p>
-        <nav className="flex flex-1 items-center gap-4 text-sm font-medium text-ink-muted">
+        <nav className="flex flex-1 items-center gap-4 text-[13px] font-nav uppercase tracking-nav text-ink-muted">
           {NAV_ITEMS.map(({ to, key }) => (
             <NavLink
               key={to}

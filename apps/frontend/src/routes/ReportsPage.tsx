@@ -12,14 +12,24 @@
  * goes back. Initial load uses no cursor.
  */
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
+import { ReportsViewModeToggle } from '../components/ReportsViewModeToggle'
+import { ReportsYearJumpSelect } from '../components/ReportsYearJumpSelect'
 import { ListTable, type ListTableColumn } from '../features/lists/ListTable'
+import { ReportTimeline } from '../features/reports/ReportTimeline'
 import { useReportsList } from '../features/reports/useReportsList'
 import type { ReportItem } from '../lib/api/schemas'
+import { useReportsViewModeStore } from '../stores/reportsViewMode'
+import { useFilterStore } from '../stores/filters'
 import { cn } from '../lib/utils'
 
 const PAGE_SIZE = 50
+
+interface CursorState {
+  filterKey: string
+  stack: (string | undefined)[]
+}
 
 const reportColumns: readonly ListTableColumn<ReportItem>[] = [
   {
@@ -53,14 +63,33 @@ const reportColumns: readonly ListTableColumn<ReportItem>[] = [
 ] as const
 
 export function ReportsPage(): JSX.Element {
+  const dateFrom = useFilterStore((s) => s.dateFrom)
+  const dateTo = useFilterStore((s) => s.dateTo)
+  const filterKey = `${dateFrom ?? ''}|${dateTo ?? ''}`
+  const [cursorState, setCursorState] = useState<CursorState>({
+    filterKey,
+    stack: [undefined],
+  })
+
   // Each entry is the cursor used to fetch the corresponding page.
   // `undefined` marks the first page. On Next we push; on Prev we pop.
-  const [cursorStack, setCursorStack] = useState<(string | undefined)[]>([
-    undefined,
-  ])
+  // When the date filter changes, the current cursor is stale for the
+  // new keyset. Derive first-page state synchronously so no request is
+  // issued with a new date range and an old opaque cursor.
+  const cursorStack =
+    cursorState.filterKey === filterKey ? cursorState.stack : [undefined]
   const currentCursor = cursorStack[cursorStack.length - 1]
 
+  useEffect(() => {
+    setCursorState((state) =>
+      state.filterKey === filterKey
+        ? state
+        : { filterKey, stack: [undefined] },
+    )
+  }, [filterKey])
+
   const query = useReportsList({ cursor: currentCursor, limit: PAGE_SIZE })
+  const viewMode = useReportsViewModeStore((s) => s.mode)
 
   const state = query.isLoading
     ? 'loading'
@@ -70,6 +99,7 @@ export function ReportsPage(): JSX.Element {
         ? 'empty'
         : 'populated'
 
+  const rows = query.data?.items ?? []
   const nextCursor = query.data?.next_cursor ?? null
   const hasPrev = cursorStack.length > 1
   const hasNext = nextCursor != null
@@ -80,19 +110,37 @@ export function ReportsPage(): JSX.Element {
       aria-labelledby="reports-heading"
       className="flex flex-col gap-4 p-6"
     >
-      <h1 id="reports-heading" className="text-xl font-semibold">
-        Reports
-      </h1>
+      <header className="flex flex-wrap items-center justify-between gap-3">
+        <h1
+          id="reports-heading"
+          className="text-2xl font-display tracking-display"
+        >
+          Reports
+        </h1>
+        <div className="flex items-center gap-3">
+          <ReportsYearJumpSelect />
+          <ReportsViewModeToggle />
+        </div>
+      </header>
 
-      <ListTable
-        caption="Reports list"
-        columns={reportColumns}
-        rows={query.data?.items ?? []}
-        state={state}
-        error={query.error}
-        onRetry={() => void query.refetch()}
-        getRowKey={(row) => row.id}
-      />
+      {viewMode === 'list' ? (
+        <ListTable
+          caption="Reports list"
+          columns={reportColumns}
+          rows={rows}
+          state={state}
+          error={query.error}
+          onRetry={() => void query.refetch()}
+          getRowKey={(row) => row.id}
+        />
+      ) : (
+        <ReportTimeline
+          rows={rows}
+          state={state}
+          error={query.error}
+          onRetry={() => void query.refetch()}
+        />
+      )}
 
       <footer
         data-testid="reports-pagination"
@@ -103,8 +151,16 @@ export function ReportsPage(): JSX.Element {
           data-testid="reports-prev"
           disabled={!hasPrev}
           onClick={() =>
-            setCursorStack((stack) =>
-              stack.length > 1 ? stack.slice(0, -1) : stack,
+            setCursorState((state) =>
+              state.filterKey !== filterKey
+                ? { filterKey, stack: [undefined] }
+                : {
+                    filterKey,
+                    stack:
+                      state.stack.length > 1
+                        ? state.stack.slice(0, -1)
+                        : state.stack,
+                  },
             )
           }
           className={cn(paginationBtn)}
@@ -117,7 +173,13 @@ export function ReportsPage(): JSX.Element {
           disabled={!hasNext}
           onClick={() =>
             nextCursor != null
-              ? setCursorStack((stack) => [...stack, nextCursor])
+              ? setCursorState((state) => ({
+                  filterKey,
+                  stack:
+                    state.filterKey === filterKey
+                      ? [...state.stack, nextCursor]
+                      : [undefined, nextCursor],
+                }))
               : undefined
           }
           className={cn(paginationBtn)}
@@ -130,7 +192,7 @@ export function ReportsPage(): JSX.Element {
 }
 
 const paginationBtn = cn(
-  'rounded border border-border-card bg-surface px-3 py-1 text-ink',
-  'hover:border-signal focus:outline-none focus:ring-2 focus:ring-signal',
+  'rounded-none border border-border-card bg-surface px-3 py-1 text-xs font-cta uppercase tracking-cta text-ink',
+  'hover:border-border-strong focus:outline-none focus:ring-2 focus:ring-ring',
   'disabled:cursor-not-allowed disabled:opacity-50',
 )

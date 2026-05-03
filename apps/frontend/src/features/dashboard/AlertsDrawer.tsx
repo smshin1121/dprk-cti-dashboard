@@ -78,8 +78,8 @@ export function AlertsDrawer(): JSX.Element {
         aria-controls="alerts-drawer-panel"
         onClick={() => setOpen((v) => !v)}
         className={cn(
-          'inline-flex items-center gap-2 rounded border border-border-card bg-surface px-3 py-1.5 text-xs text-ink',
-          'hover:border-signal focus:outline-none focus:ring-2 focus:ring-signal',
+          'inline-flex items-center gap-2 rounded-none border border-border-card bg-surface px-3 py-1.5 text-xs font-cta uppercase tracking-cta text-ink',
+          'hover:border-border-strong focus:outline-none focus:ring-2 focus:ring-ring',
         )}
       >
         <Bell aria-hidden className="h-4 w-4" />
@@ -95,7 +95,7 @@ export function AlertsDrawer(): JSX.Element {
           aria-modal="false"
           aria-labelledby="alerts-drawer-heading"
           className={cn(
-            'fixed right-4 top-20 z-40 flex w-80 max-w-[90vw] flex-col gap-3 rounded border border-border-card bg-surface p-4 shadow-lg',
+            'fixed right-4 top-20 z-40 flex w-80 max-w-[90vw] flex-col gap-3 rounded-none border border-border-card bg-surface p-4 shadow-lg',
           )}
         >
           <header className="flex items-center justify-between">
@@ -110,8 +110,8 @@ export function AlertsDrawer(): JSX.Element {
               data-testid="alerts-drawer-close"
               onClick={() => setOpen(false)}
               className={cn(
-                'rounded border border-border-card bg-app px-2 py-1 text-[10px] uppercase tracking-wider text-ink-muted',
-                'hover:border-signal hover:text-ink focus:outline-none focus:ring-2 focus:ring-signal',
+                'rounded-none border border-border-card bg-app px-2 py-1 text-[10px] font-cta uppercase tracking-cta text-ink-muted',
+                'hover:border-border-strong hover:text-ink focus:outline-none focus:ring-2 focus:ring-ring',
               )}
             >
               {t('dashboard.alerts.close')}
@@ -119,14 +119,14 @@ export function AlertsDrawer(): JSX.Element {
           </header>
           <div
             data-testid="alerts-drawer-empty"
-            className="flex flex-1 flex-col gap-3 rounded border border-dashed border-border-card bg-app p-4"
+            className="flex flex-1 flex-col gap-3 rounded-none border border-dashed border-border-card bg-app p-4"
           >
             <p className="text-sm text-ink-muted">
               {t('dashboard.alerts.empty')}
             </p>
             <p
               data-testid="alerts-drawer-phase-note"
-              className="text-[11px] uppercase tracking-wider text-ink-subtle"
+              className="text-[11px] font-cta uppercase tracking-caption text-ink-subtle"
             >
               {t('dashboard.alerts.phaseNote')}
             </p>

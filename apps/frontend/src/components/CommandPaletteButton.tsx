@@ -9,7 +9,7 @@
  *
  * Command set (plan D3 — deliberately narrow):
  *   - Navigate: /dashboard, /reports, /incidents, /actors
- *   - View:     theme cycle, clear filters
+ *   - View:     clear filters
  *   - Session:  sign out
  *
  * Deliberately OUT of scope (plan D3 + §1 non-goals):
@@ -19,8 +19,6 @@
  *
  * Ownership boundaries:
  *   - Navigation → react-router `useNavigate()` (no hook indirection).
- *   - Theme cycle → `useThemeStore().cycleMode()` — DOM side-effect
- *     handled inside the store per its existing contract.
  *   - Clear filters → `useFilterStore().clear()` — resets date range,
  *     group selection, AND tlp levels (plan D4 lock: user choice
  *     reset regardless of whether tlp crosses the wire).
@@ -55,7 +53,6 @@ import {
 } from '../lib/commands'
 import { cn } from '../lib/utils'
 import { useFilterStore } from '../stores/filters'
-import { useThemeStore } from '../stores/theme'
 
 function isEditableTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false
@@ -86,7 +83,6 @@ export function CommandPaletteButton(): JSX.Element {
   // Plan D18 + OI4 carry: q does not touch the router / URL state.
   const [q, setQ] = useState('')
   const navigate = useNavigate()
-  const cycleTheme = useThemeStore((s) => s.cycleMode)
   const clearFilters = useFilterStore((s) => s.clear)
   const logoutMutation = useLogout()
   // `useTranslation` subscribes this component to locale changes,
@@ -126,9 +122,6 @@ export function CommandPaletteButton(): JSX.Element {
       case 'nav.actors':
         navigate(NAV_PATHS[id])
         return
-      case 'theme.cycle':
-        cycleTheme()
-        return
       case 'filters.clear':
         clearFilters()
         return
@@ -158,15 +151,15 @@ export function CommandPaletteButton(): JSX.Element {
         onClick={() => setOpen(true)}
         aria-label={t('shell.search.dialogLabel')}
         className={cn(
-          'flex h-8 items-center gap-2 rounded border border-border-card bg-app px-3 text-xs text-ink-muted',
-          'hover:border-signal hover:text-ink focus:outline-none focus:ring-2 focus:ring-signal',
+          'flex h-8 items-center gap-2 rounded-none border border-border-card bg-app px-3 text-xs font-cta uppercase tracking-cta text-ink-muted',
+          'hover:border-border-strong hover:text-ink focus:outline-none focus:ring-2 focus:ring-ring',
         )}
       >
         <CommandIcon aria-hidden className="h-3 w-3" />
         <span>{t('shell.search.placeholder')}</span>
         <kbd
           className={cn(
-            'ml-2 rounded border border-border-card bg-surface px-1 py-0.5 text-[10px] text-ink-subtle',
+            'ml-2 rounded-none border border-border-card bg-surface px-1 py-0.5 text-[10px] tracking-normal normal-case text-ink-subtle',
           )}
         >
           ⌘K
@@ -184,7 +177,7 @@ export function CommandPaletteButton(): JSX.Element {
       >
         <div
           className={cn(
-            'w-full max-w-lg overflow-hidden rounded-lg border border-border-card bg-surface text-ink shadow-xl',
+            'w-full max-w-lg overflow-hidden rounded-none border border-border-card bg-surface text-ink shadow-xl',
           )}
         >
           <Command.Input
@@ -217,12 +210,12 @@ export function CommandPaletteButton(): JSX.Element {
                   data-testid={`cmdk-item-${id}`}
                   onSelect={() => runCommand(id)}
                   className={cn(
-                    'flex cursor-pointer items-center justify-between rounded px-4 py-2 text-sm',
+                    'flex cursor-pointer items-center justify-between rounded-none px-4 py-2 text-sm',
                     'data-[selected=true]:bg-app',
                   )}
                 >
                   <span>{label}</span>
-                  <span className="text-[10px] uppercase tracking-wider text-ink-subtle">
+                  <span className="text-[10px] uppercase tracking-caption text-ink-subtle">
                     {id}
                   </span>
                 </Command.Item>

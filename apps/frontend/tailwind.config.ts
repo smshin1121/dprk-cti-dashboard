@@ -2,13 +2,11 @@ import type { Config } from 'tailwindcss'
 import animate from 'tailwindcss-animate'
 
 export default {
-  // Plan D4: switch via html[data-theme="dark"] attribute (not the
-  // .dark class). Tailwind 3.4+ `['selector', <css-selector>]` form
-  // selects dark styles when the given selector matches the html
-  // element. The 'system' branch is handled inside tokens.css via
-  // `@media (prefers-color-scheme: dark)` so Tailwind's dark:*
-  // utilities fire there too.
-  darkMode: ['selector', '[data-theme="dark"], [data-theme="system"]:is(:root)'],
+  // Ferrari L1: theme model collapsed from light/dark/system to a
+  // single dark canvas (#181818). Per-section light editorial bands
+  // are opt-in via the `.editorial-band-light` class declared in
+  // styles/tokens.css — Tailwind dark: variants are no longer used
+  // and the darkMode selector has been removed.
   content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
   theme: {
     container: {
@@ -20,9 +18,10 @@ export default {
     },
     extend: {
       colors: {
-        // Semantic surface + text tokens (plan D4 lock). All HSL
-        // triples backed by CSS vars in styles/tokens.css — flip
-        // automatically between light / dark / system.
+        // Semantic surface + text tokens (Ferrari L1 lock). All HSL
+        // triples backed by CSS vars in styles/tokens.css. Single
+        // dark canvas; per-section light editorial bands opt in via
+        // .editorial-band-light declared at the same source.
         app: 'hsl(var(--app-bg))',
         surface: {
           DEFAULT: 'hsl(var(--surface))',
@@ -37,6 +36,14 @@ export default {
           DEFAULT: 'hsl(var(--signal))',
           hover: 'hsl(var(--signal-hover))',
           fg: 'hsl(var(--signal-fg))',
+        },
+        status: {
+          crit: 'hsl(var(--status-crit))',
+          warn: 'hsl(var(--status-warn))',
+          elev: 'hsl(var(--status-elev))',
+          ok: 'hsl(var(--status-ok))',
+          info: 'hsl(var(--status-info))',
+          special: 'hsl(var(--status-special))',
         },
         grid: 'hsl(var(--grid))',
 
@@ -54,6 +61,7 @@ export default {
         foreground: 'hsl(var(--foreground))',
         primary: {
           DEFAULT: 'hsl(var(--primary))',
+          active: 'hsl(var(--primary-active))',
           foreground: 'hsl(var(--primary-foreground))',
         },
         secondary: {
@@ -81,10 +89,76 @@ export default {
           foreground: 'hsl(var(--card-foreground))',
         },
       },
+      // Ferrari sharp 0px corners are the brand button shape. The
+      // `--radius` var collapses to 0 in tokens.css; pill geometry
+      // (rounded-full = 9999px) is reserved for badges only; form
+      // inputs opt in to a 4px corner via the `rounded-input` alias.
       borderRadius: {
+        DEFAULT: 'var(--radius)',
         lg: 'var(--radius)',
-        md: 'calc(var(--radius) - 2px)',
-        sm: 'calc(var(--radius) - 4px)',
+        md: 'var(--radius)',
+        sm: 'var(--radius)',
+        input: 'var(--radius-input)',
+      },
+      // Ferrari named 8px spacing ladder — supplements (does not
+      // replace) the Tailwind default scale so existing `p-4` etc.
+      // keep working until L2 sweep migrates them.
+      spacing: {
+        xxxs: '4px',
+        xxs: '8px',
+        xs: '16px',
+        sm: '24px',
+        md: '32px',
+        lg: '48px',
+        xl: '64px',
+        xxl: '96px',
+        super: '128px',
+      },
+      fontFamily: {
+        // Inter Variable substitutes FerrariSans (licensed). All
+        // weights resolved via the variable axis from
+        // @fontsource-variable/inter (loaded in src/main.tsx).
+        sans: [
+          'Inter Variable',
+          'Inter',
+          'Segoe UI',
+          'ui-sans-serif',
+          'system-ui',
+          'sans-serif',
+        ],
+        mono: [
+          'JetBrains Mono',
+          'Geist Mono',
+          'ui-monospace',
+          'SFMono-Regular',
+          'monospace',
+        ],
+      },
+      // Ferrari weight semantics — display NEVER bold (500), CTAs
+      // bold (700), body 400, nav-link 600. Aliases keep usage explicit
+      // at call sites and prevent accidental `font-bold` on display copy.
+      fontWeight: {
+        display: '500',
+        body: '400',
+        nav: '600',
+        cta: '700',
+      },
+      // Ferrari letter-spacing ladder.
+      letterSpacing: {
+        // -1% on display sizes; CSS `em` so it scales with font size.
+        display: '-0.01em',
+        // 1.4px tracking on uppercase CTAs at 14px base = ~0.0875em.
+        cta: '0.0875em',
+        // 0.65px tracking on uppercase nav at 13px base = ~0.05em.
+        nav: '0.05em',
+        // 1.1px tracking on caption-uppercase at 11px base = 0.1em
+        // (DESIGN.md typography.caption-uppercase — section labels,
+        // badges, status pills).
+        caption: '0.1em',
+        // -1.6px tracking on number-display at 80px base = -0.02em
+        // (DESIGN.md typography.number-display + display-mega — KPI
+        // spec-cells, race-position cells, hero callouts).
+        'number-display': '-0.02em',
       },
       keyframes: {
         'accordion-down': {

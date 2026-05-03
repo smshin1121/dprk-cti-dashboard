@@ -21,13 +21,14 @@ beforeEach(async () => {
 })
 
 describe('COMMAND_IDS scope lock', () => {
-  it('exposes exactly the 7 IDs locked in plan D3', () => {
+  it('exposes exactly the 6 IDs locked in plan D3 + Ferrari L1', () => {
+    // Ferrari L1 removed `theme.cycle` (single dark canvas, no theme
+    // toggle). The 6 remaining IDs are the scope lock.
     expect(COMMAND_IDS).toEqual([
       'nav.dashboard',
       'nav.reports',
       'nav.incidents',
       'nav.actors',
-      'theme.cycle',
       'filters.clear',
       'auth.logout',
     ])

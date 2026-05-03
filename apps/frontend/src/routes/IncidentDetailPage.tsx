@@ -33,7 +33,7 @@ export function IncidentDetailPage(): JSX.Element {
         data-testid="incident-detail-loading"
         role="status"
         aria-busy="true"
-        className="m-6 h-64 animate-pulse rounded-lg border border-border-card bg-surface"
+        className="m-6 h-64 animate-pulse rounded-none border border-border-card bg-surface"
       />
     )
   }
@@ -56,7 +56,7 @@ export function IncidentDetailPage(): JSX.Element {
       data-testid="incident-detail-page"
       data-incident-id={incident.id}
       aria-labelledby="incident-detail-heading"
-      className="flex flex-col gap-6 p-6"
+      className="editorial-band-light flex flex-col gap-6 bg-app p-6 text-ink"
     >
       <header className="flex flex-col gap-2">
         <h1
@@ -116,7 +116,7 @@ export function IncidentDetailPage(): JSX.Element {
         <section
           data-testid="incident-detail-linked-reports"
           aria-labelledby="linked-reports-heading"
-          className="rounded border border-border-card bg-surface p-4"
+          className="rounded-none border border-border-card bg-surface p-4"
         >
           <h2
             id="linked-reports-heading"

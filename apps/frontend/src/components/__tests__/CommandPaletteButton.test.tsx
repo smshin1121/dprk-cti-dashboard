@@ -11,7 +11,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createQueryClient } from '../../lib/queryClient'
 import { useFilterStore } from '../../stores/filters'
-import { useThemeStore } from '../../stores/theme'
 import { CommandPaletteButton } from '../CommandPaletteButton'
 
 function LocationProbe(): JSX.Element {
@@ -59,9 +58,7 @@ function resetStores(): void {
     groupIds: [],
     tlpLevels: [],
   })
-  document.documentElement.removeAttribute('data-theme')
   window.localStorage.clear()
-  useThemeStore.setState({ mode: 'system' })
 }
 
 beforeEach(() => {
@@ -118,7 +115,7 @@ describe('CommandPaletteButton', () => {
   // ---- PR #13 Group D — command list content ----
 
   describe('command list (plan D3 scope)', () => {
-    it('renders exactly the 7 commands locked in plan D3', async () => {
+    it('renders exactly the 6 commands locked in plan D3 + Ferrari L1', async () => {
       const user = userEvent.setup()
       renderPalette()
       await user.click(screen.getByTestId('cmdk-trigger'))
@@ -126,12 +123,12 @@ describe('CommandPaletteButton', () => {
       // Scope invariant — exact set, no more, no less. If a future
       // edit adds a "search reports" or "create incident" item, this
       // test fails loud and forces a scope-lock review.
+      // theme.cycle was removed in Ferrari L1 (single dark canvas).
       const expected = [
         'cmdk-item-nav.dashboard',
         'cmdk-item-nav.reports',
         'cmdk-item-nav.incidents',
         'cmdk-item-nav.actors',
-        'cmdk-item-theme.cycle',
         'cmdk-item-filters.clear',
         'cmdk-item-auth.logout',
       ]
@@ -179,20 +176,15 @@ describe('CommandPaletteButton', () => {
     )
   })
 
-  describe('theme.cycle command', () => {
-    it('cycles the theme mode through the store + closes dialog', async () => {
+  describe('theme.cycle command (removed in Ferrari L1)', () => {
+    it('the theme.cycle item is no longer in the palette', async () => {
       const user = userEvent.setup()
-      // Seed to a known state so the cycle step is deterministic.
-      useThemeStore.getState().setMode('light')
       renderPalette()
       await user.click(screen.getByTestId('cmdk-trigger'))
-
-      await user.click(await screen.findByTestId('cmdk-item-theme.cycle'))
-
-      // light → dark (first step in CYCLE_ORDER).
-      expect(useThemeStore.getState().mode).toBe('dark')
-      expect(document.documentElement.getAttribute('data-theme')).toBe('dark')
-      expect(screen.queryByTestId('cmdk-dialog')).not.toBeInTheDocument()
+      await screen.findByTestId('cmdk-dialog')
+      expect(
+        screen.queryByTestId('cmdk-item-theme.cycle'),
+      ).not.toBeInTheDocument()
     })
   })
 

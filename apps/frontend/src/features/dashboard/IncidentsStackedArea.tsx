@@ -5,11 +5,8 @@
  * Recharts wide format (one row per month with one column per axis
  * key) and stacks the areas by stackId.
  *
- * Color palette is the PR #24 chart-theme placeholder — sequential
- * HSL hues. The PR #24 visual redesign will replace this with the
- * Paul Tol palette (locked in plan §2.2). Until then the placeholder
- * keeps the widget visually distinct without committing to a final
- * brand identity.
+ * Color palette: Ferrari L3 part 2 — Tol Muted via `_palette.ts`
+ * (series colors) + Ferrari semantic chrome (grid + axis + tooltip).
  *
  * Four render states (TrendChart parity):
  *   - loading    → skeleton
@@ -41,6 +38,7 @@ import { useIncidentsTrend } from '../analytics/useIncidentsTrend'
 import { INCIDENTS_TREND_UNKNOWN_KEY } from '../../lib/api/schemas'
 import { cn } from '../../lib/utils'
 import type { IncidentsTrendGroupBy } from '../../lib/analyticsFilters'
+import { CHART_CHROME, chartSeriesColor } from './_palette'
 
 const CHART_WIDTH = 480
 const CHART_HEIGHT = 260
@@ -56,12 +54,6 @@ interface PaletteEntry {
   color: string
 }
 
-const PALETTE_HUES = [205, 28, 145, 268, 5, 50, 180, 320, 95, 240]
-
-function paletteColor(index: number): string {
-  const hue = PALETTE_HUES[index % PALETTE_HUES.length]
-  return `hsl(${hue} 65% 50%)`
-}
 
 /**
  * Pivot the BE long-form response into Recharts wide-form rows AND
@@ -84,19 +76,22 @@ function pivotToWideFormat(
     }
   }
 
-  // Sort with the unknown sentinel pinned last (visually grounded —
-  // unknown is the "tail" slice, so it sits at the bottom of the
-  // stack consistently across both axes).
+  // Sort with the unknown sentinel pinned FIRST so it renders as the
+  // first <Area> child of <AreaChart>. In a Recharts stack the first
+  // sibling sits at the visual BOTTOM of the stack (closest to the X
+  // axis); subsequent siblings stack on top. Putting unknown first
+  // grounds it as the "tail" slice at the bottom, consistently across
+  // both axes.
   const orderedKeys = Array.from(allKeys).sort((a, b) => {
-    if (a === INCIDENTS_TREND_UNKNOWN_KEY) return 1
-    if (b === INCIDENTS_TREND_UNKNOWN_KEY) return -1
+    if (a === INCIDENTS_TREND_UNKNOWN_KEY) return -1
+    if (b === INCIDENTS_TREND_UNKNOWN_KEY) return 1
     return a.localeCompare(b)
   })
 
   const palette: PaletteEntry[] = orderedKeys.map((key, index) => ({
     key,
     displayLabel: key === INCIDENTS_TREND_UNKNOWN_KEY ? unknownLabel : key,
-    color: paletteColor(index),
+    color: chartSeriesColor(index),
   }))
 
   const rows: PivotedRow[] = buckets.map((bucket) => {
@@ -144,7 +139,7 @@ function IncidentsStackedArea({
         data-testid={`${testIdPrefix}-loading`}
         role="status"
         aria-busy="true"
-        className="h-64 animate-pulse rounded border border-border-card bg-surface"
+        className="h-64 animate-pulse rounded-none border border-border-card bg-surface"
       />
     )
   }
@@ -154,7 +149,7 @@ function IncidentsStackedArea({
       <div
         data-testid={`${testIdPrefix}-error`}
         role="alert"
-        className="flex h-64 flex-col items-center justify-center gap-3 rounded border border-border-card bg-surface p-6"
+        className="flex h-64 flex-col items-center justify-center gap-3 rounded-none border border-border-card bg-surface p-6"
       >
         <p className="text-sm text-ink-muted">{t('dashboard.error')}</p>
         <button
@@ -162,8 +157,8 @@ function IncidentsStackedArea({
           data-testid={`${testIdPrefix}-retry`}
           onClick={() => void refetch()}
           className={cn(
-            'rounded border border-border-card bg-app px-3 py-1.5 text-xs text-ink',
-            'hover:border-signal focus:outline-none focus:ring-2 focus:ring-signal',
+            'rounded-none border border-border-card bg-app px-3 py-1.5 text-xs font-cta uppercase tracking-cta text-ink',
+            'hover:border-border-strong focus:outline-none focus:ring-2 focus:ring-ring',
           )}
         >
           {t('list.retry')}
@@ -176,7 +171,7 @@ function IncidentsStackedArea({
     return (
       <section
         data-testid={`${testIdPrefix}-empty`}
-        className="flex h-64 flex-col items-center justify-center gap-2 rounded border border-border-card bg-surface p-6"
+        className="flex h-64 flex-col items-center justify-center gap-2 rounded-none border border-border-card bg-surface p-6"
       >
         <h3 className="text-sm font-semibold text-ink">
           {t(`${i18nNamespace}.title`)}
@@ -192,7 +187,7 @@ function IncidentsStackedArea({
     <section
       data-testid={testIdPrefix}
       aria-labelledby={`${testIdPrefix}-heading`}
-      className="rounded border border-border-card bg-surface p-4"
+      className="rounded-none border border-border-card bg-surface p-4"
     >
       <h3
         id={`${testIdPrefix}-heading`}
@@ -206,24 +201,26 @@ function IncidentsStackedArea({
         data={rows}
         margin={{ top: 8, right: 16, bottom: 20, left: 0 }}
       >
-        <CartesianGrid strokeDasharray="3 3" stroke="hsl(210 10% 85%)" />
+        <CartesianGrid strokeDasharray="3 3" stroke={CHART_CHROME.gridStroke} />
         <XAxis
           dataKey="month"
-          tick={{ fontSize: 11, fill: 'hsl(210 15% 40%)' }}
+          tick={{ fontSize: 11, fill: CHART_CHROME.axisTickFill }}
           tickLine={false}
         />
         <YAxis
-          tick={{ fontSize: 11, fill: 'hsl(210 15% 40%)' }}
+          tick={{ fontSize: 11, fill: CHART_CHROME.axisTickFill }}
           tickLine={false}
           axisLine={false}
           allowDecimals={false}
         />
         <Tooltip
-          cursor={{ stroke: 'hsl(210 10% 85%)' }}
+          cursor={{ stroke: CHART_CHROME.gridStroke }}
           contentStyle={{
             fontSize: '12px',
-            borderRadius: '4px',
-            border: '1px solid hsl(210 10% 85%)',
+            borderRadius: '0',
+            backgroundColor: CHART_CHROME.tooltipBg,
+            border: `1px solid ${CHART_CHROME.tooltipBorder}`,
+            color: CHART_CHROME.tooltipText,
           }}
         />
         <Legend wrapperStyle={{ fontSize: '11px' }} />
@@ -236,7 +233,15 @@ function IncidentsStackedArea({
             stackId="incidents-trend"
             stroke={entry.color}
             fill={entry.color}
-            fillOpacity={0.55}
+            // 0.90 alpha keeps stack-overlap legibility (translucency
+            // for visual layering) while preserving WCAG 3:1 contrast
+            // against canvas-elevated for every CHART_SERIES slot.
+            // 0.85 was the prior value; Codex r4 measured rose
+            // (#CC6677 at 0.85) at 2.998:1, just below the 3.0 floor.
+            // 0.90 lifts every slot's blended contrast above the floor
+            // with safe margin. Lower alpha (0.55 pre-r3) crashed
+            // slots 2-4 below 3:1.
+            fillOpacity={0.9}
             isAnimationActive={false}
             data-testid={`${testIdPrefix}-series-${entry.key}`}
           />

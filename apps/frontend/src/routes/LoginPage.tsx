@@ -66,11 +66,11 @@ export function LoginPage(): JSX.Element {
       className="flex min-h-screen items-center justify-center bg-app text-ink"
       data-testid="login-page"
     >
-      <section className="w-full max-w-md rounded-2xl border border-border-card bg-surface p-8 shadow-sm">
-        <p className="text-xs font-semibold uppercase tracking-[0.25em] text-signal">
+      <section className="w-full max-w-md rounded-none border border-border-card bg-surface p-8">
+        <p className="text-xs font-cta uppercase tracking-caption text-signal">
           DPRK CTI
         </p>
-        <h1 className="mt-3 text-2xl font-bold">Sign in</h1>
+        <h1 className="mt-3 text-2xl font-display tracking-display">Sign in</h1>
         <p className="mt-2 text-sm text-ink-muted">
           Authentication happens via the Keycloak realm. You will be
           redirected back to your destination after signing in.
@@ -79,7 +79,7 @@ export function LoginPage(): JSX.Element {
           href={loginHref}
           data-testid="login-submit"
           data-login-target={target}
-          className="mt-6 block rounded-lg bg-signal px-4 py-3 text-center text-sm font-semibold text-signal-fg hover:bg-signal-hover"
+          className="mt-6 inline-flex h-12 w-full items-center justify-center rounded-none bg-primary px-8 text-sm font-cta uppercase tracking-cta text-primary-foreground hover:bg-primary-active active:bg-primary-active"
         >
           Sign in with Keycloak
         </a>

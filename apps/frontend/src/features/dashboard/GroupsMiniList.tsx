@@ -49,7 +49,7 @@ export function GroupsMiniList(): JSX.Element {
         data-testid="groups-mini-list-loading"
         role="status"
         aria-busy="true"
-        className="h-64 animate-pulse rounded border border-border-card bg-surface"
+        className="h-64 animate-pulse rounded-none border border-border-card bg-surface"
       />
     )
   }
@@ -59,7 +59,7 @@ export function GroupsMiniList(): JSX.Element {
       <div
         data-testid="groups-mini-list-error"
         role="alert"
-        className="flex h-64 flex-col items-center justify-center gap-3 rounded border border-border-card bg-surface p-6"
+        className="flex h-64 flex-col items-center justify-center gap-3 rounded-none border border-border-card bg-surface p-6"
       >
         <p className="text-sm text-ink-muted">{t('dashboard.error')}</p>
         <button
@@ -67,8 +67,8 @@ export function GroupsMiniList(): JSX.Element {
           data-testid="groups-mini-list-retry"
           onClick={() => void refetch()}
           className={cn(
-            'rounded border border-border-card bg-app px-3 py-1.5 text-xs text-ink',
-            'hover:border-signal focus:outline-none focus:ring-2 focus:ring-signal',
+            'rounded-none border border-border-card bg-app px-3 py-1.5 text-xs font-cta uppercase tracking-cta text-ink',
+            'hover:border-border-strong focus:outline-none focus:ring-2 focus:ring-ring',
           )}
         >
           {t('list.retry')}
@@ -83,7 +83,7 @@ export function GroupsMiniList(): JSX.Element {
     return (
       <section
         data-testid="groups-mini-list-empty"
-        className="flex h-64 flex-col items-center justify-center gap-2 rounded border border-border-card bg-surface p-6"
+        className="flex h-64 flex-col items-center justify-center gap-2 rounded-none border border-border-card bg-surface p-6"
       >
         <h3 className="text-sm font-semibold text-ink">
           {t('dashboard.groupsMiniList.title')}
@@ -99,7 +99,7 @@ export function GroupsMiniList(): JSX.Element {
     <section
       data-testid="groups-mini-list"
       aria-labelledby="groups-mini-list-heading"
-      className="rounded border border-border-card bg-surface p-4"
+      className="rounded-none border border-border-card bg-surface p-4"
     >
       <h3
         id="groups-mini-list-heading"
@@ -122,10 +122,10 @@ export function GroupsMiniList(): JSX.Element {
                 schema; see `actors_table` migration 0001). */}
             <Link
               to={`/actors/${group.group_id}`}
-              className="flex items-center justify-between gap-3 rounded hover:text-signal focus:outline-none focus:ring-2 focus:ring-signal"
+              className="flex items-center justify-between gap-3 rounded-none hover:text-signal focus:outline-none focus:ring-2 focus:ring-ring"
             >
               <span className="truncate font-medium text-ink">{group.name}</span>
-              <span className="shrink-0 rounded bg-app px-2 py-0.5 text-xs font-mono text-ink-muted">
+              <span className="shrink-0 rounded-none bg-app px-2 py-0.5 text-xs font-mono text-ink-muted">
                 {group.report_count}{' '}
                 <span className="text-ink-subtle">
                   {t('dashboard.groupsMiniList.reportsSuffix')}

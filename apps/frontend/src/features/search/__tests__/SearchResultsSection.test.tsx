@@ -226,27 +226,27 @@ describe('SearchResultsSection — 4-state contract', () => {
 })
 
 // -----------------------------------------------------------------------
-// Review criterion #2 — the PR #13 D3 command set stays intact. The
-// existing CommandPaletteButton test already pins exactly 7 items at
-// dialog open (`renders exactly the 7 commands locked in plan D3`).
-// We augment here with: (a) the 7 cmdk-item testids STILL render when
+// Review criterion #2 — the PR #13 D3 command set stays intact (modulo
+// the Ferrari L1 removal of `theme.cycle`). The CommandPaletteButton
+// test already pins exactly 6 items at dialog open
+// (`renders exactly the 6 commands locked in plan D3 + Ferrari L1`).
+// We augment here with: (a) the 6 cmdk-item testids STILL render when
 // the palette is open with a non-empty q (search does NOT displace
 // them from the DOM), and (b) the static COMMAND_IDS module export
-// was not mutated by this PR.
+// matches the post-Ferrari L1 lock.
 // -----------------------------------------------------------------------
 
-describe('CommandPaletteButton — PR #13 7-command set preservation', () => {
+describe('CommandPaletteButton — D3 + Ferrari L1 6-command set preservation', () => {
   const STATIC_COMMAND_TESTIDS = [
     'cmdk-item-nav.dashboard',
     'cmdk-item-nav.reports',
     'cmdk-item-nav.incidents',
     'cmdk-item-nav.actors',
-    'cmdk-item-theme.cycle',
     'cmdk-item-filters.clear',
     'cmdk-item-auth.logout',
   ]
 
-  it('all 7 commands render with no q entered (PR #13 baseline)', async () => {
+  it('all 6 commands render with no q entered (post-Ferrari L1 baseline)', async () => {
     const user = userEvent.setup()
     renderPalette()
     await user.click(screen.getByTestId('cmdk-trigger'))
@@ -258,14 +258,13 @@ describe('CommandPaletteButton — PR #13 7-command set preservation', () => {
     expect(screen.queryByTestId('search-results-section')).not.toBeInTheDocument()
   })
 
-  it('COMMAND_IDS constant is unchanged (scope lock)', async () => {
+  it('COMMAND_IDS constant matches the post-Ferrari L1 scope lock', async () => {
     const { COMMAND_IDS } = await import('../../../lib/commands')
     expect([...COMMAND_IDS]).toEqual([
       'nav.dashboard',
       'nav.reports',
       'nav.incidents',
       'nav.actors',
-      'theme.cycle',
       'filters.clear',
       'auth.logout',
     ])

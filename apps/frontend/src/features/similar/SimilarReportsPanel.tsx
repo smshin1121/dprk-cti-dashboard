@@ -62,7 +62,7 @@ export function SimilarReportsPanel({
         data-testid="similar-reports-loading"
         role="status"
         aria-busy="true"
-        className="h-48 animate-pulse rounded border border-border-card bg-surface"
+        className="h-48 animate-pulse rounded-none border border-border-card bg-surface"
       />
     )
   }
@@ -72,7 +72,7 @@ export function SimilarReportsPanel({
       <section
         data-testid="similar-reports-error"
         role="alert"
-        className="flex flex-col items-center justify-center gap-3 rounded border border-border-card bg-surface p-6"
+        className="flex flex-col items-center justify-center gap-3 rounded-none border border-border-card bg-surface p-6"
       >
         <h2 className="text-sm font-semibold text-ink">Similar reports</h2>
         <p className="text-sm text-ink-muted">
@@ -82,7 +82,7 @@ export function SimilarReportsPanel({
           type="button"
           data-testid="similar-reports-retry"
           onClick={() => void query.refetch()}
-          className="rounded border border-border-card bg-app px-3 py-1.5 text-xs text-ink hover:border-signal focus:outline-none focus:ring-2 focus:ring-signal"
+          className="rounded-none border border-border-card bg-app px-3 py-1.5 text-xs font-cta uppercase tracking-cta text-ink hover:border-border-strong focus:outline-none focus:ring-2 focus:ring-ring"
         >
           Retry
         </button>
@@ -101,7 +101,7 @@ export function SimilarReportsPanel({
         data-testid="similar-reports-empty"
         data-source-report-id={reportId}
         aria-labelledby="similar-reports-heading"
-        className="rounded border border-border-card bg-surface p-4"
+        className="rounded-none border border-border-card bg-surface p-4"
       >
         <h2
           id="similar-reports-heading"
@@ -121,7 +121,7 @@ export function SimilarReportsPanel({
       data-testid="similar-reports"
       data-source-report-id={reportId}
       aria-labelledby="similar-reports-heading"
-      className="rounded border border-border-card bg-surface p-4"
+      className="rounded-none border border-border-card bg-surface p-4"
     >
       <h2
         id="similar-reports-heading"
@@ -147,7 +147,7 @@ export function SimilarReportsPanel({
               </Link>
               <span
                 data-testid={`similar-reports-score-${item.report.id}`}
-                className="shrink-0 rounded bg-app px-2 py-0.5 text-xs font-mono text-ink-muted"
+                className="shrink-0 rounded-none bg-app px-2 py-0.5 text-xs font-mono text-ink-muted"
               >
                 {formatScore(item.score)}
               </span>

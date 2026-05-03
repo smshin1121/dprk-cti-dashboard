@@ -1,12 +1,10 @@
 /**
- * Top-nav user menu — plan D4 / D5 / §4 Group G.
+ * Top-nav user menu.
  *
  * Dropdown composition:
  *   Header     — email + primary-role badge (identity affordance)
  *   Separator
- *   Theme row  — `ThemeToggle` (relocated from standalone topbar
- *                mount in Groups A-C → user menu in Group G, per
- *                plan D5 lock; existing tests move with it).
+ *   Language   — `LocaleToggle`
  *   Separator
  *   Logout     — triggers `useLogout` → `queryClient.clear()` (via
  *                hook's onSuccess) → local navigate('/login').
@@ -34,7 +32,6 @@ import { useAuth } from '../features/auth/useAuth'
 import { useLogout } from '../features/auth/useLogout'
 import { cn } from '../lib/utils'
 import { LocaleToggle } from './LocaleToggle'
-import { ThemeToggle } from './ThemeToggle'
 
 export function UserMenu(): JSX.Element | null {
   const { user } = useAuth()
@@ -60,8 +57,8 @@ export function UserMenu(): JSX.Element | null {
           data-testid="user-menu-trigger"
           aria-label={t('userMenu.triggerAriaLabel', { email: user.email })}
           className={cn(
-            'flex h-8 items-center gap-2 rounded border border-border-card bg-app px-2 text-xs text-ink',
-            'hover:border-signal focus:outline-none focus:ring-2 focus:ring-signal',
+            'flex h-8 items-center gap-2 rounded-none border border-border-card bg-app px-2 text-xs text-ink',
+            'hover:border-border-strong focus:outline-none focus:ring-2 focus:ring-ring',
           )}
         >
           <UserCircle aria-hidden className="h-4 w-4 text-ink-muted" />
@@ -75,7 +72,7 @@ export function UserMenu(): JSX.Element | null {
           sideOffset={6}
           align="end"
           className={cn(
-            'z-50 min-w-[14rem] rounded-md border border-border-card bg-surface p-1 text-xs text-ink shadow-lg',
+            'z-50 min-w-[14rem] rounded-none border border-border-card bg-surface p-1 text-xs text-ink shadow-lg',
           )}
         >
           <DropdownMenu.Label className="px-2 py-1.5">
@@ -87,7 +84,7 @@ export function UserMenu(): JSX.Element | null {
             </div>
             <div
               data-testid="user-menu-role"
-              className="mt-1 inline-flex items-center rounded border border-border-card bg-app px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-ink-muted"
+              className="mt-1 inline-flex items-center rounded-full border border-border-card bg-app px-1.5 py-0.5 text-[10px] font-cta uppercase tracking-caption text-ink-muted"
             >
               {primaryRole}
             </div>
@@ -96,14 +93,7 @@ export function UserMenu(): JSX.Element | null {
           <DropdownMenu.Separator className="my-1 h-px bg-border-card" />
 
           <div className="flex items-center justify-between px-2 py-1.5">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-ink-subtle">
-              {t('userMenu.theme')}
-            </span>
-            <ThemeToggle />
-          </div>
-
-          <div className="flex items-center justify-between px-2 py-1.5">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-ink-subtle">
+            <span className="text-[10px] font-cta uppercase tracking-caption text-ink-subtle">
               {t('userMenu.language')}
             </span>
             <LocaleToggle />
@@ -122,7 +112,7 @@ export function UserMenu(): JSX.Element | null {
               handleLogout()
             }}
             className={cn(
-              'flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 outline-none',
+              'flex cursor-pointer items-center gap-2 rounded-none px-2 py-1.5 outline-none',
               'focus:bg-app data-[highlighted]:bg-app',
             )}
           >
