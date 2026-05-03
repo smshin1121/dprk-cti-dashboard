@@ -11,6 +11,16 @@ import { createQueryClient } from "./lib/queryClient";
 import { router } from "./routes/router";
 import "./index.css";
 
+// Font assets — Inter Variable (sans, all weights via variable axis)
+// + JetBrains Mono (mono 400/700). The body font stack in
+// styles/tokens.css and the tailwind fontFamily.sans/mono chains
+// reference these families; without these side-effect imports the
+// browser silently falls back to Segoe UI / system-ui and the typography
+// portion of the visual lock is a no-op.
+import "@fontsource-variable/inter";
+import "@fontsource/jetbrains-mono/400.css";
+import "@fontsource/jetbrains-mono/700.css";
+
 // IMPORTANT — always instantiate via createQueryClient(), never by
 // constructing the QueryClient class directly. The factory installs:
 //   - queryCache.onError for 401 → flip ['me'] to null (route gate
