@@ -15,7 +15,6 @@
     }
   },
   "userMenu": {
-    "theme": "테마",
     "language": "언어",
     "signOut": "로그아웃",
     "triggerAriaLabel": "계정 메뉴: {{email}}"
@@ -30,7 +29,6 @@
     "nav.reports": "보고서로 이동",
     "nav.incidents": "사건으로 이동",
     "nav.actors": "조직으로 이동",
-    "theme.cycle": "테마 전환 (light / dark / system)",
     "filters.clear": "모든 필터 초기화",
     "auth.logout": "로그아웃"
   },

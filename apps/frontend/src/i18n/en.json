@@ -15,7 +15,6 @@
     }
   },
   "userMenu": {
-    "theme": "Theme",
     "language": "Language",
     "signOut": "Sign out",
     "triggerAriaLabel": "Account menu for {{email}}"
@@ -30,7 +29,6 @@
     "nav.reports": "Go to Reports",
     "nav.incidents": "Go to Incidents",
     "nav.actors": "Go to Actors",
-    "theme.cycle": "Cycle theme (light / dark / system)",
     "filters.clear": "Clear all filters",
     "auth.logout": "Sign out"
   },

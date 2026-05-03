@@ -9,7 +9,6 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createQueryClient } from '../../lib/queryClient'
-import { useThemeStore } from '../../stores/theme'
 import { UserMenu } from '../UserMenu'
 
 const ME_BODY = {
@@ -53,14 +52,8 @@ function LocationProbe({
   return <span data-testid="location" data-path={loc.pathname} />
 }
 
-function resetTheme(): void {
-  document.documentElement.removeAttribute('data-theme')
-  window.localStorage.clear()
-  useThemeStore.setState({ mode: 'system' })
-}
-
 beforeEach(() => {
-  resetTheme()
+  window.localStorage.clear()
   vi.spyOn(global, 'fetch').mockResolvedValue(
     new Response(JSON.stringify(ME_BODY), { status: 200 }),
   )
@@ -78,7 +71,7 @@ describe('UserMenu', () => {
     )
   })
 
-  it('dropdown shows email + role badge + theme + logout', async () => {
+  it('dropdown shows email + role badge + logout (no theme toggle after Ferrari L1)', async () => {
     const user = userEvent.setup()
     renderUserMenu()
     await waitFor(() =>
@@ -91,24 +84,10 @@ describe('UserMenu', () => {
       'analyst@dprk.test',
     )
     expect(screen.getByTestId('user-menu-role')).toHaveTextContent('analyst')
-    // Theme toggle relocated here (plan D5 Group G)
-    expect(screen.getByTestId('theme-toggle')).toBeInTheDocument()
+    // Theme toggle removed in Ferrari L1 (single dark canvas).
+    expect(screen.queryByTestId('theme-toggle')).not.toBeInTheDocument()
     // Logout item present
     expect(screen.getByTestId('user-menu-logout')).toBeInTheDocument()
-  })
-
-  it('theme toggle inside the dropdown flips data-theme', async () => {
-    const user = userEvent.setup()
-    useThemeStore.getState().setMode('light')
-    renderUserMenu()
-    await waitFor(() =>
-      expect(screen.getByTestId('user-menu-trigger')).toBeInTheDocument(),
-    )
-    await user.click(screen.getByTestId('user-menu-trigger'))
-
-    const toggle = await screen.findByTestId('theme-toggle')
-    await user.click(toggle)
-    expect(document.documentElement.getAttribute('data-theme')).toBe('dark')
   })
 
   it('logout POSTs /auth/logout, clears cache, and navigates to /login', async () => {

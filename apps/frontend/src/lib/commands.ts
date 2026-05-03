@@ -17,9 +17,10 @@
  *     the getters there; locale change causes a re-render (via
  *     `useTranslation`) which re-resolves labels.
  *
- * Scope (plan D3, unchanged):
+ * Scope (plan D3 + Ferrari L1 — theme cycle removed when theme model
+ * collapsed to single dark canvas):
  *   Navigate: /dashboard /reports /incidents /actors
- *   View:     theme cycle, clear filters
+ *   View:     clear filters
  *   Session:  sign out
  *
  * i18n swap (plan D5):
@@ -44,7 +45,6 @@ export const COMMAND_IDS = [
   'nav.reports',
   'nav.incidents',
   'nav.actors',
-  'theme.cycle',
   'filters.clear',
   'auth.logout',
 ] as const
@@ -65,7 +65,6 @@ const KEYWORDS: Record<CommandId, string[]> = {
   'nav.reports': ['navigate', 'go', 'list', 'intel'],
   'nav.incidents': ['navigate', 'go', 'list', 'attacks'],
   'nav.actors': ['navigate', 'go', 'list', 'groups', 'apt'],
-  'theme.cycle': ['appearance', 'dark', 'light', 'system', 'mode'],
   'filters.clear': ['reset', 'clear', 'filters', 'date', 'group'],
   'auth.logout': ['logout', 'sign out', 'exit', 'session'],
 }

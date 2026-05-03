@@ -1,189 +1,182 @@
 /**
- * Design tokens (Monitor visual lock).
+ * Ferrari design tokens (L1 — Ferrari realignment lock).
  *
- * Two layers:
+ * Single dark canvas per DESIGN.md. Per-section light editorial
+ * bands are opt-in via `.editorial-band-light` (applied to a DOM
+ * subtree). The pre-Ferrari 3-mode `light/dark/system` model is
+ * deleted along with `useThemeStore`, `ThemeToggle`, the FOUC
+ * inline script in `index.html`, and the `darkMode` selector in
+ * `tailwind.config.ts`.
  *
- * 1. **Surface + text + accent** — semantic tokens the app's own
- *    components read via Tailwind utilities (`bg-app`, `text-ink`,
- *    `border-card`, etc.). These flip between light/dark modes.
+ * Token shape
+ * -----------
+ * Tokens stay HSL triples for two reasons:
+ *  - Tailwind utilities continue to use `hsl(var(--name))` — no
+ *    invasive tailwind.config rewrite.
+ *  - The shadcn family (already wired in) consumes HSL triples.
  *
- * 2. **shadcn tokens** (primary, secondary, destructive, muted,
- *    accent, popover, card, border, input, ring, radius) — kept in
- *    their original shape from the existing scaffold so any future
- *    shadcn-family components drop in without reworking the token
- *    system. Their values also flip for dark mode.
+ * Two layers preserved from the pre-Ferrari scaffold:
+ *  1. Semantic Ferrari tokens (`--canvas`, `--ink`, `--primary`,
+ *     `--hairline`, etc.) — the source of truth for the brand.
+ *  2. App / shadcn aliases (`--app-bg`, `--background`, `--card`,
+ *     `--ring`, etc.) — reference the Ferrari semantic tokens via
+ *     CSS var indirection so existing utility classes keep working.
  *
- * Theme switching
- * ---------------
- * The `useThemeStore` writes one of three values to
- * `html[data-theme]`:
- *   - `light` → matches `:root` (default)
- *   - `dark`  → matches `[data-theme="dark"]`
- *   - `system` → matches `[data-theme="system"]` which uses a CSS
- *     media query to pick light vs. dark at paint time
- *
- * The `[data-theme="system"]` rule means a user's OS-level
- * preference changes are reflected WITHOUT JavaScript re-rendering
- * — CSS handles the switch. The JS layer only needs to persist
- * the selection.
- *
- * FOUC prevention
- * ---------------
- * An inline `<script>` in `index.html` reads localStorage + the OS
- * preference BEFORE React hydrates and sets `data-theme` on the
- * `<html>` element. Without that, the first paint uses `:root`
- * defaults (light) even if the user's preference is dark, then
- * flashes to dark when the React store mounts. The inline script
- * is small (< 500 bytes minified) and runs synchronously.
+ * Plan ref: docs/plans/pr27-ferrari-realignment.md §3 (L1 token
+ * mapping); §10 Q3 Option B (6-token CTI status palette recolored
+ * within Ferrari hex range).
  */
 
 @layer base {
   :root {
-    /* Semantic surface + text + accent (HSL triples; consumed via
-     * Tailwind utilities like `bg-app`, `text-ink`, `border-card`). */
-    --app-bg: 220 8% 96%;
-    --surface: 0 0% 100%;
-    --surface-elevated: 220 6% 98%;
-    --ink: 220 10% 12%;
-    --ink-muted: 220 8% 40%;
-    --ink-subtle: 220 6% 55%;
-    --border-card: 220 10% 88%;
-    --border-strong: 220 10% 78%;
-    --signal: 190 75% 45%;
-    --signal-hover: 190 75% 38%;
-    --signal-fg: 0 0% 100%;
-    --focus-ring: 30 90% 50%;
+    /* ------------------------------------------------------------
+     * Ferrari brand & accent
+     * ------------------------------------------------------------ */
+    --primary: 4 76% 48%;             /* #da291c Rosso Corsa */
+    --primary-active: 9 86% 36%;      /* #b01e0a press state */
+    --primary-foreground: 0 0% 100%;  /* #ffffff on primary */
+    --accent-yellow-hypersail: 56 100% 50%;  /* #fff200 Hypersail (focus only) */
+    --accent-yellow: 56 100% 49%;     /* #f6e500 sub-brand (Hypersail context only) */
 
-    --status-crit: 0 72% 48%;
-    --status-warn: 30 90% 50%;
-    --status-elev: 45 90% 48%;
-    --status-ok: 145 60% 40%;
-    --status-info: 190 75% 45%;
-    --status-special: 275 55% 50%;
+    /* ------------------------------------------------------------
+     * Surface
+     * ------------------------------------------------------------ */
+    --canvas: 0 0% 9.4%;              /* #181818 — single near-black canvas */
+    --canvas-elevated: 0 0% 18.8%;    /* #303030 cards, panels */
+    --canvas-light: 0 0% 100%;        /* #ffffff editorial light bands (opt-in) */
+    --surface-soft-light: 0 0% 96.9%; /* #f7f7f7 alt light band */
+    --surface-strong-light: 0 0% 92.2%; /* #ebebeb light dividers, badges */
 
-    /* CTI brand aliases (back-compat with pre-Group-C Tailwind classes
-     * `text-ink`, `border-grid` — grid == border-card now). */
-    --grid: 220 10% 88%;
+    /* ------------------------------------------------------------
+     * Hairlines (Ferrari uses hairline + photographic depth instead
+     * of drop-shadow tiers)
+     * ------------------------------------------------------------ */
+    --hairline: 0 0% 18.8%;           /* #303030 dark divider */
+    --hairline-on-light: 0 0% 82.4%;  /* #d2d2d2 light divider */
+    --hairline-soft: 0 0% 92.2%;      /* #ebebeb soft divider */
 
-    /* shadcn compatibility tokens (unchanged semantics). */
-    --background: 220 8% 96%;
-    --foreground: 220 10% 12%;
-    --card: 0 0% 100%;
-    --card-foreground: 220 10% 12%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 220 10% 12%;
-    --primary: 190 75% 45%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 220 6% 92%;
-    --secondary-foreground: 220 10% 12%;
-    --muted: 220 6% 90%;
-    --muted-foreground: 220 8% 40%;
-    --accent: 145 60% 40%;
-    --accent-foreground: 0 0% 100%;
-    --destructive: 0 72% 48%;
+    /* ------------------------------------------------------------
+     * Text
+     * ------------------------------------------------------------ */
+    --ink: 0 0% 100%;                 /* #ffffff display, body emphasis on dark */
+    --body: 0 0% 58.8%;               /* #969696 default running-text on dark */
+    --muted: 0 0% 40%;                /* #666666 sub-titles, captions on dark */
+    --muted-soft: 0 0% 56.1%;         /* #8f8f8f disabled link text */
+    --body-on-light: 0 0% 9.4%;       /* #181818 default text on light bands */
+
+    /* ------------------------------------------------------------
+     * Status palette (CTI 6-token Option B per plan §10 Q3)
+     * Semantic richness preserved by recoloring within the Ferrari
+     * palette; Rosso Corsa reserved for `crit` only so the
+     * "single accent used scarcely" Ferrari principle is honored.
+     * ------------------------------------------------------------ */
+    --status-info: 197 39% 51%;       /* #4c98b9 Ferrari semantic-info */
+    --status-success: 144 96% 29%;    /* #03904a Ferrari semantic-success */
+    --status-warning: 4 88% 56%;      /* #f13a2c Ferrari semantic-warning */
+    --status-crit: 4 76% 48%;         /* #da291c Rosso Corsa (crit only) */
+    --status-elev: 4 88% 56%;         /* collapsed to warning per plan §0.1 */
+    --status-special: 0 0% 56.1%;     /* #8f8f8f muted-soft (downgrade) */
+
+    /* CTI compatibility — pre-Ferrari Tailwind utilities still
+     * reference status.ok/.crit/.warn/etc. The names stay; the
+     * hex moved. */
+    --status-ok: 144 96% 29%;         /* alias of status-success */
+    --status-warn: 4 88% 56%;         /* alias of status-warning */
+
+    /* ------------------------------------------------------------
+     * Focus ring
+     * Ferrari Hypersail Yellow #fff200 — sub-brand color reserved
+     * for global focus-ring per DESIGN.md, NEVER used as decoration.
+     * ------------------------------------------------------------ */
+    --focus-ring: 56 100% 50%;        /* #fff200 Hypersail Yellow */
+
+    /* ------------------------------------------------------------
+     * Border radius — Ferrari sharp 0px default. Form-input 4px
+     * exception per DESIGN.md §Forms; pill 9999px reserved for
+     * badges (handled via tailwind `rounded-full` directly).
+     * ------------------------------------------------------------ */
+    --radius: 0;
+    --radius-input: 0.25rem;          /* 4px (DESIGN.md form-input only) */
+
+    /* ============================================================
+     * App-level semantic aliases — bridge the Ferrari token names
+     * to the existing utility surface (`bg-app`, `text-ink`,
+     * `border-card`, `bg-signal`, etc.). One indirection layer so
+     * call sites do not change wholesale at L1.
+     * ============================================================ */
+    --app-bg: var(--canvas);
+    --surface: var(--canvas-elevated);
+    --surface-elevated: var(--canvas-elevated);
+    --ink-muted: var(--body);
+    --ink-subtle: var(--muted);
+    --border-card: var(--hairline);
+    --border-strong: var(--hairline);
+    --signal: var(--primary);
+    --signal-hover: var(--primary-active);
+    --signal-fg: var(--primary-foreground);
+    --grid: var(--hairline);
+
+    /* ------------------------------------------------------------
+     * shadcn compatibility tokens — keep the names, point at
+     * Ferrari semantics so shadcn-family components flip cleanly.
+     * ------------------------------------------------------------ */
+    --background: var(--canvas);
+    --foreground: var(--ink);
+    --card: var(--canvas-elevated);
+    --card-foreground: var(--ink);
+    --popover: var(--canvas-elevated);
+    --popover-foreground: var(--ink);
+    --secondary: 0 0% 18.8%;          /* canvas-elevated literal for shadcn */
+    --secondary-foreground: 0 0% 100%;
+    --muted-foreground: 0 0% 58.8%;   /* body literal for shadcn */
+    --accent: var(--primary);
+    --accent-foreground: var(--primary-foreground);
+    --destructive: var(--status-crit);
     --destructive-foreground: 0 0% 100%;
-    --border: 220 10% 88%;
-    --input: 220 10% 84%;
-    --ring: 190 75% 45%;
-    --radius: 0.5rem;
+    --border: var(--hairline);
+    --input: 0 0% 18.8%;              /* canvas-elevated for input bg */
+    --ring: var(--focus-ring);
   }
 
-  /* Explicit dark palette. Selected via html[data-theme="dark"] and
-   * also inside the "system" media-query branch below, so one set of
-   * overrides covers both paths. */
-  [data-theme='dark'] {
-    --app-bg: 220 6% 7%;
-    --surface: 220 6% 9%;
-    --surface-elevated: 220 6% 12%;
-    --ink: 0 0% 96%;
-    --ink-muted: 220 4% 65%;
-    --ink-subtle: 220 4% 45%;
-    --border-card: 220 6% 16%;
-    --border-strong: 220 6% 26%;
-    --signal: 190 80% 55%;
-    --signal-hover: 190 80% 62%;
-    --signal-fg: 220 6% 7%;
-    --focus-ring: 35 95% 60%;
-    --grid: 220 6% 16%;
+  /* ============================================================
+   * Editorial light band (opt-in subtree).
+   *
+   * Per plan §2 + §10 Q2 — the per-section light editorial band
+   * replaces the pre-Ferrari `[data-theme="light"]` global theme.
+   * Opt in by adding `class="editorial-band-light"` to a DOM
+   * subtree (e.g. report list table, detail-pane background).
+   *
+   * Token overrides flip surface + text + hairline tokens to the
+   * Ferrari light palette inside the subtree only; brand accent
+   * (Rosso Corsa), focus ring, and status palette stay unchanged
+   * because those are brand-global concerns, not surface-local.
+   * ============================================================ */
+  .editorial-band-light {
+    --canvas: var(--canvas-light);
+    --canvas-elevated: var(--canvas-light);
+    --ink: var(--body-on-light);
+    --body: var(--muted);
+    --muted: var(--muted-soft);
+    --hairline: var(--hairline-on-light);
 
-    --status-crit: 0 75% 58%;
-    --status-warn: 30 95% 60%;
-    --status-elev: 45 95% 58%;
-    --status-ok: 145 65% 52%;
-    --status-info: 190 80% 55%;
-    --status-special: 275 65% 62%;
+    /* App aliases re-derive from the overridden semantic tokens. */
+    --app-bg: var(--canvas-light);
+    --surface: var(--canvas-light);
+    --surface-elevated: var(--surface-soft-light);
+    --ink-muted: var(--body-on-light);
+    --ink-subtle: var(--muted-soft);
+    --border-card: var(--hairline-on-light);
+    --border-strong: var(--hairline-on-light);
+    --grid: var(--hairline-on-light);
 
-    --background: 220 6% 7%;
-    --foreground: 0 0% 96%;
-    --card: 220 6% 9%;
-    --card-foreground: 0 0% 96%;
-    --popover: 220 6% 12%;
-    --popover-foreground: 0 0% 96%;
-    --primary: 190 80% 55%;
-    --primary-foreground: 220 6% 7%;
-    --secondary: 220 6% 14%;
-    --secondary-foreground: 0 0% 96%;
-    --muted: 220 6% 11%;
-    --muted-foreground: 220 4% 60%;
-    --accent: 145 65% 52%;
-    --accent-foreground: 0 0% 96%;
-    --destructive: 0 75% 58%;
-    --destructive-foreground: 0 0% 96%;
-    --border: 220 6% 16%;
-    --input: 220 6% 14%;
-    --ring: 190 80% 55%;
-  }
-
-  /* System mode: same tokens, picked by media query. No JS needed
-   * to react to an OS-level change while the user has "system"
-   * selected — the media query fires on preference change. */
-  [data-theme='system'] {
-    /* Default to the light set (`:root` values already apply). The
-     * dark branch below overrides when the OS prefers dark. */
-  }
-
-  @media (prefers-color-scheme: dark) {
-    [data-theme='system'] {
-      --app-bg: 220 6% 7%;
-      --surface: 220 6% 9%;
-      --surface-elevated: 220 6% 12%;
-      --ink: 0 0% 96%;
-      --ink-muted: 220 4% 65%;
-      --ink-subtle: 220 4% 45%;
-      --border-card: 220 6% 16%;
-      --border-strong: 220 6% 26%;
-      --signal: 190 80% 55%;
-      --signal-hover: 190 80% 62%;
-      --signal-fg: 220 6% 7%;
-      --focus-ring: 35 95% 60%;
-      --grid: 220 6% 16%;
-
-      --status-crit: 0 75% 58%;
-      --status-warn: 30 95% 60%;
-      --status-elev: 45 95% 58%;
-      --status-ok: 145 65% 52%;
-      --status-info: 190 80% 55%;
-      --status-special: 275 65% 62%;
-
-      --background: 220 6% 7%;
-      --foreground: 0 0% 96%;
-      --card: 220 6% 9%;
-      --card-foreground: 0 0% 96%;
-      --popover: 220 6% 12%;
-      --popover-foreground: 0 0% 96%;
-      --primary: 190 80% 55%;
-      --primary-foreground: 220 6% 7%;
-      --secondary: 220 6% 14%;
-      --secondary-foreground: 0 0% 96%;
-      --muted: 220 6% 11%;
-      --muted-foreground: 220 4% 60%;
-      --accent: 145 65% 52%;
-      --accent-foreground: 0 0% 96%;
-      --destructive: 0 75% 58%;
-      --destructive-foreground: 0 0% 96%;
-      --border: 220 6% 16%;
-      --input: 220 6% 14%;
-      --ring: 190 80% 55%;
-    }
+    /* shadcn aliases follow. */
+    --background: var(--canvas-light);
+    --foreground: var(--body-on-light);
+    --card: var(--canvas-light);
+    --card-foreground: var(--body-on-light);
+    --popover: var(--canvas-light);
+    --popover-foreground: var(--body-on-light);
+    --border: var(--hairline-on-light);
+    --input: 0 0% 100%;
   }
 }

@@ -77,7 +77,6 @@ export interface Resources {
     }
   }
   userMenu: {
-    theme: string
     language: string
     signOut: string
     triggerAriaLabel: string

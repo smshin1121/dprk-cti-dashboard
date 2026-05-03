@@ -2,13 +2,11 @@ import type { Config } from 'tailwindcss'
 import animate from 'tailwindcss-animate'
 
 export default {
-  // Plan D4: switch via html[data-theme="dark"] attribute (not the
-  // .dark class). Tailwind 3.4+ `['selector', <css-selector>]` form
-  // selects dark styles when the given selector matches the html
-  // element. The 'system' branch is handled inside tokens.css via
-  // `@media (prefers-color-scheme: dark)` so Tailwind's dark:*
-  // utilities fire there too.
-  darkMode: ['selector', '[data-theme="dark"], [data-theme="system"]:is(:root)'],
+  // Ferrari L1: theme model collapsed from light/dark/system to a
+  // single dark canvas (#181818). Per-section light editorial bands
+  // are opt-in via the `.editorial-band-light` class declared in
+  // styles/tokens.css — Tailwind dark: variants are no longer used
+  // and the darkMode selector has been removed.
   content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
   theme: {
     container: {
@@ -89,12 +87,35 @@ export default {
           foreground: 'hsl(var(--card-foreground))',
         },
       },
+      // Ferrari sharp 0px corners are the brand button shape. The
+      // `--radius` var collapses to 0 in tokens.css; pill geometry
+      // (rounded-full = 9999px) is reserved for badges only; form
+      // inputs opt in to a 4px corner via the `rounded-input` alias.
       borderRadius: {
+        DEFAULT: 'var(--radius)',
         lg: 'var(--radius)',
-        md: 'calc(var(--radius) - 2px)',
-        sm: 'calc(var(--radius) - 4px)',
+        md: 'var(--radius)',
+        sm: 'var(--radius)',
+        input: 'var(--radius-input)',
+      },
+      // Ferrari named 8px spacing ladder — supplements (does not
+      // replace) the Tailwind default scale so existing `p-4` etc.
+      // keep working until L2 sweep migrates them.
+      spacing: {
+        xxxs: '4px',
+        xxs: '8px',
+        xs: '16px',
+        sm: '24px',
+        md: '32px',
+        lg: '48px',
+        xl: '64px',
+        xxl: '96px',
+        super: '128px',
       },
       fontFamily: {
+        // Inter Variable substitutes FerrariSans (licensed). All
+        // weights resolved via the variable axis from
+        // @fontsource-variable/inter (loaded in src/main.tsx).
         sans: [
           'Inter Variable',
           'Inter',
@@ -110,6 +131,23 @@ export default {
           'SFMono-Regular',
           'monospace',
         ],
+      },
+      // Ferrari weight semantics — display NEVER bold (500), CTAs
+      // bold (700), body 400. Aliases keep usage explicit at call
+      // sites and prevent accidental `font-bold` on display copy.
+      fontWeight: {
+        display: '500',
+        body: '400',
+        cta: '700',
+      },
+      // Ferrari letter-spacing ladder.
+      letterSpacing: {
+        // -1% on display sizes; CSS `em` so it scales with font size.
+        display: '-0.01em',
+        // 1.4px tracking on uppercase CTAs at 14px base = ~0.0875em.
+        cta: '0.0875em',
+        // 0.65px tracking on uppercase nav at 13px base = ~0.05em.
+        nav: '0.05em',
       },
       keyframes: {
         'accordion-down': {

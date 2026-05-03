@@ -1,12 +1,10 @@
 /**
- * Top-nav user menu — plan D4 / D5 / §4 Group G.
+ * Top-nav user menu.
  *
  * Dropdown composition:
  *   Header     — email + primary-role badge (identity affordance)
  *   Separator
- *   Theme row  — `ThemeToggle` (relocated from standalone topbar
- *                mount in Groups A-C → user menu in Group G, per
- *                plan D5 lock; existing tests move with it).
+ *   Language   — `LocaleToggle`
  *   Separator
  *   Logout     — triggers `useLogout` → `queryClient.clear()` (via
  *                hook's onSuccess) → local navigate('/login').
@@ -34,7 +32,6 @@ import { useAuth } from '../features/auth/useAuth'
 import { useLogout } from '../features/auth/useLogout'
 import { cn } from '../lib/utils'
 import { LocaleToggle } from './LocaleToggle'
-import { ThemeToggle } from './ThemeToggle'
 
 export function UserMenu(): JSX.Element | null {
   const { user } = useAuth()
@@ -94,13 +91,6 @@ export function UserMenu(): JSX.Element | null {
           </DropdownMenu.Label>
 
           <DropdownMenu.Separator className="my-1 h-px bg-border-card" />
-
-          <div className="flex items-center justify-between px-2 py-1.5">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-ink-subtle">
-              {t('userMenu.theme')}
-            </span>
-            <ThemeToggle />
-          </div>
 
           <div className="flex items-center justify-between px-2 py-1.5">
             <span className="text-[10px] font-semibold uppercase tracking-wider text-ink-subtle">
