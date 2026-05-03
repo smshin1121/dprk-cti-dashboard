@@ -18,9 +18,10 @@ export default {
     },
     extend: {
       colors: {
-        // Semantic surface + text tokens (plan D4 lock). All HSL
-        // triples backed by CSS vars in styles/tokens.css — flip
-        // automatically between light / dark / system.
+        // Semantic surface + text tokens (Ferrari L1 lock). All HSL
+        // triples backed by CSS vars in styles/tokens.css. Single
+        // dark canvas; per-section light editorial bands opt in via
+        // .editorial-band-light declared at the same source.
         app: 'hsl(var(--app-bg))',
         surface: {
           DEFAULT: 'hsl(var(--surface))',

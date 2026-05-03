@@ -75,21 +75,24 @@
     --status-success: 150.2 95.9% 28.8%; /* #03904a Ferrari semantic-success */
     --status-warning: 4.3 87.6% 55.9%;   /* #f13a2c Ferrari semantic-warning */
     --status-crit: 4.1 77.2% 48.2%;      /* #da291c Rosso Corsa (crit only) */
-    --status-elev: 4.3 87.6% 55.9%;      /* collapsed to warning per plan §0.1 */
+    --status-elev: var(--status-warning); /* collapsed to warning per plan §0.1 */
     --status-special: 0 0% 56.1%;        /* #8f8f8f muted-soft (downgrade) */
 
-    /* CTI compatibility — pre-Ferrari Tailwind utilities still
-     * reference status.ok/.crit/.warn/etc. The names stay; the
-     * hex moved. */
-    --status-ok: 150.2 95.9% 28.8%;      /* alias of status-success */
-    --status-warn: 4.3 87.6% 55.9%;      /* alias of status-warning */
+    /* CTI compatibility — pre-Ferrari Tailwind utilities reference
+     * status.ok / status.warn etc. Wire them through to the
+     * canonical Ferrari semantic tokens so a future hex update at
+     * the Ferrari layer flows through automatically. */
+    --status-ok: var(--status-success);
+    --status-warn: var(--status-warning);
 
     /* ------------------------------------------------------------
      * Focus ring
      * Ferrari Hypersail Yellow #fff200 — sub-brand color reserved
      * for global focus-ring per DESIGN.md, NEVER used as decoration.
+     * Aliased via --accent-yellow-hypersail so the Hypersail token
+     * is the single hex source.
      * ------------------------------------------------------------ */
-    --focus-ring: 56.9 100% 50%;         /* #fff200 Hypersail Yellow */
+    --focus-ring: var(--accent-yellow-hypersail);
 
     /* ------------------------------------------------------------
      * Border radius — Ferrari sharp 0px default. Form-input 4px

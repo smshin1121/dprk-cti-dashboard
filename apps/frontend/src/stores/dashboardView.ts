@@ -20,8 +20,8 @@
  *   change every time a new viz component lands.
  *
  * D10 compliance:
- * Like filters + theme, view/tab are UI state — a user's focus choice.
- * No server endpoint knows about them. zustand is the right home,
+ * Like filters, view/tab are UI state — a user's focus choice. No
+ * server endpoint knows about them. zustand is the right home,
  * NOT React Query.
  *
  * URL-sync contract:

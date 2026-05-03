@@ -21,9 +21,10 @@ describe('FilterBar', () => {
     render(<FilterBar />)
     const bar = screen.getByTestId('filter-bar')
     expect(bar).toBeInTheDocument()
-    // surface pin — same approach as Shell.theme.test.tsx so Group D
-    // can't regress to hardcoded slate classes that don't flip with
-    // dark mode.
+    // surface pin — Group D can't regress to hardcoded slate classes;
+    // Ferrari L1 lock requires semantic-token surface utilities
+    // (bg-surface or border-border-card), never raw bg-white on
+    // structural chrome.
     expect(bar.className).toMatch(/\bbg-surface\b|\bborder-border-card\b/)
     expect(bar.className).not.toMatch(/\bbg-white\b/)
 
