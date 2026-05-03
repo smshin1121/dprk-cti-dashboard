@@ -21,6 +21,7 @@ from .routers import (
     actors,
     alerts,
     analytics,
+    analytics_correlation,
     auth,
     dashboard,
     export,
@@ -186,6 +187,15 @@ app.include_router(
     analytics.router,
     prefix="/api/v1/analytics",
     tags=["analytics"],
+    dependencies=[Depends(verify_token)],
+)
+# Phase 3 Slice 3 D-1 correlation (PR #28). Same prefix + auth as
+# the rest of the analytics surface; separate router file to keep the
+# correlation pipeline isolated from the existing aggregator code.
+app.include_router(
+    analytics_correlation.router,
+    prefix="/api/v1/analytics",
+    tags=["analytics", "correlation"],
     dependencies=[Depends(verify_token)],
 )
 app.include_router(

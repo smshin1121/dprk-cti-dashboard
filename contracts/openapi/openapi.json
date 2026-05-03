@@ -395,6 +395,284 @@
         "title": "AttackTechniqueCount",
         "type": "object"
       },
+      "CorrelationCatalogResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "series": {
+            "items": {
+              "$ref": "#/components/schemas/CorrelationSeriesItem"
+            },
+            "title": "Series",
+            "type": "array"
+          }
+        },
+        "required": [
+          "series"
+        ],
+        "title": "CorrelationCatalogResponse",
+        "type": "object"
+      },
+      "CorrelationCellMethodBlock": {
+        "additionalProperties": false,
+        "description": "Locked 6-field per-method shape — every lag, every method, always.\n\nWhen ``reason`` is non-null, all of ``r``/``p_raw``/``p_adjusted`` MUST\nbe null and ``significant`` MUST be False (spec §5.2 lock). Pact\npins this contract via the model_validator below.",
+        "properties": {
+          "effective_n_at_lag": {
+            "minimum": 0.0,
+            "title": "Effective N At Lag",
+            "type": "integer"
+          },
+          "p_adjusted": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P Adjusted"
+          },
+          "p_raw": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P Raw"
+          },
+          "r": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "R"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "insufficient_sample_at_lag",
+                  "degenerate",
+                  "low_count_suppressed"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "significant": {
+            "title": "Significant",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "r",
+          "p_raw",
+          "p_adjusted",
+          "significant",
+          "effective_n_at_lag",
+          "reason"
+        ],
+        "title": "CorrelationCellMethodBlock",
+        "type": "object"
+      },
+      "CorrelationInterpretation": {
+        "additionalProperties": false,
+        "description": "Spec §6.1 — correlation ≠ causation as structural API contract.",
+        "properties": {
+          "caveat": {
+            "title": "Caveat",
+            "type": "string"
+          },
+          "methodology_url": {
+            "title": "Methodology Url",
+            "type": "string"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/CorrelationWarning"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "caveat",
+          "methodology_url",
+          "warnings"
+        ],
+        "title": "CorrelationInterpretation",
+        "type": "object"
+      },
+      "CorrelationLagCell": {
+        "additionalProperties": false,
+        "properties": {
+          "lag": {
+            "maximum": 24.0,
+            "minimum": -24.0,
+            "title": "Lag",
+            "type": "integer"
+          },
+          "pearson": {
+            "$ref": "#/components/schemas/CorrelationCellMethodBlock"
+          },
+          "spearman": {
+            "$ref": "#/components/schemas/CorrelationCellMethodBlock"
+          }
+        },
+        "required": [
+          "lag",
+          "pearson",
+          "spearman"
+        ],
+        "title": "CorrelationLagCell",
+        "type": "object"
+      },
+      "CorrelationResponse": {
+        "additionalProperties": false,
+        "description": "The locked 200 response shape for GET /api/v1/analytics/correlation.\n\nSpec §4.4 + §5.3: lag_grid always has exactly 49 cells with sorted\nlags -24..+24. The model validator below pins the invariant so any\naggregator regression that drops/duplicates/reorders cells is\ncaught at validation time, not in production.",
+        "properties": {
+          "alpha": {
+            "exclusiveMaximum": 1.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Alpha",
+            "type": "number"
+          },
+          "date_from": {
+            "format": "date",
+            "title": "Date From",
+            "type": "string"
+          },
+          "date_to": {
+            "format": "date",
+            "title": "Date To",
+            "type": "string"
+          },
+          "effective_n": {
+            "minimum": 0.0,
+            "title": "Effective N",
+            "type": "integer"
+          },
+          "interpretation": {
+            "$ref": "#/components/schemas/CorrelationInterpretation"
+          },
+          "lag_grid": {
+            "items": {
+              "$ref": "#/components/schemas/CorrelationLagCell"
+            },
+            "maxItems": 49,
+            "minItems": 49,
+            "title": "Lag Grid",
+            "type": "array"
+          },
+          "x": {
+            "title": "X",
+            "type": "string"
+          },
+          "y": {
+            "title": "Y",
+            "type": "string"
+          }
+        },
+        "required": [
+          "x",
+          "y",
+          "date_from",
+          "date_to",
+          "alpha",
+          "effective_n",
+          "lag_grid",
+          "interpretation"
+        ],
+        "title": "CorrelationResponse",
+        "type": "object"
+      },
+      "CorrelationSeriesItem": {
+        "additionalProperties": false,
+        "description": "One catalog row — exposes which series are correlatable.\n\n``id`` is opaque to the FE per spec R-9 mitigation; the FE reads\nlabel_ko/label_en for display and never parses the id structure.",
+        "properties": {
+          "bucket": {
+            "const": "monthly",
+            "title": "Bucket",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label_en": {
+            "title": "Label En",
+            "type": "string"
+          },
+          "label_ko": {
+            "title": "Label Ko",
+            "type": "string"
+          },
+          "root": {
+            "enum": [
+              "reports.published",
+              "incidents.reported"
+            ],
+            "title": "Root",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label_ko",
+          "label_en",
+          "root",
+          "bucket"
+        ],
+        "title": "CorrelationSeriesItem",
+        "type": "object"
+      },
+      "CorrelationWarning": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "enum": [
+              "non_stationary_suspected",
+              "outlier_influence",
+              "sparse_window",
+              "cross_rooted_pair",
+              "identity_or_containment_suspected",
+              "low_count_suppressed_cells"
+            ],
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "info",
+              "warn"
+            ],
+            "title": "Severity",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "severity"
+        ],
+        "title": "CorrelationWarning",
+        "type": "object"
+      },
       "CurrentUser": {
         "description": "Identity surfaced to route handlers via Depends(verify_token).",
         "properties": {
@@ -3037,6 +3315,199 @@
         "summary": "ATT&CK tactic × technique matrix",
         "tags": [
           "analytics"
+        ]
+      }
+    },
+    "/api/v1/analytics/correlation": {
+      "get": {
+        "description": "Returns the full lag scan (49 cells) for two catalog series over the requested date window. Each lag carries homogeneous Pearson and Spearman blocks with raw and BH-FDR-adjusted p-values; cells outside the BH family carry a typed `reason` and null metric fields. The response also carries `interpretation.{caveat, methodology_url, warnings}` per the structural correlation-≠-causation contract (spec §6).\n\nPositive lag = X leads Y by k months.",
+        "operationId": "correlation_endpoint_api_v1_analytics_correlation_get",
+        "parameters": [
+          {
+            "description": "Series ID from /correlation/series",
+            "in": "query",
+            "name": "x",
+            "required": true,
+            "schema": {
+              "description": "Series ID from /correlation/series",
+              "title": "X",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Series ID from /correlation/series; must differ from x",
+            "in": "query",
+            "name": "y",
+            "required": true,
+            "schema": {
+              "description": "Series ID from /correlation/series; must differ from x",
+              "title": "Y",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Inclusive lower bound; defaults to DB min",
+            "in": "query",
+            "name": "date_from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Inclusive lower bound; defaults to DB min",
+              "title": "Date From"
+            }
+          },
+          {
+            "description": "Inclusive upper bound; defaults to DB max",
+            "in": "query",
+            "name": "date_to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Inclusive upper bound; defaults to DB max",
+              "title": "Date To"
+            }
+          },
+          {
+            "description": "Significance threshold for `significant` flag (BH-FDR adjusted). Default 0.05.",
+            "in": "query",
+            "name": "alpha",
+            "required": false,
+            "schema": {
+              "default": 0.05,
+              "description": "Significance threshold for `significant` flag (BH-FDR adjusted). Default 0.05.",
+              "exclusiveMaximum": 1.0,
+              "exclusiveMinimum": 0.0,
+              "title": "Alpha",
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CorrelationResponse"
+                }
+              }
+            },
+            "description": "Locked CorrelationResponse payload."
+          },
+          "401": {
+            "description": "Missing or invalid session cookie"
+          },
+          "403": {
+            "description": "Role not analyst / researcher / policy / soc / admin"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "identical_series": {
+                    "summary": "x and y are identical",
+                    "value": {
+                      "detail": [
+                        {
+                          "ctx": {
+                            "x": "reports.total",
+                            "y": "reports.total"
+                          },
+                          "loc": [
+                            "query",
+                            "y"
+                          ],
+                          "msg": "x and y must be different series IDs",
+                          "type": "value_error.identical_series"
+                        }
+                      ]
+                    }
+                  },
+                  "insufficient_sample": {
+                    "summary": "effective_n < 30",
+                    "value": {
+                      "detail": [
+                        {
+                          "ctx": {
+                            "effective_n": 18,
+                            "minimum_n": 30
+                          },
+                          "loc": [
+                            "body",
+                            "correlation"
+                          ],
+                          "msg": "Minimum 30 valid months required after no_data exclusion; got 18",
+                          "type": "value_error.insufficient_sample"
+                        }
+                      ]
+                    }
+                  },
+                  "series_not_found": {
+                    "summary": "x is not in the catalog",
+                    "value": {
+                      "detail": [
+                        {
+                          "loc": [
+                            "query",
+                            "x"
+                          ],
+                          "msg": "series id 'foo.bar' not in catalog",
+                          "type": "value_error"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Validation error — uniform FastAPI `detail[]` envelope. `type` discriminator: `value_error.identical_series` (x==y), `value_error.insufficient_sample` (effective_n < 30), or plain `value_error` for catalog/date validation."
+          },
+          "429": {
+            "description": "60/min per-user rate limit exceeded"
+          }
+        },
+        "summary": "D-1 correlation analysis — Pearson + Spearman + lag CCF (±24 months). Positive lag = X leads Y by k months.",
+        "tags": [
+          "analytics",
+          "correlation"
+        ]
+      }
+    },
+    "/api/v1/analytics/correlation/series": {
+      "get": {
+        "description": "Returns the list of named time series the correlation endpoint accepts as `x` / `y`. The FE is expected to render these via `label_ko` / `label_en` and treat the `id` field as opaque (spec R-9). Catalog is dynamically derived from existing dimension tables; the curated baseline is `reports.total` and `incidents.total`, plus per-motivation / per-sector / per-country incident series. Disclosure-suppression (spec R-16) protects sparse-bucket inference at the lag-cell level, so the catalog is uniform across all 5 read roles.",
+        "operationId": "correlation_series_endpoint_api_v1_analytics_correlation_series_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CorrelationCatalogResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "D-1 correlation series catalog",
+        "tags": [
+          "analytics",
+          "correlation"
         ]
       }
     },
