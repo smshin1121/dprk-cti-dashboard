@@ -40,6 +40,12 @@ The locked plan above placed the Pact contract (5 interactions per umbrella §7.
 
 **Test enumeration drift:** §9.1 names test files by capability (`test_correlation_aggregator_math.py`, `_bh_fdr.py`, `_calendar.py`, etc., 7 files). The implementation consolidated these into 5 unit files + 1 integration file (see r2 PR body for the file list). Test coverage is preserved; file partition was an authoring-time decision.
 
+### Redis cache (§7.4, NFR-1) deferred
+
+Plan §7.4 specifies a 5-minute Redis TTL cache for `/correlation` and instructs to reuse the pattern from `dashboard_aggregator`. Verification of `services/api/src/api/read/dashboard_aggregator.py:101` shows that pattern is itself deferred — dashboard_aggregator's plan §7.7 already defers materialized views AND Redis response cache. The correlation aggregator followed `dashboard_aggregator`'s actual no-cache state for read-surface consistency (`correlation_aggregator.py:227` records the consistency rationale).
+
+Net effect: the §7.4 instruction's premise (reusable pattern) was incorrect at lock time; correlation cannot be the first read endpoint to add Redis caching without also touching the rest of read surface. Cache implementation deferred to PR C (hardening) where it can land alongside dashboard_aggregator caching as part of read-surface performance work; until then, NFR-1 (p95 budget) is met by the in-process scipy/statsmodels work being O(N log N) at N≤168.
+
 ---
 
 ## 1. Goal
