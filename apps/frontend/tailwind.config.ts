@@ -61,6 +61,7 @@ export default {
         foreground: 'hsl(var(--foreground))',
         primary: {
           DEFAULT: 'hsl(var(--primary))',
+          active: 'hsl(var(--primary-active))',
           foreground: 'hsl(var(--primary-foreground))',
         },
         secondary: {
@@ -149,6 +150,10 @@ export default {
         cta: '0.0875em',
         // 0.65px tracking on uppercase nav at 13px base = ~0.05em.
         nav: '0.05em',
+        // 1.1px tracking on caption-uppercase at 11px base = 0.1em
+        // (DESIGN.md typography.caption-uppercase — section labels,
+        // badges, status pills).
+        caption: '0.1em',
       },
       keyframes: {
         'accordion-down': {

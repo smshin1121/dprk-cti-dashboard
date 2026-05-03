@@ -151,7 +151,7 @@ export function CommandPaletteButton(): JSX.Element {
         onClick={() => setOpen(true)}
         aria-label={t('shell.search.dialogLabel')}
         className={cn(
-          'flex h-8 items-center gap-2 rounded border border-border-card bg-app px-3 text-xs text-ink-muted',
+          'flex h-8 items-center gap-2 rounded-none border border-border-card bg-app px-3 text-xs font-cta uppercase tracking-cta text-ink-muted',
           'hover:border-signal hover:text-ink focus:outline-none focus:ring-2 focus:ring-ring',
         )}
       >
@@ -159,7 +159,7 @@ export function CommandPaletteButton(): JSX.Element {
         <span>{t('shell.search.placeholder')}</span>
         <kbd
           className={cn(
-            'ml-2 rounded border border-border-card bg-surface px-1 py-0.5 text-[10px] text-ink-subtle',
+            'ml-2 rounded-none border border-border-card bg-surface px-1 py-0.5 text-[10px] tracking-normal normal-case text-ink-subtle',
           )}
         >
           ⌘K
@@ -177,7 +177,7 @@ export function CommandPaletteButton(): JSX.Element {
       >
         <div
           className={cn(
-            'w-full max-w-lg overflow-hidden rounded-lg border border-border-card bg-surface text-ink shadow-xl',
+            'w-full max-w-lg overflow-hidden rounded-none border border-border-card bg-surface text-ink shadow-xl',
           )}
         >
           <Command.Input
@@ -210,12 +210,12 @@ export function CommandPaletteButton(): JSX.Element {
                   data-testid={`cmdk-item-${id}`}
                   onSelect={() => runCommand(id)}
                   className={cn(
-                    'flex cursor-pointer items-center justify-between rounded px-4 py-2 text-sm',
+                    'flex cursor-pointer items-center justify-between rounded-none px-4 py-2 text-sm',
                     'data-[selected=true]:bg-app',
                   )}
                 >
                   <span>{label}</span>
-                  <span className="text-[10px] uppercase tracking-wider text-ink-subtle">
+                  <span className="text-[10px] uppercase tracking-caption text-ink-subtle">
                     {id}
                   </span>
                 </Command.Item>

@@ -37,7 +37,7 @@ export function ReportsViewModeToggle(): JSX.Element {
       title={description}
       data-testid="reports-view-mode-toggle"
       data-view-mode={mode}
-      className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-border-card bg-surface text-ink-muted transition-colors hover:border-border-strong hover:text-ink"
+      className="inline-flex h-9 w-9 items-center justify-center rounded-none border border-border-card bg-surface text-ink-muted transition-colors hover:border-border-strong hover:text-ink"
     >
       <Icon className="h-4 w-4" aria-hidden="true" />
     </button>

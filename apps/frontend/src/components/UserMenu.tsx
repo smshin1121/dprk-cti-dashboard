@@ -57,7 +57,7 @@ export function UserMenu(): JSX.Element | null {
           data-testid="user-menu-trigger"
           aria-label={t('userMenu.triggerAriaLabel', { email: user.email })}
           className={cn(
-            'flex h-8 items-center gap-2 rounded border border-border-card bg-app px-2 text-xs text-ink',
+            'flex h-8 items-center gap-2 rounded-none border border-border-card bg-app px-2 text-xs text-ink',
             'hover:border-signal focus:outline-none focus:ring-2 focus:ring-ring',
           )}
         >
@@ -72,7 +72,7 @@ export function UserMenu(): JSX.Element | null {
           sideOffset={6}
           align="end"
           className={cn(
-            'z-50 min-w-[14rem] rounded-md border border-border-card bg-surface p-1 text-xs text-ink shadow-lg',
+            'z-50 min-w-[14rem] rounded-none border border-border-card bg-surface p-1 text-xs text-ink shadow-lg',
           )}
         >
           <DropdownMenu.Label className="px-2 py-1.5">
@@ -84,7 +84,7 @@ export function UserMenu(): JSX.Element | null {
             </div>
             <div
               data-testid="user-menu-role"
-              className="mt-1 inline-flex items-center rounded border border-border-card bg-app px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-ink-muted"
+              className="mt-1 inline-flex items-center rounded-none border border-border-card bg-app px-1.5 py-0.5 text-[10px] font-cta uppercase tracking-caption text-ink-muted"
             >
               {primaryRole}
             </div>
@@ -93,7 +93,7 @@ export function UserMenu(): JSX.Element | null {
           <DropdownMenu.Separator className="my-1 h-px bg-border-card" />
 
           <div className="flex items-center justify-between px-2 py-1.5">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-ink-subtle">
+            <span className="text-[10px] font-cta uppercase tracking-nav text-ink-subtle">
               {t('userMenu.language')}
             </span>
             <LocaleToggle />
@@ -112,7 +112,7 @@ export function UserMenu(): JSX.Element | null {
               handleLogout()
             }}
             className={cn(
-              'flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 outline-none',
+              'flex cursor-pointer items-center gap-2 rounded-none px-2 py-1.5 outline-none',
               'focus:bg-app data-[highlighted]:bg-app',
             )}
           >

@@ -62,7 +62,7 @@ export function ReportsYearJumpSelect(): JSX.Element {
   const value = detectActiveYear(dateFrom, dateTo)
 
   return (
-    <label className="flex items-center gap-2 text-xs text-ink-muted">
+    <label className="flex items-center gap-2 text-xs font-cta uppercase tracking-nav text-ink-muted">
       <span>Year</span>
       <select
         data-testid="reports-year-jump"
@@ -78,7 +78,7 @@ export function ReportsYearJumpSelect(): JSX.Element {
             setDateRange(`${y}-01-01`, `${y}-12-31`)
           }
         }}
-        className="rounded-md border border-border-card bg-surface px-2 py-1 text-ink hover:border-border-strong focus:outline-none focus:ring-2 focus:ring-ring"
+        className="rounded-input border border-border-card bg-surface px-2 py-1 text-xs font-body normal-case tracking-normal text-ink hover:border-border-strong focus:outline-none focus:ring-2 focus:ring-ring"
       >
         <option value="">All years</option>
         {value === CUSTOM_RANGE_VALUE ? (

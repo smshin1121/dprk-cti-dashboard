@@ -55,7 +55,7 @@ export function LocaleToggle(): JSX.Element {
       onClick={handleClick}
       aria-label={t('locale.ariaLabel')}
       className={cn(
-        'inline-flex h-6 items-center rounded border border-border-card bg-app px-2 text-[10px] font-semibold uppercase tracking-wider text-ink-muted',
+        'inline-flex h-6 items-center rounded-none border border-border-card bg-app px-2 text-[10px] font-cta uppercase tracking-cta text-ink-muted',
         'hover:border-signal hover:text-ink focus:outline-none focus:ring-2 focus:ring-ring',
       )}
     >
