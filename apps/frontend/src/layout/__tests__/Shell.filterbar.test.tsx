@@ -82,9 +82,15 @@ describe('Shell — FilterBar integration (plan D5)', () => {
   // test file (Ferrari L1 collapsed the 3-mode theme; the non-theme
   // assertions about cmdk-trigger mount + semantic-token classes are
   // not theme-specific so they live here.)
-  it('topbar mounts the command-palette trigger', async () => {
+  it('topbar mounts the command-palette trigger inside shell-topnav', async () => {
     renderShell()
-    expect(await screen.findByTestId('cmdk-trigger')).toBeInTheDocument()
+    // Wait for the topnav to be in the document, then scope the
+    // trigger lookup to shell-topnav (not the document) so a
+    // future move of cmdk-trigger out of the topbar fails this
+    // test loud — matches the deleted Shell.theme.test.tsx scope.
+    const topnav = await screen.findByTestId('shell-topnav')
+    const trigger = topnav.querySelector('[data-testid="cmdk-trigger"]')
+    expect(trigger).not.toBeNull()
   })
 
   it('topbar uses semantic surface tokens (Ferrari L1 — no raw hex)', () => {
@@ -99,5 +105,10 @@ describe('Shell — FilterBar integration (plan D5)', () => {
     // regress the topbar surface boundary.
     expect(topnav.className).toMatch(/\bbg-(app|surface)\b/)
     expect(topnav.className).toMatch(/\bborder-border-card\b/)
+    // Negative guard — no raw white background. Ferrari L1 lock:
+    // the dark canvas is the global surface; light read-through is
+    // opt-in via .editorial-band-light, never via raw bg-white on
+    // structural chrome.
+    expect(topnav.className).not.toMatch(/\bbg-white\b/)
   })
 })

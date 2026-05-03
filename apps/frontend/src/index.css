@@ -1,11 +1,16 @@
+/* Design tokens — Ferrari L1. MUST come BEFORE @tailwind directives
+ * because PostCSS-import requires @import statements to precede all
+ * non-import statements. The previous order (@tailwind first, then
+ * @import) caused PostCSS-import to drop the entire tokens.css from
+ * the built CSS — the :root token block was never emitted, so
+ * `bg-primary`, `bg-app`, `border-border-card`, and all Ferrari
+ * color tokens fell back to invalid (var(--name) resolves to
+ * nothing). Codex r2 caught this regression. */
+@import './styles/tokens.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-
-/* Design tokens — plan D4 semantic + shadcn layers, both theme-
- * flipping. Must come after Tailwind's base so the CSS vars are
- * available to Tailwind-generated utilities. */
-@import './styles/tokens.css';
 
 @layer base {
   * {
