@@ -63,11 +63,11 @@ export function ListTable<T>({
   return (
     <div
       data-testid="list-table-populated"
-      className="overflow-x-auto rounded-lg border border-border-card bg-surface"
+      className="overflow-x-auto rounded-none border border-border-card bg-surface"
     >
       <table className="w-full text-sm text-ink">
         <caption className="sr-only">{caption}</caption>
-        <thead className="border-b border-border-card bg-app text-[10px] font-semibold uppercase tracking-wider text-ink-subtle">
+        <thead className="border-b border-border-card bg-app text-[10px] font-cta uppercase tracking-caption text-ink-subtle">
           <tr>
             {columns.map((col) => (
               <th
@@ -114,7 +114,7 @@ function LoadingBody<T>({ caption, columns }: LoadingBodyProps<T>): JSX.Element 
       data-testid="list-table-loading"
       aria-busy="true"
       aria-label={caption}
-      className="overflow-hidden rounded-lg border border-border-card bg-surface"
+      className="overflow-hidden rounded-none border border-border-card bg-surface"
     >
       {/* Skeleton rows — 5 lines, enough to suggest scale but not
           claim a real row count. */}
@@ -147,7 +147,7 @@ function ErrorBody({ caption, error, onRetry }: ErrorBodyProps): JSX.Element {
       data-testid="list-table-error"
       role="alert"
       aria-label={caption}
-      className="flex flex-col gap-3 rounded-lg border border-border-card bg-surface p-4 text-sm text-ink"
+      className="flex flex-col gap-3 rounded-none border border-border-card bg-surface p-4 text-sm text-ink"
     >
       <div className="flex items-center gap-2 text-destructive">
         <AlertTriangle aria-hidden className="h-4 w-4" />
@@ -167,7 +167,7 @@ function ErrorBody({ caption, error, onRetry }: ErrorBodyProps): JSX.Element {
           data-testid="list-table-retry"
           onClick={onRetry}
           className={cn(
-            'flex items-center gap-1 self-start rounded border border-border-card bg-app px-3 py-1 text-xs text-ink',
+            'flex items-center gap-1 self-start rounded-none border border-border-card bg-app px-3 py-1 text-xs font-cta uppercase tracking-cta text-ink',
             'hover:border-signal focus:outline-none focus:ring-2 focus:ring-ring',
           )}
         >
@@ -189,7 +189,7 @@ function EmptyBody<T>({ caption, columns: _columns }: EmptyBodyProps<T>): JSX.El
     <div
       data-testid="list-table-empty"
       aria-label={caption}
-      className="rounded-lg border border-border-card bg-surface p-6 text-center text-sm text-ink-muted"
+      className="rounded-none border border-border-card bg-surface p-6 text-center text-sm text-ink-muted"
     >
       No rows match the current filters.
     </div>

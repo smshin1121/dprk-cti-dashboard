@@ -43,12 +43,12 @@ export function Shell(): JSX.Element {
     <div className="flex min-h-screen flex-col bg-app text-ink">
       <header
         data-testid="shell-topnav"
-        className="flex items-center gap-6 border-b border-border-card bg-surface px-6 py-4"
+        className="flex items-center gap-6 border-b border-border-card bg-app px-6 py-4"
       >
-        <p className="text-sm font-bold uppercase tracking-[0.2em] text-signal">
+        <p className="text-sm font-cta uppercase tracking-caption text-signal">
           {t('shell.brand')}
         </p>
-        <nav className="flex flex-1 items-center gap-4 text-sm font-medium text-ink-muted">
+        <nav className="flex flex-1 items-center gap-4 text-[13px] font-nav uppercase tracking-nav text-ink-muted">
           {NAV_ITEMS.map(({ to, key }) => (
             <NavLink
               key={to}

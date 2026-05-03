@@ -135,11 +135,12 @@ export default {
         ],
       },
       // Ferrari weight semantics — display NEVER bold (500), CTAs
-      // bold (700), body 400. Aliases keep usage explicit at call
-      // sites and prevent accidental `font-bold` on display copy.
+      // bold (700), body 400, nav-link 600. Aliases keep usage explicit
+      // at call sites and prevent accidental `font-bold` on display copy.
       fontWeight: {
         display: '500',
         body: '400',
+        nav: '600',
         cta: '700',
       },
       // Ferrari letter-spacing ladder.

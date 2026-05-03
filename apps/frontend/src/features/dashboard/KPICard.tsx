@@ -53,11 +53,10 @@ export function KPICard({
       data-testid="kpi-card"
       aria-busy={isLoading ? 'true' : 'false'}
       className={cn(
-        'flex min-w-[10rem] flex-1 flex-col gap-1 rounded-lg border border-border-card bg-surface p-4',
-        'shadow-sm',
+        'flex min-w-[10rem] flex-1 flex-col gap-1 rounded-none border border-border-card bg-surface p-4',
       )}
     >
-      <span className="text-[10px] font-semibold uppercase tracking-wider text-ink-subtle">
+      <span className="text-[10px] font-cta uppercase tracking-caption text-ink-subtle">
         {label}
       </span>
       {isLoading ? <LoadingBody /> : null}
@@ -113,7 +112,7 @@ function ErrorBody({ onRetry }: ErrorBodyProps): JSX.Element {
           data-testid="kpi-card-retry"
           onClick={onRetry}
           className={cn(
-            'flex items-center gap-1 self-start rounded border border-border-card bg-app px-2 py-1 text-xs text-ink',
+            'flex items-center gap-1 self-start rounded-none border border-border-card bg-app px-2 py-1 text-xs font-cta uppercase tracking-cta text-ink',
             'hover:border-signal focus:outline-none focus:ring-2 focus:ring-ring',
           )}
         >

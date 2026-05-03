@@ -105,7 +105,7 @@ export function ReportTimeline({
     return (
       <div
         data-testid="reports-timeline-empty"
-        className="rounded-md border border-border-card bg-surface p-6 text-center text-sm text-ink-muted"
+        className="rounded-none border border-border-card bg-surface p-6 text-center text-sm text-ink-muted"
       >
         No reports match the current filters.
       </div>
@@ -133,7 +133,7 @@ export function ReportTimeline({
                 key={dayGroup.day}
                 data-testid={`reports-timeline-day-${dayGroup.day}`}
               >
-                <h3 className="mb-2 font-mono text-xs uppercase tracking-wider text-ink-muted">
+                <h3 className="mb-2 font-mono text-xs uppercase tracking-caption text-ink-muted">
                   {formatDayHeading(dayGroup.day)}
                 </h3>
                 <ol className="flex flex-col gap-3 border-l border-border-card pl-5">
@@ -224,7 +224,7 @@ function TimelineError({
       data-testid="reports-timeline-error"
       role="alert"
       className={cn(
-        'flex items-center justify-between gap-3 rounded-md border border-border-card bg-surface p-4 text-sm text-ink',
+        'flex items-center justify-between gap-3 rounded-none border border-border-card bg-surface p-4 text-sm text-ink',
       )}
     >
       <div className="flex items-center gap-2">
@@ -237,7 +237,7 @@ function TimelineError({
           data-testid="reports-timeline-retry"
           onClick={onRetry}
           className={cn(
-            'inline-flex items-center gap-1 rounded border border-border-card bg-surface px-2 py-1 text-xs',
+            'inline-flex items-center gap-1 rounded-none border border-border-card bg-surface px-2 py-1 text-xs font-cta uppercase tracking-cta',
             'hover:border-signal focus:outline-none focus:ring-2 focus:ring-ring',
           )}
         >

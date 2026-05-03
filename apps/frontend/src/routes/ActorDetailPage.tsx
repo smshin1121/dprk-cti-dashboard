@@ -46,7 +46,7 @@ export function ActorDetailPage(): JSX.Element {
         data-testid="actor-detail-loading"
         role="status"
         aria-busy="true"
-        className="m-6 h-64 animate-pulse rounded-lg border border-border-card bg-surface"
+        className="m-6 h-64 animate-pulse rounded-none border border-border-card bg-surface"
       />
     )
   }
