@@ -58,7 +58,7 @@ export function UserMenu(): JSX.Element | null {
           aria-label={t('userMenu.triggerAriaLabel', { email: user.email })}
           className={cn(
             'flex h-8 items-center gap-2 rounded border border-border-card bg-app px-2 text-xs text-ink',
-            'hover:border-signal focus:outline-none focus:ring-2 focus:ring-signal',
+            'hover:border-signal focus:outline-none focus:ring-2 focus:ring-ring',
           )}
         >
           <UserCircle aria-hidden className="h-4 w-4 text-ink-muted" />

@@ -59,12 +59,12 @@ const TLP_LABELS: Record<TlpLevel, string> = {
 
 const inputClass = cn(
   'h-8 rounded border border-border-card bg-app px-2 text-xs text-ink',
-  'focus:outline-none focus:ring-2 focus:ring-signal',
+  'focus:outline-none focus:ring-2 focus:ring-ring',
 )
 
 const buttonClass = cn(
   'flex h-8 items-center gap-2 rounded border border-border-card bg-app px-3 text-xs font-medium text-ink',
-  'hover:border-signal focus:outline-none focus:ring-2 focus:ring-signal',
+  'hover:border-signal focus:outline-none focus:ring-2 focus:ring-ring',
 )
 
 export function FilterBar(): JSX.Element {

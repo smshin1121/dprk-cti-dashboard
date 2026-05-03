@@ -78,7 +78,7 @@ export function ReportsYearJumpSelect(): JSX.Element {
             setDateRange(`${y}-01-01`, `${y}-12-31`)
           }
         }}
-        className="rounded-md border border-border-card bg-surface px-2 py-1 text-ink hover:border-border-strong focus:outline-none focus:ring-2 focus:ring-signal"
+        className="rounded-md border border-border-card bg-surface px-2 py-1 text-ink hover:border-border-strong focus:outline-none focus:ring-2 focus:ring-ring"
       >
         <option value="">All years</option>
         {value === CUSTOM_RANGE_VALUE ? (

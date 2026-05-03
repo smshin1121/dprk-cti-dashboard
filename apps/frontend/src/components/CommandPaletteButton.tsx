@@ -152,7 +152,7 @@ export function CommandPaletteButton(): JSX.Element {
         aria-label={t('shell.search.dialogLabel')}
         className={cn(
           'flex h-8 items-center gap-2 rounded border border-border-card bg-app px-3 text-xs text-ink-muted',
-          'hover:border-signal hover:text-ink focus:outline-none focus:ring-2 focus:ring-signal',
+          'hover:border-signal hover:text-ink focus:outline-none focus:ring-2 focus:ring-ring',
         )}
       >
         <CommandIcon aria-hidden className="h-3 w-3" />

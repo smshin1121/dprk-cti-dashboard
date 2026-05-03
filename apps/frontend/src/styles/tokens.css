@@ -30,13 +30,14 @@
 @layer base {
   :root {
     /* ------------------------------------------------------------
-     * Ferrari brand & accent
+     * Ferrari brand & accent (HSL with 1-decimal precision so
+     * `hsl(var(...))` resolves to the exact DESIGN.md hex)
      * ------------------------------------------------------------ */
-    --primary: 4 76% 48%;             /* #da291c Rosso Corsa */
-    --primary-active: 9 86% 36%;      /* #b01e0a press state */
+    --primary: 4.1 77.2% 48.2%;       /* #da291c Rosso Corsa */
+    --primary-active: 7.2 89.2% 36.5%;/* #b01e0a press state */
     --primary-foreground: 0 0% 100%;  /* #ffffff on primary */
-    --accent-yellow-hypersail: 56 100% 50%;  /* #fff200 Hypersail (focus only) */
-    --accent-yellow: 56 100% 49%;     /* #f6e500 sub-brand (Hypersail context only) */
+    --accent-yellow-hypersail: 56.9 100% 50%;  /* #fff200 Hypersail (focus only) */
+    --accent-yellow: 55.9 100% 48.2%; /* #f6e500 sub-brand (Hypersail context only) */
 
     /* ------------------------------------------------------------
      * Surface
@@ -70,25 +71,25 @@
      * palette; Rosso Corsa reserved for `crit` only so the
      * "single accent used scarcely" Ferrari principle is honored.
      * ------------------------------------------------------------ */
-    --status-info: 197 39% 51%;       /* #4c98b9 Ferrari semantic-info */
-    --status-success: 144 96% 29%;    /* #03904a Ferrari semantic-success */
-    --status-warning: 4 88% 56%;      /* #f13a2c Ferrari semantic-warning */
-    --status-crit: 4 76% 48%;         /* #da291c Rosso Corsa (crit only) */
-    --status-elev: 4 88% 56%;         /* collapsed to warning per plan §0.1 */
-    --status-special: 0 0% 56.1%;     /* #8f8f8f muted-soft (downgrade) */
+    --status-info: 198.2 43.8% 51.2%;    /* #4c98b9 Ferrari semantic-info */
+    --status-success: 150.2 95.9% 28.8%; /* #03904a Ferrari semantic-success */
+    --status-warning: 4.3 87.6% 55.9%;   /* #f13a2c Ferrari semantic-warning */
+    --status-crit: 4.1 77.2% 48.2%;      /* #da291c Rosso Corsa (crit only) */
+    --status-elev: 4.3 87.6% 55.9%;      /* collapsed to warning per plan §0.1 */
+    --status-special: 0 0% 56.1%;        /* #8f8f8f muted-soft (downgrade) */
 
     /* CTI compatibility — pre-Ferrari Tailwind utilities still
      * reference status.ok/.crit/.warn/etc. The names stay; the
      * hex moved. */
-    --status-ok: 144 96% 29%;         /* alias of status-success */
-    --status-warn: 4 88% 56%;         /* alias of status-warning */
+    --status-ok: 150.2 95.9% 28.8%;      /* alias of status-success */
+    --status-warn: 4.3 87.6% 55.9%;      /* alias of status-warning */
 
     /* ------------------------------------------------------------
      * Focus ring
      * Ferrari Hypersail Yellow #fff200 — sub-brand color reserved
      * for global focus-ring per DESIGN.md, NEVER used as decoration.
      * ------------------------------------------------------------ */
-    --focus-ring: 56 100% 50%;        /* #fff200 Hypersail Yellow */
+    --focus-ring: 56.9 100% 50%;         /* #fff200 Hypersail Yellow */
 
     /* ------------------------------------------------------------
      * Border radius — Ferrari sharp 0px default. Form-input 4px

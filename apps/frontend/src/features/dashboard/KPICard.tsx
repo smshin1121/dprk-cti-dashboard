@@ -13,8 +13,9 @@
  *    under the current filter).
  *  - `populated` — label + formatted value + optional subtext.
  *
- *  All colors go through semantic tokens (D4) so dark/light flips
- *  on `data-theme` without component-side changes.
+ *  All colors go through Ferrari semantic tokens (Ferrari L1).
+ *  Per-section light editorial bands flip surface tokens via
+ *  `editorial-band-light` without component-side changes.
  */
 
 import { AlertTriangle, RotateCcw } from 'lucide-react'
@@ -113,7 +114,7 @@ function ErrorBody({ onRetry }: ErrorBodyProps): JSX.Element {
           onClick={onRetry}
           className={cn(
             'flex items-center gap-1 self-start rounded border border-border-card bg-app px-2 py-1 text-xs text-ink',
-            'hover:border-signal focus:outline-none focus:ring-2 focus:ring-signal',
+            'hover:border-signal focus:outline-none focus:ring-2 focus:ring-ring',
           )}
         >
           <RotateCcw aria-hidden className="h-3 w-3" />

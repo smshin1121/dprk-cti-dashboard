@@ -190,6 +190,6 @@ export function ReportsPage(): JSX.Element {
 
 const paginationBtn = cn(
   'rounded border border-border-card bg-surface px-3 py-1 text-ink',
-  'hover:border-signal focus:outline-none focus:ring-2 focus:ring-signal',
+  'hover:border-signal focus:outline-none focus:ring-2 focus:ring-ring',
   'disabled:cursor-not-allowed disabled:opacity-50',
 )

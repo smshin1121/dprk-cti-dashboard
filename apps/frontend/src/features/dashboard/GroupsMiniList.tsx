@@ -68,7 +68,7 @@ export function GroupsMiniList(): JSX.Element {
           onClick={() => void refetch()}
           className={cn(
             'rounded border border-border-card bg-app px-3 py-1.5 text-xs text-ink',
-            'hover:border-signal focus:outline-none focus:ring-2 focus:ring-signal',
+            'hover:border-signal focus:outline-none focus:ring-2 focus:ring-ring',
           )}
         >
           {t('list.retry')}
@@ -122,7 +122,7 @@ export function GroupsMiniList(): JSX.Element {
                 schema; see `actors_table` migration 0001). */}
             <Link
               to={`/actors/${group.group_id}`}
-              className="flex items-center justify-between gap-3 rounded hover:text-signal focus:outline-none focus:ring-2 focus:ring-signal"
+              className="flex items-center justify-between gap-3 rounded hover:text-signal focus:outline-none focus:ring-2 focus:ring-ring"
             >
               <span className="truncate font-medium text-ink">{group.name}</span>
               <span className="shrink-0 rounded bg-app px-2 py-0.5 text-xs font-mono text-ink-muted">

@@ -79,7 +79,7 @@ export function AlertsDrawer(): JSX.Element {
         onClick={() => setOpen((v) => !v)}
         className={cn(
           'inline-flex items-center gap-2 rounded border border-border-card bg-surface px-3 py-1.5 text-xs text-ink',
-          'hover:border-signal focus:outline-none focus:ring-2 focus:ring-signal',
+          'hover:border-signal focus:outline-none focus:ring-2 focus:ring-ring',
         )}
       >
         <Bell aria-hidden className="h-4 w-4" />
@@ -111,7 +111,7 @@ export function AlertsDrawer(): JSX.Element {
               onClick={() => setOpen(false)}
               className={cn(
                 'rounded border border-border-card bg-app px-2 py-1 text-[10px] uppercase tracking-wider text-ink-muted',
-                'hover:border-signal hover:text-ink focus:outline-none focus:ring-2 focus:ring-signal',
+                'hover:border-signal hover:text-ink focus:outline-none focus:ring-2 focus:ring-ring',
               )}
             >
               {t('dashboard.alerts.close')}

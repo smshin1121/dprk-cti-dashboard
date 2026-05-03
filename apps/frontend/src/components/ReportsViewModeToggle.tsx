@@ -1,8 +1,8 @@
 /**
  * Two-state toggle: list ↔ timeline view for the /reports page.
  *
- * Mirrors the ThemeToggle / LocaleToggle visual posture (single
- * icon button in a square frame). Click flips the mode.
+ * Visual posture: single icon button in a square frame, parallel
+ * to LocaleToggle. Click flips the mode.
  *
  * Accessibility: aria-label and title both announce the NEXT
  * action — "Switch to timeline view" when in list mode and

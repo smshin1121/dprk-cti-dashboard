@@ -5,9 +5,8 @@
  * `'list'` preserves the current ListTable behavior so existing
  * users see no change until they pick the toggle.
  *
- * Mirrors the `useThemeStore` pattern (zustand + localStorage),
- * minus the DOM side-effect — view mode is purely in-app state, no
- * CSS variable cascade needed.
+ * Pattern: zustand store + localStorage persistence, no DOM
+ * side-effect — view mode is purely in-app state.
  *
  * D10 compliance: view mode is UI state, not server state — zustand
  * is the right home. No server endpoint knows the user's view

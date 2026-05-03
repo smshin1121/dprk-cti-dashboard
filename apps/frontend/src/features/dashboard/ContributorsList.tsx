@@ -57,7 +57,7 @@ export function ContributorsList(): JSX.Element {
           onClick={() => void refetch()}
           className={cn(
             'rounded border border-border-card bg-app px-3 py-1.5 text-xs text-ink',
-            'hover:border-signal focus:outline-none focus:ring-2 focus:ring-signal',
+            'hover:border-signal focus:outline-none focus:ring-2 focus:ring-ring',
           )}
         >
           {t('list.retry')}

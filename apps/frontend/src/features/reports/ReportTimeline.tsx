@@ -238,7 +238,7 @@ function TimelineError({
           onClick={onRetry}
           className={cn(
             'inline-flex items-center gap-1 rounded border border-border-card bg-surface px-2 py-1 text-xs',
-            'hover:border-signal focus:outline-none focus:ring-2 focus:ring-signal',
+            'hover:border-signal focus:outline-none focus:ring-2 focus:ring-ring',
           )}
         >
           <RotateCcw className="h-3 w-3" aria-hidden="true" />

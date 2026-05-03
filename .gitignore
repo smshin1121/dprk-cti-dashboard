@@ -44,3 +44,10 @@ preview.pid
 *.p12
 *.pfx
 secrets/
+
+# Local design exploration scratchpad — DESIGN.md presets pulled
+# from external collections (e.g. VoltAgent/awesome-design-md). Per
+# project memory `design_md_reference`, these are reviewed and one
+# is promoted to repo-root DESIGN.md as the brand contract; the
+# rest stay untracked.
+apps/frontend/src/styles/design-candidates/

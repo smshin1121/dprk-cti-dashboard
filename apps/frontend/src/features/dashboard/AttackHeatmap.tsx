@@ -85,7 +85,7 @@ function ErrorCard({ onRetry, errorLabel, retryLabel }: ErrorCardProps): JSX.Ele
         onClick={onRetry}
         className={cn(
           'rounded border border-border-card bg-app px-3 py-1.5 text-xs text-ink',
-          'hover:border-signal focus:outline-none focus:ring-2 focus:ring-signal',
+          'hover:border-signal focus:outline-none focus:ring-2 focus:ring-ring',
         )}
       >
         {retryLabel}
@@ -152,7 +152,7 @@ export function AttackHeatmap(): JSX.Element {
           onClick={clearFilters}
           className={cn(
             'rounded border border-signal bg-signal/10 px-3 py-1.5 text-xs font-medium text-signal',
-            'hover:bg-signal/20 focus:outline-none focus:ring-2 focus:ring-signal',
+            'hover:bg-signal/20 focus:outline-none focus:ring-2 focus:ring-ring',
           )}
         >
           {t('dashboard.attackHeatmap.clearFilters')}
@@ -181,7 +181,7 @@ export function AttackHeatmap(): JSX.Element {
           onClick={() => setExpanded((e) => !e)}
           className={cn(
             'rounded border border-border-card bg-app px-2 py-1 text-[10px] uppercase tracking-wider text-ink-muted',
-            'hover:border-signal hover:text-ink focus:outline-none focus:ring-2 focus:ring-signal',
+            'hover:border-signal hover:text-ink focus:outline-none focus:ring-2 focus:ring-ring',
           )}
         >
           {expanded

@@ -77,4 +77,27 @@ describe('Shell — FilterBar integration (plan D5)', () => {
     expect(topnav.compareDocumentPosition(filterBar) & FOLLOWING).toBeTruthy()
     expect(filterBar.compareDocumentPosition(main) & FOLLOWING).toBeTruthy()
   })
+
+  // Topbar integration coverage migrated from the deleted Shell.theme
+  // test file (Ferrari L1 collapsed the 3-mode theme; the non-theme
+  // assertions about cmdk-trigger mount + semantic-token classes are
+  // not theme-specific so they live here.)
+  it('topbar mounts the command-palette trigger', async () => {
+    renderShell()
+    expect(await screen.findByTestId('cmdk-trigger')).toBeInTheDocument()
+  })
+
+  it('topbar uses semantic surface tokens (Ferrari L1 — no raw hex)', () => {
+    renderShell()
+    const topnav = screen.getByTestId('shell-topnav')
+    // The topbar's surface class is one of the semantic tokens
+    // (bg-app or bg-surface) — NOT a raw color hex. The Ferrari
+    // realignment may swap bg-surface → bg-app at L2 to match
+    // DESIGN.md §Top Navigation `top-nav-on-dark` (canvas bg);
+    // both options are semantic. The hairline divider is pinned to
+    // border-border-card so a tokens.css edit cannot silently
+    // regress the topbar surface boundary.
+    expect(topnav.className).toMatch(/\bbg-(app|surface)\b/)
+    expect(topnav.className).toMatch(/\bborder-border-card\b/)
+  })
 })
