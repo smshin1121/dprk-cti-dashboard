@@ -233,11 +233,15 @@ function IncidentsStackedArea({
             stackId="incidents-trend"
             stroke={entry.color}
             fill={entry.color}
-            // 0.85 alpha keeps stack-overlap legibility (translucency
+            // 0.90 alpha keeps stack-overlap legibility (translucency
             // for visual layering) while preserving WCAG 3:1 contrast
             // against canvas-elevated for every CHART_SERIES slot.
-            // Lower alpha (0.55 pre-r3) crashed slot 2-4 below 3:1.
-            fillOpacity={0.85}
+            // 0.85 was the prior value; Codex r4 measured rose
+            // (#CC6677 at 0.85) at 2.998:1, just below the 3.0 floor.
+            // 0.90 lifts every slot's blended contrast above the floor
+            // with safe margin. Lower alpha (0.55 pre-r3) crashed
+            // slots 2-4 below 3:1.
+            fillOpacity={0.9}
             isAnimationActive={false}
             data-testid={`${testIdPrefix}-series-${entry.key}`}
           />

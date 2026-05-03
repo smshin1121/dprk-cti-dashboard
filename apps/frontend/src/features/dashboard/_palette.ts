@@ -55,16 +55,17 @@
  * use frequency. All slots pass WCAG 1.4.11 3:1 against
  * canvas-elevated (#303030).
  *
- * Index assignment (in-bracket number is contrast vs #303030):
- *  0: cyan      #88CCEE [7.1:1] — Tol Muted; primary single-series
- *  1: sand      #DDCC77 [7.8:1] — Tol Muted; warm second series
- *  2: teal      #44AA99 [4.4:1] — Tol Muted; cool third series
- *  3: rose      #CC6677 [3.4:1] — Tol Muted; warm rose (NOT Rosso Corsa)
- *  4: grey      #BBBBBB [6.5:1] — Tol grey; neutral fallback
- *  5: lavender  #BB99FF [5.5:1] — custom; cool purple alternative
- *  6: chartreuse #99CC88 [6.8:1] — custom; lighter green alternative
- *  7: tan       #BBAA99 [5.6:1] — custom; warm beige
- *  8: blue-grey #88AABB [5.1:1] — custom; cool blue-grey
+ * Index assignment (in-bracket number is contrast vs #303030 via
+ * sRGB linearization per WCAG 1.4.11; verified by Codex r4):
+ *  0: cyan      #88CCEE [7.5:1] — Tol Muted; primary single-series
+ *  1: sand      #DDCC77 [8.2:1] — Tol Muted; warm second series
+ *  2: teal      #44AA99 [4.7:1] — Tol Muted; cool third series
+ *  3: rose      #CC6677 [3.6:1] — Tol Muted; warm rose (NOT Rosso Corsa)
+ *  4: grey      #BBBBBB [6.9:1] — Tol grey; neutral fallback
+ *  5: lavender  #BB99FF [5.7:1] — custom; cool purple alternative
+ *  6: chartreuse #99CC88 [7.1:1] — custom; lighter green alternative
+ *  7: tan       #BBAA99 [5.9:1] — custom; warm beige
+ *  8: blue-grey #88AABB [5.4:1] — custom; cool blue-grey
  *
  * Slots 5-8 are custom hues (NOT canonical Tol Muted) tuned for
  * dark-canvas contrast. The canonical Tol Muted slots they replace
