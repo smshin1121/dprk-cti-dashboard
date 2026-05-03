@@ -142,6 +142,8 @@ The radius vocabulary is **sharp by default**. Sharp 0px corners are the brand b
 
 **`top-nav-on-light`** — White-canvas variant for editorial light bands.
 
+**`top-nav-active-indicator`** — Active menu-item indicator on horizontal top navigation. **2px `{colors.primary}` (Rosso Corsa) bottom-edge stripe** under the active menu label, full label width, sitting flush at the nav band's lower hairline. The label text itself stays in the variant's normal nav-link color — `{colors.ink}` on `top-nav-on-dark`, `{colors.body-on-light}` on `top-nav-on-light` — only the stripe carries the active signal. No animation, no hover preview (consistent with `## Iteration Guide` line 5). PT-5's left-edge stripe rule does **not** apply on horizontal nav — geometry rotates by 90° to a bottom-edge stripe to match the nav band's flow.
+
 ### Buttons
 
 **`button-primary`** — The signature Rosso Corsa CTA. Background `{colors.primary}`, text `{colors.on-primary}`, type `{typography.button}` (14px / 700 / 1.4px tracking, uppercase), padding 14px × 32px, height 48px, **rounded `{rounded.none}` (0px — sharp corners)**.
@@ -200,6 +202,146 @@ The radius vocabulary is **sharp by default**. Sharp 0px corners are the brand b
 
 **`footer-link`** — Background transparent, text `{colors.body}`, type `{typography.body-sm}`.
 
+## Layout Patterns
+
+The patterns below describe **in-product workspace composition** — how the editorial brand surface (covered in `## Layout`, `## Hero Bands`, `## Editorial Surfaces`) reshapes itself for analyst and admin pages without breaking the brand contract.
+
+The information structure references generic third-party admin-template conventions for *layout grammar only* — list-rail / center-canvas / detail-rail composition, panel section pattern, list-row active-indicator. **Tokens, type, color, corner radius, and motion stay 100% Ferrari.** Code, CSS, class names, and assets from any reference template are not adopted.
+
+### PT-1 — Workspace Three-Pane
+
+The reusable analyst-page skeleton.
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│  Top nav (top-nav-on-dark, 64px)                                       │
+├──────────────┬───────────────────────────────────────┬─────────────────┤
+│  List rail   │  Canvas                                │  Detail rail    │
+│  (left)      │  (center, fluid)                       │  (right)        │
+│  ~280px      │                                        │  ~360px         │
+│              │                                        │                 │
+│  list items  │  primary content                       │  detail-card    │
+│  + filter    │  (chart / table / form)                │  stack          │
+│              │                                        │                 │
+└──────────────┴───────────────────────────────────────┴─────────────────┘
+```
+
+- **Background:** `{colors.canvas}` (#181818) across all three panes — no white bands.
+- **Pane separators:** 1px `{colors.hairline}` (#303030) vertical lines at the rail boundaries.
+- **List rail width:** 280px on desktop, collapses below 1024px (rail becomes overlay drawer).
+- **Detail rail width:** 360px on desktop, collapses below 1280px (rail becomes hidden behind a `[Details ▸]` toggle in the canvas header).
+- **No shadow, no rounded corners, no card chrome** at the pane level — the hairlines do the work.
+- **Pane internal padding:** `{spacing.sm}` (24px) — the breathing room between a pane edge and its content. **Distinct from page-section padding** in PT-4 (which governs the gap between major content blocks within a single pane).
+
+### PT-2 — List-Rail Item
+
+The vertical list inside the left rail.
+
+- **Row height:** 64px.
+- **Padding:** 12px vertical × 16px horizontal.
+- **Layout:** optional 32px avatar/icon + primary label (`{typography.title-sm}`) + optional secondary line (`{typography.caption}` in `{colors.muted}`).
+- **Background:** transparent at rest. Hover state is documented as not used (per `## Iteration Guide` line 5: "Hover state never documented"); we keep that contract here too.
+- **Active state:** **1px `{colors.primary}` (Rosso Corsa) vertical stripe on the left edge** plus a `{colors.canvas-elevated}` (#303030) row background. The stripe is the brand-scarce accent — see PT-5. The row background gives spatial feedback without painting the row red.
+- **Divider:** 1px `{colors.hairline}` (#303030) between adjacent rows. Skip the divider after the active row (the stripe already partitions visually).
+- **Corner radius:** 0px on the row itself. Inline child elements (chips, search input above the list) follow PT-6.
+
+### PT-3 — Detail-Rail Card Section
+
+The vertically stacked information cards in the right rail.
+
+- **Card surface:** `{colors.canvas-elevated}` (#303030) on the dark canvas — same elevation token as `driver-card`.
+- **Card border:** 1px `{colors.hairline}` (#303030) — visually merges with the canvas-elevated, surfaces only on the section divider.
+- **Card padding:** 24px on all sides.
+- **Card spacing:** 16px gap between adjacent cards in the stack.
+- **Card corner radius:** **0px**.
+- **Section header:** `{typography.caption-uppercase}` (11px / 600 / 1.1px tracking) in `{colors.muted}`, separated from the body by 12px.
+- **Field rows inside card:** label-value pairs. Label = `{typography.body-sm}` in `{colors.body}`; value = `{typography.body-md}` in `{colors.ink}`. 8px vertical gap between rows.
+- **Inline chip elements** (e.g. status pills) follow PT-6.
+
+### PT-4 — Density: Editorial vs Analyst (page-section scale)
+
+**Page-section scale** is bound by page-class (see `## Page Classes`). Page-section scale governs the gap between major content blocks **within a single canvas pane**. It is distinct from PT-1's *pane internal padding* (which governs the breathing room at pane edges).
+
+| Token | Editorial pages | Analyst-workspace pages | Auth pages |
+|---|---|---|---|
+| Page-section padding (gap between major blocks) | `{spacing.xxl}` (96px) | `{spacing.lg}` (48px) | `{spacing.lg}` (48px) |
+| Card-to-card gap (within a stack) | `{spacing.md}` (32px) | `{spacing.sm}` (24px) | `{spacing.sm}` (24px) |
+| Pane internal padding | n/a (full-bleed hero) | `{spacing.sm}` (24px) — see PT-1 | `{spacing.sm}` (24px) on the single auth card |
+| Hero photograph | full-bleed mandatory | n/a — no hero | n/a — single auth card on canvas |
+| Display headline | `{typography.display-mega}` (80px) | `{typography.display-md}` (26px) — page title only | `{typography.display-md}` (26px) — auth card title |
+| Body running text | `{typography.body-md}` (14px / 1.5 leading) | `{typography.body-md}` (14px / 1.5 leading) — same body density | same |
+| Whitespace philosophy | "generous editorial pacing" | "informational scannability without cramping" | "single-card focus on canvas" |
+
+The analyst-workspace and auth-page rebindings are **one tick down the named ladder** — not arbitrary px. `{spacing.lg}`, `{spacing.sm}`, and `{spacing.md}` already exist in the spacing system; the page classes just rebind which slot is "section" vs "card-gap".
+
+### PT-5 — Active Indicator (vertical surfaces only)
+
+Active states on **vertical** surfaces get **a 1px `{colors.primary}` stripe along the left edge** of the active row or active item, NOT a full row fill or a Rosso text recolor.
+
+- **Where it applies:** PT-2 list-rail rows, vertical sub-nav, file-tree style nav, breadcrumb active segment when rendered vertically.
+- **Where it does NOT apply (use the dedicated rule):**
+  - **Top navigation** (`top-nav-on-dark` / `top-nav-on-light`) — horizontal surface; uses `top-nav-active-indicator` documented in the `### Top Navigation` component spec.
+  - **Primary CTAs** — already Rosso-filled per `button-primary`.
+  - **F1 race-position highlights** — already Rosso `race-position-cell`.
+  - **The Cavallino mark** — always Rosso, no active-state concept.
+- **Where it does NOT apply (other horizontal surfaces — no Rosso stripe):**
+  - **Segmented controls** (e.g. inline 2- to 4-option switches such as a method-toggle). Selection signals through the existing `button-primary` fill on the selected segment + `button-outline-on-dark` on the unselected segments. No PT-5 stripe, no `top-nav-active-indicator` stripe — these are toggles, not navigation.
+  - **Horizontal breadcrumbs.** The active (rightmost) segment is implicitly active by position; the segments to its left render as inline `button-tertiary-text` links. No Rosso stripe applies.
+  - **Future tab strips.** When introduced, document as a new component spec at that time. Until that exists, prefer vertical sub-nav or segmented controls so PT-5 / `top-nav-active-indicator` / segmented-control rules cover the surface unambiguously.
+- **Stripe geometry:** 1px wide, full-row height, edge-aligned with the left padding (no inset).
+- **Co-existence with primary CTAs in the same rail:** allowed. The stripe is 1px and weight-light; a `button-primary` in the same rail is opaque-filled and dominates visual weight. Both can co-exist without breaking the "scarce accent" budget — the stripe and CTA serve different signals (state vs action).
+- **No animation.** Active state shifts on click; no transition is documented.
+- **No hover preview.** Per the brand's "hover state never documented" rule, the stripe never previews on hover.
+
+### PT-6 — Inline-Element Rounding (analyst-workspace exception)
+
+The existing radius vocabulary in `## Shapes > Border Radius Scale` is **unchanged** — the named ladder (`xs` 2px, `sm` 4px, `md` 6px, `lg` 8px, `xl` 12px, `full` 9999px) and the documented exceptions for it (`text-input-on-dark`/`text-input-on-light` already use `{rounded.sm}`; `badge-pill` uses `{rounded.full}`; `newsletter-input-band` uses `{rounded.sm}`; `xs`/`md`/`lg`/`xl` reserved for rare cases per the existing scale notes) all stay as documented.
+
+PT-6 adds **two new analyst-workspace inline classes** that bind to `{rounded.sm}` (4px). It does **not** narrow or override existing exceptions; the existing scale stays the source of truth.
+
+| Element | Rounded | Source |
+|---|---|---|
+| `text-input-on-dark` / `text-input-on-light` | `{rounded.sm}` 4px | `### Forms & Tags` — unchanged |
+| `newsletter-input-band` | `{rounded.sm}` 4px | `### Newsletter / CTA / Footer` — unchanged |
+| `badge-pill` | `{rounded.full}` 9999px | `### Forms & Tags` — unchanged |
+| `chip-inline` (NEW — analyst workspace) | `{rounded.sm}` 4px | PT-6 — analyst-page status / tag / filter chips inside list rails or canvas tables |
+| `message-bubble-cell` (NEW — analyst workspace) | `{rounded.sm}` 4px | PT-6 — reserved for conversation/comment-style cells if introduced on analyst pages |
+| **CTAs (any variant), hero, livery, footer, all major cards** | `{rounded.none}` 0px | sharp 0px stays the dominant brand shape |
+| **Rare-exception slots** (`xs`/`md`/`lg`/`xl`) | per `## Shapes > Border Radius Scale` notes | unchanged — PT-6 introduces no new uses; future cases evaluate against the existing wording ("rare", "compact", "mobile-only", "modal/dialog") |
+
+**PT-6 explicit constraint:** an analyst-workspace page can introduce a `chip-inline` or `message-bubble-cell` at `{rounded.sm}`. It cannot soften any other surface — CTAs/hero/cards stay sharp.
+
+### PT-7 — Page-Class Taxonomy (sets the binding)
+
+Every page in the product belongs to exactly one of **five** classes. The class binds the page to a default density (PT-4), default chrome (PT-1 vs full-bleed vs single-card vs minimal-utility), and default accent budget.
+
+| Class | Examples | Density (per PT-4) | Chrome | Accent | Hero |
+|---|---|---|---|---|---|
+| **editorial-page** | dashboard, marketing, brand-spec | Editorial column | full-bleed photographic, no card stack, no PT-1 chrome | scarce — `button-primary` only | required |
+| **auth-page** | login, password reset, sign-up | Auth column | single auth card on `{colors.canvas}`, no PT-1 chrome, no hero | scarce — single `button-primary` per card | none |
+| **analyst-workspace** | correlation, reports, actors, incidents | Analyst-workspace column | PT-1 three-pane + PT-3 detail cards | scarce + PT-5 stripe on active rows | none |
+| **admin-workspace** | admin actions, settings, user management | Analyst-workspace column (shared with analyst-workspace) | PT-1 three-pane + PT-3 detail cards | scarce + PT-5 stripe + occasional `{colors.semantic-warning}` for destructive actions | none |
+| **system-page** | NotFound (404), unrecoverable error fallback, maintenance / banner views | Auth column (shared with auth-page) | inline minimal-utility `<section>` on `{colors.canvas}`, no PT-1 chrome, no hero, no PT-3 detail cards | scarce — text-only or at most one tertiary `button-tertiary-text` "Back to dashboard" link, never more | none |
+
+The taxonomy is **documentation-level** in this section. Runtime declaration (a `data-page-class="..."` attribute on the route container, plus a typed manifest at `apps/frontend/src/lib/pageClass.ts` and a vitest test asserting per-route consistency) lands in the next FE PR after this contract. Until the runtime work lands, the taxonomy is enforced through code review against the mapping in `## Page Classes` below.
+
+## Page Classes
+
+Current product mapping. The mapping table itself ships in this design contract; the actual route-by-route migrations to PT-1 chrome land in separate per-page PRs (correlation FE first, then existing analyst pages reflowed in follow-up PRs). Editorial and auth pages are explicitly **not migrated** — the page-class taxonomy blocks workspace chrome from crossing into the dashboard hero / brand pages, and auth pages stay single-card.
+
+| Route | Class | Notes |
+|---|---|---|
+| `/dashboard` | editorial-page | Hero + KPI strip + composed layout already shipped. No PT-1 chrome propagation. |
+| `/` | (redirect) | `<Navigate to="/dashboard" replace />` — index redirect, not a routed page. The page class is determined by the destination after redirect. |
+| `/login` | auth-page | Single-card on canvas, kept minimal-chrome. Hero NOT required (auth-page class). |
+| `/reports`, `/reports/:id` | analyst-workspace | Migrate to PT-1 three-pane in subsequent FE PR (out of design-contract scope). |
+| `/incidents`, `/incidents/:id` | analyst-workspace | Same. |
+| `/actors`, `/actors/:id` | analyst-workspace | Same. |
+| `*` (NotFound, gated under `<RouteGate>` `<Shell>`) | system-page | Inline `<section>` rendered by the router's wildcard route. No PT-1 chrome; currently text-only (heading + paragraph) — a tertiary "Back to dashboard" link is permitted by the `system-page` accent budget but is not present yet. |
+| `/analytics/correlation` (next FE PR) | analyst-workspace | The first page authored against the PT-1..PT-7 contract. |
+| `/search` (future — not currently routed) | analyst-workspace | The `apps/frontend/src/features/search/` feature directory exists for the search experience accessed via the command palette + inline modal; there is no `/search` route mounted. Listed here as the **target class** if a routed search page is later introduced. The runtime page-class manifest must NOT include `/search` until that route ships. |
+| `/admin/*` (future) | admin-workspace | When admin surfaces land. |
+
 ## Do's and Don'ts
 
 ### Do
@@ -218,6 +360,11 @@ The radius vocabulary is **sharp by default**. Sharp 0px corners are the brand b
 - Don't use pure black canvas. The brand canvas is `{colors.canvas}` (#181818) — slightly warm.
 - Don't add drop shadow tiers. Photography + brightness-step elevation carry the depth.
 - Don't extract a CTA color from a third-party widget (cookie consent, OneTrust). The brand's CTA color is what appears on actual product CTAs, not on injected modals.
+- Don't paint a full row, link, or list item in `{colors.primary}` to indicate active state. Active state on lists / vertical nav uses the PT-5 1px Rosso left-edge stripe; horizontal top-nav active state uses the `top-nav-active-indicator` 2px Rosso bottom-edge stripe. Full Rosso fill stays reserved for the `livery-band` editorial accent and the `button-primary` CTA.
+- Don't propagate analyst-workspace density (PT-4 analyst column) onto editorial pages. The dashboard hero, marketing, and brand surfaces stay at editorial pacing.
+- Don't propagate analyst-workspace card chrome (PT-3 detail rail) onto editorial pages or auth pages. Hero bands, `feature-card-photo` stack, and the auth single-card stay full-bleed / single-card and chrome-light.
+- Don't soften CTA, hero, livery, or main-card corners to 4px because an analyst-workspace chip or input nearby uses 4px. PT-6 is an analyst-workspace inline exception list; CTAs / hero / cards stay 0px in every page class.
+- Don't copy markup, CSS, class names, or assets from any third-party admin template into this codebase. Reference templates inform *information structure only* — every line of code is authored fresh against Ferrari tokens.
 
 ## Responsive Behavior
 
