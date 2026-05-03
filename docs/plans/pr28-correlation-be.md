@@ -44,7 +44,9 @@ The locked plan above placed the Pact contract (5 interactions per umbrella §7.
 
 Plan §7.4 specifies a 5-minute Redis TTL cache for `/correlation` and instructs to reuse the pattern from `dashboard_aggregator`. Verification of `services/api/src/api/read/dashboard_aggregator.py:101` shows that pattern is itself deferred — dashboard_aggregator's plan §7.7 already defers materialized views AND Redis response cache. The correlation aggregator followed `dashboard_aggregator`'s actual no-cache state for read-surface consistency (`correlation_aggregator.py:227` records the consistency rationale).
 
-Net effect: the §7.4 instruction's premise (reusable pattern) was incorrect at lock time; correlation cannot be the first read endpoint to add Redis caching without also touching the rest of read surface. Cache implementation deferred to PR C (hardening) where it can land alongside dashboard_aggregator caching as part of read-surface performance work; until then, NFR-1 (p95 budget) is met by the in-process scipy/statsmodels work being O(N log N) at N≤168.
+Net effect: the §7.4 instruction's premise (reusable pattern) was incorrect at lock time; correlation cannot be the first read endpoint to add Redis caching without also touching the rest of read surface. Cache implementation deferred to PR C (hardening) where it can land alongside dashboard_aggregator caching as part of read-surface performance work.
+
+**NFR-1 (p95 ≤ 500ms) state in PR A:** NOT measured and NOT enforced. The aggregator's per-request work is bounded for the default-window case where omitted `date_from`/`date_to` resolve to the current corpus span (~168 months) by O(N log N) statistical primitives. Explicit windows are unbounded by the router (`date_from <= date_to` only). PR C will add (a) a perf smoke that pins p95 against fixture-DB, (b) Redis cache for repeat-window calls, and (c) explicit-window cap validation if the smoke shows it necessary.
 
 ---
 
