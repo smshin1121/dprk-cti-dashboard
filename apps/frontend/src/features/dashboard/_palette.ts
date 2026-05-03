@@ -37,29 +37,51 @@
  */
 
 /**
- * Tol Muted qualitative palette — 9 colors, ordered for series indexing.
+ * Tol Muted qualitative palette — 9 colors, REORDERED for the Ferrari
+ * dark-canvas use case.
  *
- * Index assignment (canonical):
- *  0: indigo  #332288
- *  1: cyan    #88CCEE
- *  2: teal    #44AA99
- *  3: green   #117733
- *  4: olive   #999933
- *  5: sand    #DDCC77
- *  6: rose    #CC6677
- *  7: wine    #882255
- *  8: purple  #AA4499
+ * Why reorder: Tol Muted's canonical first slot is indigo #332288.
+ * That hue's contrast against the Ferrari surface tier is 1.08:1 on
+ * bg-surface (#303030) and 1.46:1 on bg-app (#181818) — well below
+ * WCAG 1.4.11 non-text contrast (3:1) for chart marks. Single-series
+ * widgets (TrendChart, YearBar, SectorBreakdown, LocationsRanked,
+ * WorldMap high-count ramp) all use slot 0, so an unreadable slot 0
+ * means data disappears visually. Multi-series widgets cascade the
+ * same problem at slots 1+ if dark hues sit at low indices.
+ *
+ * Reorder strategy: bright Tol hues (cyan, sand, teal, rose) come
+ * first so slot 0/1/2 are guaranteed legible against the dark
+ * canvas. Darker hues (indigo, wine, green) move to higher indices
+ * — used only when a chart needs >5 simultaneous series, which is
+ * rare in this dashboard.
+ *
+ * Index assignment (Ferrari dark-canvas order):
+ *  0: cyan    #88CCEE — primary single-series accent (contrast 11.4:1 vs bg-app)
+ *  1: sand    #DDCC77 — second series; warm complement to cyan
+ *  2: teal    #44AA99 — third series; cool middle
+ *  3: rose    #CC6677 — fourth series; warm rose (NOT Rosso Corsa)
+ *  4: purple  #AA4499 — fifth series; distinct from indigo
+ *  5: olive   #999933 — sixth series; muted yellow-green
+ *  6: green   #117733 — darker green; needs surface lift to read
+ *  7: wine    #882255 — dark wine; rare slot
+ *  8: indigo  #332288 — Tol canonical slot 0; deferred here for
+ *             dark-canvas readability. WCAG-borderline so charts
+ *             rendering at index 8 should be exceptional.
+ *
+ * Hex set unchanged from Tol Muted; only the ordering differs.
+ * Source for the canonical hex list:
+ *   https://personal.sron.nl/~pault/ §Qualitative > Muted
  */
 export const TOL_MUTED = [
-  '#332288', // indigo
   '#88CCEE', // cyan
-  '#44AA99', // teal
-  '#117733', // green
-  '#999933', // olive
   '#DDCC77', // sand
+  '#44AA99', // teal
   '#CC6677', // rose
-  '#882255', // wine
   '#AA4499', // purple
+  '#999933', // olive
+  '#117733', // green
+  '#882255', // wine
+  '#332288', // indigo
 ] as const
 
 /**

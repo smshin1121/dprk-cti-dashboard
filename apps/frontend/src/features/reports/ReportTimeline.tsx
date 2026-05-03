@@ -228,7 +228,10 @@ function TimelineError({
       )}
     >
       <div className="flex items-center gap-2">
-        <AlertTriangle className="h-4 w-4 text-signal" aria-hidden="true" />
+        <AlertTriangle
+          className="h-4 w-4 text-[hsl(var(--status-warning))]"
+          aria-hidden="true"
+        />
         <span>{message}</span>
       </div>
       {onRetry != null && (

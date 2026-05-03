@@ -61,22 +61,23 @@ const VIEW_WIDTH = 960
 const VIEW_HEIGHT = 500
 
 // Fills — Ferrari sequential ramp from canvas-elevated (no-data) to
-// Tol indigo (high-count). Indigo is the first Tol Muted slot and
-// reads as a calm, editorial "country has activity" signal — Rosso
-// Corsa is reserved for DPRK highlight and AttackHeatmap top
-// intensity per plan §0.1 invariant 3.
+// Tol cyan (high-count). Cyan is the dark-canvas-reordered slot 0
+// from _palette.ts — its 11.4:1 contrast against bg-app keeps
+// high-count countries legible. Rosso Corsa is reserved for DPRK
+// highlight and AttackHeatmap top intensity per plan §0.1
+// invariant 3.
 const NO_DATA_FILL = '#3a3a3a' // slightly lifted canvas-elevated
-const HIGH_COUNT_FILL = '#332288' // Tol Muted indigo
+const HIGH_COUNT_FILL = '#88CCEE' // Tol Muted cyan (dark-canvas slot 0)
 
 function countFill(count: number, maxCount: number): string {
   if (maxCount <= 0 || count <= 0) return NO_DATA_FILL
   // Linear interpolation in sRGB between NO_DATA_FILL (#3a3a3a) and
-  // HIGH_COUNT_FILL (#332288). Single ramp keeps the sequential
+  // HIGH_COUNT_FILL (#88CCEE). Single ramp keeps the sequential
   // story coherent without pulling in d3-scale-chromatic.
   const t = Math.min(1, count / maxCount)
-  const r = Math.round(0x3a + (0x33 - 0x3a) * t)
-  const g = Math.round(0x3a + (0x22 - 0x3a) * t)
-  const b = Math.round(0x3a + (0x88 - 0x3a) * t)
+  const r = Math.round(0x3a + (0x88 - 0x3a) * t)
+  const g = Math.round(0x3a + (0xcc - 0x3a) * t)
+  const b = Math.round(0x3a + (0xee - 0x3a) * t)
   return `rgb(${r} ${g} ${b})`
 }
 
