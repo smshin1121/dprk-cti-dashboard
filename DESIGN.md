@@ -142,7 +142,7 @@ The radius vocabulary is **sharp by default**. Sharp 0px corners are the brand b
 
 **`top-nav-on-light`** — White-canvas variant for editorial light bands.
 
-**`top-nav-active-indicator`** — Active menu-item indicator on horizontal top navigation. **2px `{colors.primary}` (Rosso Corsa) bottom-edge stripe** under the active menu label, full label width, sitting flush at the nav band's lower hairline. The label text itself stays in `{colors.ink}` — only the stripe carries the active signal. No animation, no hover preview (consistent with `## Iteration Guide` line 5). PT-5's left-edge stripe rule does **not** apply on horizontal nav — geometry rotates by 90° to a bottom-edge stripe to match the nav band's flow.
+**`top-nav-active-indicator`** — Active menu-item indicator on horizontal top navigation. **2px `{colors.primary}` (Rosso Corsa) bottom-edge stripe** under the active menu label, full label width, sitting flush at the nav band's lower hairline. The label text itself stays in the variant's normal nav-link color — `{colors.ink}` on `top-nav-on-dark`, `{colors.body-on-light}` on `top-nav-on-light` — only the stripe carries the active signal. No animation, no hover preview (consistent with `## Iteration Guide` line 5). PT-5's left-edge stripe rule does **not** apply on horizontal nav — geometry rotates by 90° to a bottom-edge stripe to match the nav band's flow.
 
 ### Buttons
 

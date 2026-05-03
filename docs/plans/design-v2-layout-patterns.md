@@ -1,12 +1,13 @@
-# Plan — DESIGN.md v2 Layout Patterns + Page-Class Taxonomy (next design-contract PR)
+# Plan — DESIGN.md v2 Layout Patterns + Page-Class Taxonomy (PR #31)
 
 **Phase:** Brand-contract extension on top of Ferrari v1 (PR #29 merged 2026-05-03 PM as `705e6f9`).
-**Status:** Locked 2026-05-04 after 2 reviewer rounds + 1 Codex pre-review round (v2.2). Awaits branch + PR open.
-**PR number:** Not reserved. Confirm via `gh pr list` immediately before opening; current main HEAD is `705e6f9`, only PR #30 (DQ CLI Windows fix) is open at draft time.
+**Status:** PR #31 opened as **DRAFT** 2026-05-04 against `main`. Codex review round 1 completed with PROCEED-WITH-AMENDMENT (2 MEDIUM + 1 LOW); fold-fix commits applied on the same branch. Awaits draft → ready-for-review flip after final manual smoke (D8).
+**PR:** [#31](https://github.com/smshin1121/dprk-cti-dashboard/pull/31) — branch `feat/design-v2-layout-patterns`, base `main`, head HEAD on commits `d8a7757` (DESIGN.md insert) + `a42ed0a` (plan docs) + this round's fold-fix commits.
 **Predecessors:** PR #29 (Ferrari brand contract / DESIGN.md v1; merged 2026-05-03 PM as `705e6f9`).
 **Successors:** Next correlation FE PR (`docs/plans/correlation-fe.md`) — consumes PT-1..PT-7 patterns and ships the runtime page-class mechanism as its T0.
-**Source proposal:** `docs/proposals/design-v2-layout-patterns-draft.md` v2.2.
-**Codex pre-review transcript:** `.codex-review/design-v2-prereview.transcript.log` (verdict PROCEED-WITH-AMENDMENT, all HIGH+MEDIUM findings folded into v2.2).
+**Source proposal:** `docs/proposals/design-v2-layout-patterns-draft.md` v2.2 (gitignored).
+**Codex pre-review transcript:** `.codex-review/design-v2-prereview.transcript.log` (verdict PROCEED-WITH-AMENDMENT on v2.1; all HIGH+MEDIUM findings folded into v2.2).
+**Codex review round 1 transcript:** `.codex-review/codex-design-v2-r1.transcript.log` (verdict PROCEED-WITH-AMENDMENT on canonical post-edit; 2 MEDIUM + 1 LOW folded on the branch).
 
 ---
 
@@ -149,4 +150,8 @@ This PR is mergeable only when **all** of the following hold:
 - **2026-05-03 (proposal v2)** — Reviewer 5-finding fold (radius reconciliation, density scope, auth-page split, PT-5 horizontal narrow, spec-only vs runtime).
 - **2026-05-03 (proposal v2.1)** — Reviewer 3-finding fold (DashLite URL out of canonical, `/` `/dashboard` redirect, T0 alignment).
 - **2026-05-04 (proposal v2.2)** — Codex pre-review fold: HIGH stale router (`/search` not mounted, NotFound `*` unclassified) + 2 MEDIUM (segmented/breadcrumb/tab coverage, system-page 5th class). 5-class taxonomy locked.
-- **2026-05-04 (this plan + canonical edit)** — Plan doc authored. Canonical `DESIGN.md` editing applied via 3 inserts. Awaits branch + draft PR open + Codex round 1 on the canonical content.
+- **2026-05-04 (this plan + canonical edit)** — Plan doc authored. Canonical `DESIGN.md` editing applied via 3 inserts. Branch `feat/design-v2-layout-patterns` opened, commits `d8a7757` + `a42ed0a` pushed, draft PR #31 opened.
+- **2026-05-04 (Codex round 1 fold)** — Round 1 on canonical post-edit content returned PROCEED-WITH-AMENDMENT. CRITICAL/HIGH = 0. Folded findings:
+  1. **MEDIUM** — `DESIGN.md` `top-nav-active-indicator` label-color sentence pinned `{colors.ink}` (white) which would be wrong on `top-nav-on-light` (white-canvas variant where labels use `{colors.body-on-light}` = #181818). Reworded to "the variant's normal nav-link color — `{colors.ink}` on `top-nav-on-dark`, `{colors.body-on-light}` on `top-nav-on-light`".
+  2. **MEDIUM** — `correlation-fe.md` T0 row said "all four pairs analyst-workspace" but the canonical DESIGN.md and correlation-fe AC#3 / In-scope correctly say three route pairs / six routes. Fixed T0 to "all three route pairs / six routes analyst-workspace".
+  3. **LOW** — This plan's status header was stale (said "Awaits branch + PR open"). Refreshed to reflect PR #31 OPEN-DRAFT with commit SHAs and round 1 outcome.
