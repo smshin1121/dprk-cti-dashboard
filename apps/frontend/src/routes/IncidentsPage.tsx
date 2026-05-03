@@ -81,7 +81,10 @@ export function IncidentsPage(): JSX.Element {
       aria-labelledby="incidents-heading"
       className="flex flex-col gap-4 p-6"
     >
-      <h1 id="incidents-heading" className="text-xl font-semibold">
+      <h1
+        id="incidents-heading"
+        className="text-2xl font-display tracking-display"
+      >
         Incidents
       </h1>
 
@@ -131,7 +134,7 @@ export function IncidentsPage(): JSX.Element {
 }
 
 const paginationBtn = cn(
-  'rounded border border-border-card bg-surface px-3 py-1 text-ink',
-  'hover:border-signal focus:outline-none focus:ring-2 focus:ring-ring',
+  'rounded-none border border-border-card bg-surface px-3 py-1 text-xs font-cta uppercase tracking-cta text-ink',
+  'hover:border-border-strong focus:outline-none focus:ring-2 focus:ring-ring',
   'disabled:cursor-not-allowed disabled:opacity-50',
 )

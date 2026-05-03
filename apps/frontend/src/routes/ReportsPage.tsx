@@ -111,7 +111,10 @@ export function ReportsPage(): JSX.Element {
       className="flex flex-col gap-4 p-6"
     >
       <header className="flex flex-wrap items-center justify-between gap-3">
-        <h1 id="reports-heading" className="text-xl font-semibold">
+        <h1
+          id="reports-heading"
+          className="text-2xl font-display tracking-display"
+        >
           Reports
         </h1>
         <div className="flex items-center gap-3">
@@ -189,7 +192,7 @@ export function ReportsPage(): JSX.Element {
 }
 
 const paginationBtn = cn(
-  'rounded border border-border-card bg-surface px-3 py-1 text-ink',
-  'hover:border-signal focus:outline-none focus:ring-2 focus:ring-ring',
+  'rounded-none border border-border-card bg-surface px-3 py-1 text-xs font-cta uppercase tracking-cta text-ink',
+  'hover:border-border-strong focus:outline-none focus:ring-2 focus:ring-ring',
   'disabled:cursor-not-allowed disabled:opacity-50',
 )

@@ -56,7 +56,7 @@ export function IncidentDetailPage(): JSX.Element {
       data-testid="incident-detail-page"
       data-incident-id={incident.id}
       aria-labelledby="incident-detail-heading"
-      className="flex flex-col gap-6 p-6"
+      className="editorial-band-light flex flex-col gap-6 bg-app p-6 text-ink"
     >
       <header className="flex flex-col gap-2">
         <h1

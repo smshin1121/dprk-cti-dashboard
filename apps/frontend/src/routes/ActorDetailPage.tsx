@@ -69,7 +69,7 @@ export function ActorDetailPage(): JSX.Element {
       data-testid="actor-detail-page"
       data-actor-id={actor.id}
       aria-labelledby="actor-detail-heading"
-      className="flex flex-col gap-6 p-6"
+      className="editorial-band-light flex flex-col gap-6 bg-app p-6 text-ink"
     >
       <header className="flex flex-col gap-2">
         <h1

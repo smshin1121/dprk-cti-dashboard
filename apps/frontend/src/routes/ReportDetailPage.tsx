@@ -70,7 +70,7 @@ export function ReportDetailPage(): JSX.Element {
       data-testid="report-detail-page"
       data-report-id={report.id}
       aria-labelledby="report-detail-heading"
-      className="flex flex-col gap-6 p-6"
+      className="editorial-band-light flex flex-col gap-6 bg-app p-6 text-ink"
     >
       <header className="flex flex-col gap-2">
         <h1
