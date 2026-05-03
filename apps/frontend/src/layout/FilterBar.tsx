@@ -71,9 +71,10 @@ const inputClass = cn(
 // sharp 0px corners (rounded-none), uppercase + tracking-cta + font-cta.
 // Tertiary-text variant chosen because filter strip controls are not
 // primary CTAs — Rosso Corsa is reserved per plan §0.1 invariant 3.
+// Hover uses `border-border-strong` so the accent stays scarce.
 const buttonClass = cn(
   'flex h-8 items-center gap-2 rounded-none border border-border-card bg-app px-3 text-xs font-cta uppercase tracking-cta text-ink',
-  'hover:border-signal focus:outline-none focus:ring-2 focus:ring-ring',
+  'hover:border-border-strong focus:outline-none focus:ring-2 focus:ring-ring',
 )
 
 export function FilterBar(): JSX.Element {
@@ -136,7 +137,7 @@ interface DateRangeProps {
 function DateRange({ from, to, onChange }: DateRangeProps): JSX.Element {
   return (
     <div className="flex flex-col gap-1">
-      <span className="text-[10px] font-cta uppercase tracking-nav text-ink-subtle">
+      <span className="text-[10px] font-cta uppercase tracking-caption text-ink-subtle">
         Date range
       </span>
       <div className="flex items-center gap-2">
@@ -173,7 +174,7 @@ interface GroupSelectProps {
 function GroupSelect({ summary, selectedIds, onToggle }: GroupSelectProps): JSX.Element {
   return (
     <div className="flex flex-col gap-1">
-      <span className="text-[10px] font-cta uppercase tracking-nav text-ink-subtle">
+      <span className="text-[10px] font-cta uppercase tracking-caption text-ink-subtle">
         Groups
       </span>
       <DropdownMenu.Root>
@@ -239,7 +240,7 @@ function TlpSelect({ selected, onToggle }: TlpSelectProps): JSX.Element {
       data-testid="filter-tlp"
       className="flex flex-col gap-1 border-0 p-0"
     >
-      <legend className="text-[10px] font-cta uppercase tracking-nav text-ink-subtle">
+      <legend className="text-[10px] font-cta uppercase tracking-caption text-ink-subtle">
         TLP{' '}
         <span className="font-normal normal-case text-ink-subtle">
           (UI-only)

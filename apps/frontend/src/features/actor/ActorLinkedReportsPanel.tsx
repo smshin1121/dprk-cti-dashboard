@@ -64,7 +64,7 @@ export function ActorLinkedReportsPanel({
         data-testid="actor-linked-reports-loading"
         role="status"
         aria-busy="true"
-        className="h-48 animate-pulse rounded border border-border-card bg-surface"
+        className="h-48 animate-pulse rounded-none border border-border-card bg-surface"
       />
     )
   }
@@ -74,7 +74,7 @@ export function ActorLinkedReportsPanel({
       <section
         data-testid="actor-linked-reports-error"
         role="alert"
-        className="flex flex-col items-center justify-center gap-3 rounded border border-border-card bg-surface p-6"
+        className="flex flex-col items-center justify-center gap-3 rounded-none border border-border-card bg-surface p-6"
       >
         <h2 className="text-sm font-semibold text-ink">Linked reports</h2>
         <p className="text-sm text-ink-muted">
@@ -84,7 +84,7 @@ export function ActorLinkedReportsPanel({
           type="button"
           data-testid="actor-linked-reports-retry"
           onClick={() => void query.refetch()}
-          className="rounded border border-border-card bg-app px-3 py-1.5 text-xs text-ink hover:border-signal focus:outline-none focus:ring-2 focus:ring-ring"
+          className="rounded-none border border-border-card bg-app px-3 py-1.5 text-xs font-cta uppercase tracking-cta text-ink hover:border-border-strong focus:outline-none focus:ring-2 focus:ring-ring"
         >
           Retry
         </button>
@@ -105,7 +105,7 @@ export function ActorLinkedReportsPanel({
         data-testid="actor-linked-reports-empty"
         data-source-actor-id={actorId}
         aria-labelledby="actor-linked-reports-heading"
-        className="rounded border border-border-card bg-surface p-4"
+        className="rounded-none border border-border-card bg-surface p-4"
       >
         <h2
           id="actor-linked-reports-heading"
@@ -125,7 +125,7 @@ export function ActorLinkedReportsPanel({
       data-testid="actor-linked-reports-panel"
       data-source-actor-id={actorId}
       aria-labelledby="actor-linked-reports-heading"
-      className="rounded border border-border-card bg-surface p-4"
+      className="rounded-none border border-border-card bg-surface p-4"
     >
       <h2
         id="actor-linked-reports-heading"

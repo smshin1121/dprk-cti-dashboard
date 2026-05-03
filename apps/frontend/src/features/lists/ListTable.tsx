@@ -168,7 +168,7 @@ function ErrorBody({ caption, error, onRetry }: ErrorBodyProps): JSX.Element {
           onClick={onRetry}
           className={cn(
             'flex items-center gap-1 self-start rounded-none border border-border-card bg-app px-3 py-1 text-xs font-cta uppercase tracking-cta text-ink',
-            'hover:border-signal focus:outline-none focus:ring-2 focus:ring-ring',
+            'hover:border-border-strong focus:outline-none focus:ring-2 focus:ring-ring',
           )}
         >
           <RotateCcw aria-hidden className="h-3 w-3" />

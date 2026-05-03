@@ -58,7 +58,7 @@ export function UserMenu(): JSX.Element | null {
           aria-label={t('userMenu.triggerAriaLabel', { email: user.email })}
           className={cn(
             'flex h-8 items-center gap-2 rounded-none border border-border-card bg-app px-2 text-xs text-ink',
-            'hover:border-signal focus:outline-none focus:ring-2 focus:ring-ring',
+            'hover:border-border-strong focus:outline-none focus:ring-2 focus:ring-ring',
           )}
         >
           <UserCircle aria-hidden className="h-4 w-4 text-ink-muted" />
@@ -84,7 +84,7 @@ export function UserMenu(): JSX.Element | null {
             </div>
             <div
               data-testid="user-menu-role"
-              className="mt-1 inline-flex items-center rounded-none border border-border-card bg-app px-1.5 py-0.5 text-[10px] font-cta uppercase tracking-caption text-ink-muted"
+              className="mt-1 inline-flex items-center rounded-full border border-border-card bg-app px-1.5 py-0.5 text-[10px] font-cta uppercase tracking-caption text-ink-muted"
             >
               {primaryRole}
             </div>
@@ -93,7 +93,7 @@ export function UserMenu(): JSX.Element | null {
           <DropdownMenu.Separator className="my-1 h-px bg-border-card" />
 
           <div className="flex items-center justify-between px-2 py-1.5">
-            <span className="text-[10px] font-cta uppercase tracking-nav text-ink-subtle">
+            <span className="text-[10px] font-cta uppercase tracking-caption text-ink-subtle">
               {t('userMenu.language')}
             </span>
             <LocaleToggle />

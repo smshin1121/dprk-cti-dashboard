@@ -145,7 +145,7 @@ export function ReportDetailPage(): JSX.Element {
         <section
           data-testid="report-detail-linked-incidents"
           aria-labelledby="linked-incidents-heading"
-          className="rounded border border-border-card bg-surface p-4"
+          className="rounded-none border border-border-card bg-surface p-4"
         >
           <h2
             id="linked-incidents-heading"
@@ -239,7 +239,7 @@ export function ErrorPanel({ testId, onRetry }: ErrorPanelProps): JSX.Element {
         type="button"
         data-testid={`${testId}-retry`}
         onClick={onRetry}
-        className="rounded-none border border-border-card bg-app px-3 py-1.5 text-xs font-cta uppercase tracking-cta text-ink hover:border-signal focus:outline-none focus:ring-2 focus:ring-ring"
+        className="rounded-none border border-border-card bg-app px-3 py-1.5 text-xs font-cta uppercase tracking-cta text-ink hover:border-border-strong focus:outline-none focus:ring-2 focus:ring-ring"
       >
         Retry
       </button>

@@ -79,7 +79,7 @@ export function LoginPage(): JSX.Element {
           href={loginHref}
           data-testid="login-submit"
           data-login-target={target}
-          className="mt-6 block rounded-none bg-primary px-8 py-4 text-center text-sm font-cta uppercase tracking-cta text-primary-foreground hover:bg-primary-active"
+          className="mt-6 inline-flex h-12 w-full items-center justify-center rounded-none bg-primary px-8 text-sm font-cta uppercase tracking-cta text-primary-foreground hover:bg-primary-active active:bg-primary-active"
         >
           Sign in with Keycloak
         </a>

@@ -116,7 +116,7 @@ export function IncidentDetailPage(): JSX.Element {
         <section
           data-testid="incident-detail-linked-reports"
           aria-labelledby="linked-reports-heading"
-          className="rounded border border-border-card bg-surface p-4"
+          className="rounded-none border border-border-card bg-surface p-4"
         >
           <h2
             id="linked-reports-heading"
