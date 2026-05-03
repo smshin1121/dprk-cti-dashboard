@@ -233,7 +233,11 @@ function IncidentsStackedArea({
             stackId="incidents-trend"
             stroke={entry.color}
             fill={entry.color}
-            fillOpacity={0.55}
+            // 0.85 alpha keeps stack-overlap legibility (translucency
+            // for visual layering) while preserving WCAG 3:1 contrast
+            // against canvas-elevated for every CHART_SERIES slot.
+            // Lower alpha (0.55 pre-r3) crashed slot 2-4 below 3:1.
+            fillOpacity={0.85}
             isAnimationActive={false}
             data-testid={`${testIdPrefix}-series-${entry.key}`}
           />

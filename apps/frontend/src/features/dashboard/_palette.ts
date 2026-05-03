@@ -1,5 +1,5 @@
 /**
- * Ferrari + Tol chart palette (L3 part 2).
+ * Ferrari + Tol-derived chart palette (L3 part 2).
  *
  * Used by every dashboard chart (TrendChart, AttackHeatmap, WorldMap,
  * MotivationDonut, IncidentsStackedArea, SectorBreakdown, YearBar,
@@ -14,19 +14,33 @@
  * not surface-themed (it does NOT flip on `.editorial-band-light`)
  * so static hex literals here are the right level of abstraction.
  *
- * Series colors: Tol Muted (9-color qualitative palette)
- * ------------------------------------------------------
- * Paul Tol's "Muted" qualitative palette is the most editorial-
- * restrained of the Tol family — distinct enough for series
- * separation, soft enough not to compete with the dark Ferrari
- * canvas. All 9 colors pass WCAG AAA contrast against
- * canvas-elevated (#303030).
+ * WCAG non-text contrast (1.4.11)
+ * -------------------------------
+ * The Ferrari surface tier is canvas-app (#181818) and
+ * canvas-elevated (#303030). All chart series colors below MUST
+ * pass WCAG 1.4.11's 3:1 contrast floor against canvas-elevated
+ * (the harder of the two surfaces) so chart marks stay legible.
+ * Translucent fills (e.g. IncidentsStackedArea fillOpacity 0.85)
+ * mix with the underlying surface — the per-color contrast values
+ * below are computed against the OPAQUE color; consumers using
+ * fillOpacity must bias toward the high-contrast slots (0-4) and
+ * keep alpha >= 0.80 to preserve the floor.
  *
- * Source: https://personal.sron.nl/~pault/ §Qualitative > Muted
+ * Tol Muted's canonical hex set was the reference (Paul Tol §SRON
+ * Qualitative > Muted, https://personal.sron.nl/~pault/), but
+ * Tol Muted is calibrated for white backgrounds. Slots 4-8 of the
+ * canonical order (purple, olive, green, wine, indigo) all FAIL
+ * 3:1 against canvas-elevated. So this palette keeps the four
+ * Tol Muted hues that pass dark-canvas contrast, adds Tol grey,
+ * and rounds out slots 5-8 with custom muted hues tuned for
+ * dark-canvas legibility while staying consistent with the
+ * Ferrari editorial-restraint aesthetic.
  *
- * Order matters: callers index into this array sequentially, so
- * series 1 = indigo, series 2 = cyan, series 3 = teal, etc. Reorder
- * only if a future palette decision is committed to this constant.
+ * No Rosso Corsa (#da291c) and no Hypersail Yellow (#fff200)
+ * appear here — those are reserved per plan §0.1 invariant 3
+ * (Rosso Corsa scarce; Hypersail = focus ring only). Warm rose
+ * #CC6677 sits at slot 3 — it is NOT Rosso Corsa-adjacent: pinker,
+ * lower saturation, distinct hue family.
  *
  * Ferrari semantic chrome
  * -----------------------
@@ -37,60 +51,48 @@
  */
 
 /**
- * Tol Muted qualitative palette — 9 colors, REORDERED for the Ferrari
- * dark-canvas use case.
+ * Ferrari dark-canvas qualitative palette — 9 colors, ordered by
+ * use frequency. All slots pass WCAG 1.4.11 3:1 against
+ * canvas-elevated (#303030).
  *
- * Why reorder: Tol Muted's canonical first slot is indigo #332288.
- * That hue's contrast against the Ferrari surface tier is 1.08:1 on
- * bg-surface (#303030) and 1.46:1 on bg-app (#181818) — well below
- * WCAG 1.4.11 non-text contrast (3:1) for chart marks. Single-series
- * widgets (TrendChart, YearBar, SectorBreakdown, LocationsRanked,
- * WorldMap high-count ramp) all use slot 0, so an unreadable slot 0
- * means data disappears visually. Multi-series widgets cascade the
- * same problem at slots 1+ if dark hues sit at low indices.
+ * Index assignment (in-bracket number is contrast vs #303030):
+ *  0: cyan      #88CCEE [7.1:1] — Tol Muted; primary single-series
+ *  1: sand      #DDCC77 [7.8:1] — Tol Muted; warm second series
+ *  2: teal      #44AA99 [4.4:1] — Tol Muted; cool third series
+ *  3: rose      #CC6677 [3.4:1] — Tol Muted; warm rose (NOT Rosso Corsa)
+ *  4: grey      #BBBBBB [6.5:1] — Tol grey; neutral fallback
+ *  5: lavender  #BB99FF [5.5:1] — custom; cool purple alternative
+ *  6: chartreuse #99CC88 [6.8:1] — custom; lighter green alternative
+ *  7: tan       #BBAA99 [5.6:1] — custom; warm beige
+ *  8: blue-grey #88AABB [5.1:1] — custom; cool blue-grey
  *
- * Reorder strategy: bright Tol hues (cyan, sand, teal, rose) come
- * first so slot 0/1/2 are guaranteed legible against the dark
- * canvas. Darker hues (indigo, wine, green) move to higher indices
- * — used only when a chart needs >5 simultaneous series, which is
- * rare in this dashboard.
- *
- * Index assignment (Ferrari dark-canvas order):
- *  0: cyan    #88CCEE — primary single-series accent (contrast 11.4:1 vs bg-app)
- *  1: sand    #DDCC77 — second series; warm complement to cyan
- *  2: teal    #44AA99 — third series; cool middle
- *  3: rose    #CC6677 — fourth series; warm rose (NOT Rosso Corsa)
- *  4: purple  #AA4499 — fifth series; distinct from indigo
- *  5: olive   #999933 — sixth series; muted yellow-green
- *  6: green   #117733 — darker green; needs surface lift to read
- *  7: wine    #882255 — dark wine; rare slot
- *  8: indigo  #332288 — Tol canonical slot 0; deferred here for
- *             dark-canvas readability. WCAG-borderline so charts
- *             rendering at index 8 should be exceptional.
- *
- * Hex set unchanged from Tol Muted; only the ordering differs.
- * Source for the canonical hex list:
- *   https://personal.sron.nl/~pault/ §Qualitative > Muted
+ * Slots 5-8 are custom hues (NOT canonical Tol Muted) tuned for
+ * dark-canvas contrast. The canonical Tol Muted slots they replace
+ * (purple/olive/green/wine/indigo) all fail 3:1 against
+ * canvas-elevated and are intentionally excluded.
  */
-export const TOL_MUTED = [
-  '#88CCEE', // cyan
-  '#DDCC77', // sand
-  '#44AA99', // teal
-  '#CC6677', // rose
-  '#AA4499', // purple
-  '#999933', // olive
-  '#117733', // green
-  '#882255', // wine
-  '#332288', // indigo
+export const CHART_SERIES = [
+  '#88CCEE', // cyan      (Tol Muted)
+  '#DDCC77', // sand      (Tol Muted)
+  '#44AA99', // teal      (Tol Muted)
+  '#CC6677', // rose      (Tol Muted)
+  '#BBBBBB', // grey      (Tol)
+  '#BB99FF', // lavender  (custom dark-canvas)
+  '#99CC88', // chartreuse (custom dark-canvas)
+  '#BBAA99', // tan       (custom dark-canvas)
+  '#88AABB', // blue-grey (custom dark-canvas)
 ] as const
+
+/** Backward-compatibility alias for the old `TOL_MUTED` name. */
+export const TOL_MUTED = CHART_SERIES
 
 /**
  * Cyclic series-color picker for Recharts <Area>/<Bar>/<Line> children.
- * Wraps `index % TOL_MUTED.length` so palettes longer than 9 series
- * still render — Tol Muted repeats from indigo at index 9.
+ * Wraps `index % CHART_SERIES.length` so palettes longer than 9
+ * series still render — the palette repeats from cyan at index 9.
  */
 export function chartSeriesColor(index: number): string {
-  return TOL_MUTED[index % TOL_MUTED.length]
+  return CHART_SERIES[index % CHART_SERIES.length]
 }
 
 /**
