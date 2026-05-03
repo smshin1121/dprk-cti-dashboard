@@ -18,6 +18,8 @@ const SUMMARY_BODY = {
   ],
   incidents_by_motivation: [],
   top_groups: [],
+  top_sectors: [],
+  top_sources: [],
 }
 
 const EMPTY_YEAR_BODY = { ...SUMMARY_BODY, reports_by_year: [] }

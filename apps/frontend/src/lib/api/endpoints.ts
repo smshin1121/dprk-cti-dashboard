@@ -12,8 +12,10 @@ import { apiGet, apiPost, apiRawGet } from '../api'
 import {
   type AnalyticsFilters,
   type AttackMatrixOptions,
+  type IncidentsTrendGroupBy,
   toAttackMatrixQueryParams,
   toGeoQueryParams,
+  toIncidentsTrendQueryParams,
   toTrendQueryParams,
 } from '../analyticsFilters'
 import {
@@ -41,6 +43,7 @@ import {
   dashboardSummarySchema,
   geoResponseSchema,
   incidentDetailSchema,
+  incidentsTrendResponseSchema,
   reportDetailSchema,
   searchResponseSchema,
   similarReportsResponseSchema,
@@ -54,6 +57,7 @@ import {
   type GeoResponse,
   type IncidentDetail,
   type IncidentListResponse,
+  type IncidentsTrendResponse,
   type ReportDetail,
   type ReportListResponse,
   type SearchResponse,
@@ -178,6 +182,27 @@ export function getTrend(
     ? `/api/v1/analytics/trend?${qs}`
     : '/api/v1/analytics/trend'
   return apiGet(path, trendResponseSchema, signal)
+}
+
+/**
+ * `GET /api/v1/analytics/incidents_trend` -- PR #23 C1.
+ *
+ * Distinct from `getTrend`: fact table is incidents (not reports).
+ * The outer bucket count is distinct incidents; series sums can exceed
+ * it when incidents belong to multiple motivations or sectors. `groupBy`
+ * is REQUIRED; BE returns 422 if missing or not in the Literal set.
+ */
+export function getIncidentsTrend(
+  filters: AnalyticsFilters,
+  groupBy: IncidentsTrendGroupBy,
+  signal?: AbortSignal,
+): Promise<IncidentsTrendResponse> {
+  const qs = toIncidentsTrendQueryParams(filters, groupBy).toString()
+  return apiGet(
+    `/api/v1/analytics/incidents_trend?${qs}`,
+    incidentsTrendResponseSchema,
+    signal,
+  )
 }
 
 /**

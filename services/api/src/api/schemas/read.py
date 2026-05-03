@@ -48,7 +48,7 @@ here — ``/auth/me`` keeps the PR #2 DTO in ``api.auth.schemas``.
 from __future__ import annotations
 
 from datetime import date
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -326,6 +326,62 @@ class DashboardTopGroup(BaseModel):
     report_count: Annotated[int, Field(ge=0)]
 
 
+class DashboardSectorCount(BaseModel):
+    """One entry in ``DashboardSummary.top_sectors`` (PR #23 §6.A C2).
+
+    Mirror of ``DashboardMotivationCount`` on the
+    ``incident_sectors`` junction. ``count`` is
+    ``COUNT(DISTINCT incident_id)`` per sector — an incident with
+    multiple sector links contributes +1 to each sector's bucket but
+    never multiplies its own count within a single bucket. Ordered by
+    ``count DESC, sector_code ASC``; length bounded by ``top_n``.
+    """
+
+    model_config = ConfigDict(
+        frozen=True,
+        json_schema_extra={
+            "examples": [{"sector_code": "GOV", "count": 18}]
+        },
+    )
+
+    sector_code: str
+    count: Annotated[int, Field(ge=0)]
+
+
+class DashboardSourceCount(BaseModel):
+    """One entry in ``DashboardSummary.top_sources`` — "Leading
+    Contributors" parity with lazarus.day (PR #23 §6.A C2 + §6.C C6).
+
+    ``report_count`` is ``COUNT(DISTINCT reports.id)`` per source
+    (mirror of ``top_groups.report_count``). ``latest_report_date``
+    is ``MAX(reports.published)`` for the source within the filter
+    window — null only when the source has zero reports in window
+    (which means the row would not surface in the first place;
+    nullable in the schema for shape symmetry with other date
+    columns). Ordered by ``report_count DESC, source_id ASC``;
+    length bounded by ``top_n``.
+    """
+
+    model_config = ConfigDict(
+        frozen=True,
+        json_schema_extra={
+            "examples": [
+                {
+                    "source_id": 7,
+                    "source_name": "Mandiant",
+                    "report_count": 23,
+                    "latest_report_date": "2026-04-12",
+                }
+            ]
+        },
+    )
+
+    source_id: int
+    source_name: str
+    report_count: Annotated[int, Field(ge=0)]
+    latest_report_date: date | None = None
+
+
 class DashboardSummary(BaseModel):
     """Response for ``GET /api/v1/dashboard/summary``.
 
@@ -357,6 +413,25 @@ class DashboardSummary(BaseModel):
                         {"group_id": 3, "name": "Lazarus Group", "report_count": 412},
                         {"group_id": 5, "name": "Kimsuky", "report_count": 287},
                     ],
+                    "top_sectors": [
+                        {"sector_code": "GOV", "count": 42},
+                        {"sector_code": "FIN", "count": 31},
+                        {"sector_code": "ENE", "count": 12},
+                    ],
+                    "top_sources": [
+                        {
+                            "source_id": 7,
+                            "source_name": "Mandiant",
+                            "report_count": 23,
+                            "latest_report_date": "2026-04-12",
+                        },
+                        {
+                            "source_id": 12,
+                            "source_name": "Chainalysis",
+                            "report_count": 17,
+                            "latest_report_date": "2026-03-28",
+                        },
+                    ],
                 }
             ]
         },
@@ -368,6 +443,8 @@ class DashboardSummary(BaseModel):
     reports_by_year: list[DashboardYearCount] = Field(default_factory=list)
     incidents_by_motivation: list[DashboardMotivationCount] = Field(default_factory=list)
     top_groups: list[DashboardTopGroup] = Field(default_factory=list)
+    top_sectors: list[DashboardSectorCount] = Field(default_factory=list)
+    top_sources: list[DashboardSourceCount] = Field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -553,6 +630,122 @@ class TrendResponse(BaseModel):
     )
 
     buckets: list[TrendBucket] = Field(default_factory=list)
+
+
+INCIDENTS_TREND_UNKNOWN_KEY = "unknown"
+"""Sentinel ``key`` value emitted when an incident has no row in the
+``incident_motivations`` / ``incident_sectors`` junction. The bucket is
+**never dropped**: rows are folded into this single key so uncategorized
+incidents remain visible in both the outer distinct count and the
+series. FE renders this as a non-clickable "Unassigned" segment per
+plan PR #23 C1. BE and FE share the literal string; see Zod mirror at
+``apps/frontend/src/lib/api/schemas.ts``."""
+
+
+class IncidentsTrendSeriesItem(BaseModel):
+    """One stacked-axis slice within an ``IncidentsTrendBucket``.
+
+    ``key`` is the motivation or sector label (e.g. ``"Espionage"``,
+    ``"Government"``). When an incident has no junction row, ``key`` is
+    the sentinel ``INCIDENTS_TREND_UNKNOWN_KEY`` (``"unknown"``) — see
+    that constant's docstring for the no-row-dropped invariant.
+    """
+
+    model_config = ConfigDict(
+        frozen=True,
+        json_schema_extra={"examples": [{"key": "Espionage", "count": 12}]},
+    )
+
+    key: str
+    count: Annotated[int, Field(ge=0)]
+
+
+class IncidentsTrendBucket(BaseModel):
+    """One monthly bucket in ``IncidentsTrendResponse.buckets``.
+
+    Same ``month`` shape as ``TrendBucket`` (strict ``YYYY-MM``,
+    zero-padded). Outer ``count`` is the total distinct incidents in
+    the bucket. ``series`` entries count category memberships, so
+    ``sum(series[].count)`` may exceed ``count`` when an incident has
+    multiple motivations or sectors. The
+    ``INCIDENTS_TREND_UNKNOWN_KEY`` slice absorbs incidents that have
+    no junction row so they are not dropped.
+    """
+
+    model_config = ConfigDict(
+        frozen=True,
+        json_schema_extra={
+            "examples": [
+                {
+                    "month": "2026-03",
+                    "count": 18,
+                    "series": [
+                        {"key": "Espionage", "count": 12},
+                        {"key": "Finance", "count": 5},
+                        {"key": INCIDENTS_TREND_UNKNOWN_KEY, "count": 1},
+                    ],
+                }
+            ]
+        },
+    )
+
+    month: Annotated[str, Field(pattern=r"^\d{4}-\d{2}$")]
+    count: Annotated[int, Field(ge=0)]
+    series: list[IncidentsTrendSeriesItem] = Field(default_factory=list)
+
+
+class IncidentsTrendResponse(BaseModel):
+    """Response for ``GET /api/v1/analytics/incidents_trend``.
+
+    Distinct from ``TrendResponse``: the fact table is ``incidents``
+    (not ``reports``), bucketed by ``date_trunc('month',
+    incidents.reported)`` with ``incidents.reported IS NOT NULL``
+    upstream of the junction join (see ``tables.py:258-267``). Each
+    bucket carries a ``series`` slice of motivation or sector
+    membership counts. The outer bucket ``count`` remains a distinct
+    incident total. Plan PR #23 C1 lock.
+
+    ``group_by`` echoes the request's required query parameter
+    (``"motivation"`` or ``"sector"``) so the FE doesn't need to thread
+    it back through the response wrapper.
+
+    Zero-count months are **omitted**, not zero-filled -- same
+    convention as ``TrendResponse``.
+    """
+
+    model_config = ConfigDict(
+        frozen=True,
+        json_schema_extra={
+            "examples": [
+                {
+                    "buckets": [
+                        {
+                            "month": "2026-01",
+                            "count": 14,
+                            "series": [
+                                {"key": "Espionage", "count": 9},
+                                {"key": "Finance", "count": 5},
+                            ],
+                        },
+                        {
+                            "month": "2026-02",
+                            "count": 16,
+                            "series": [
+                                {"key": "Espionage", "count": 10},
+                                {"key": "Finance", "count": 4},
+                                {"key": INCIDENTS_TREND_UNKNOWN_KEY, "count": 2},
+                            ],
+                        },
+                    ],
+                    "group_by": "motivation",
+                },
+                {"buckets": [], "group_by": "sector"},
+            ]
+        },
+    )
+
+    buckets: list[IncidentsTrendBucket] = Field(default_factory=list)
+    group_by: Literal["motivation", "sector"]
 
 
 class GeoCountry(BaseModel):

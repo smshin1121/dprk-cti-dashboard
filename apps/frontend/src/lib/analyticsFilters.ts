@@ -104,3 +104,26 @@ export function toGeoQueryParams(
   appendCore(params, filters)
   return params
 }
+
+/**
+ * `/api/v1/analytics/incidents_trend` — PR #23 §6.A C1 endpoint.
+ *
+ * `group_by` is REQUIRED (no flat mode — that lives on `/trend`).
+ * Type pinned at `'motivation' | 'sector'` so a typo never reaches
+ * the BE Literal validator (which would surface as a 422 in the
+ * happy path). The FE shape is the same shared `AnalyticsFilters`
+ * (date_from / date_to / group_id[]) the other analytics endpoints
+ * accept; group_id is documented BE-side as a no-op for this
+ * endpoint but the param is still serialized for surface symmetry.
+ */
+export type IncidentsTrendGroupBy = 'motivation' | 'sector'
+
+export function toIncidentsTrendQueryParams(
+  filters: AnalyticsFilters,
+  groupBy: IncidentsTrendGroupBy,
+): URLSearchParams {
+  const params = new URLSearchParams()
+  appendCore(params, filters)
+  params.append('group_by', groupBy)
+  return params
+}

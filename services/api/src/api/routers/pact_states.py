@@ -319,8 +319,16 @@ async def _ensure_incident_with_motivation(
     *,
     title: str,
     motivation: str,
+    reported: date | None = None,
 ) -> int:
-    """Upsert an incidents row + incident_motivations row."""
+    """Upsert an incidents row + incident_motivations row.
+
+    ``reported`` defaults to 2026-02-20 (inside the pact dashboard
+    filter window ``2026-01-01..2026-04-18``). The PR #23 incidents-
+    trend fixture overrides this to spread incidents across multiple
+    months so the eachLike(``buckets``) array is non-empty under
+    bucket-level grouping.
+    """
     existing = (
         await session.execute(
             text("SELECT id FROM incidents WHERE title = :t"),
@@ -337,9 +345,7 @@ async def _ensure_incident_with_motivation(
                 "RETURNING id"
             ),
             {
-                # Inside the pact dashboard filter window
-                # (date_from=2026-01-01, date_to=2026-04-18).
-                "r": date(2026, 2, 20),
+                "r": reported if reported is not None else date(2026, 2, 20),
                 "t": title,
                 "d": "Pact fixture incident",
             },
@@ -351,6 +357,51 @@ async def _ensure_incident_with_motivation(
             "VALUES (:i, :m) ON CONFLICT DO NOTHING"
         ),
         {"i": incident_id, "m": motivation},
+    )
+    return incident_id
+
+
+async def _ensure_incident_with_sector(
+    session: AsyncSession,
+    *,
+    title: str,
+    sector_code: str,
+    reported: date | None = None,
+) -> int:
+    """Upsert an incidents row + incident_sectors row.
+
+    Mirrors ``_ensure_incident_with_motivation`` on the
+    ``incident_sectors`` junction. Used by the PR #23
+    ``/analytics/incidents_trend?group_by=sector`` pact fixture.
+    """
+    existing = (
+        await session.execute(
+            text("SELECT id FROM incidents WHERE title = :t"),
+            {"t": title},
+        )
+    ).first()
+    if existing is not None:
+        incident_id = int(existing[0])
+    else:
+        row = await session.execute(
+            text(
+                "INSERT INTO incidents (reported, title, description) "
+                "VALUES (:r, :t, :d) "
+                "RETURNING id"
+            ),
+            {
+                "r": reported if reported is not None else date(2026, 2, 20),
+                "t": title,
+                "d": "Pact fixture incident (sector)",
+            },
+        )
+        incident_id = int(row.scalar_one())
+    await session.execute(
+        text(
+            "INSERT INTO incident_sectors (incident_id, sector_code) "
+            "VALUES (:i, :s) ON CONFLICT DO NOTHING"
+        ),
+        {"i": incident_id, "s": sector_code},
     )
     return incident_id
 
@@ -603,6 +654,62 @@ async def _ensure_geo_fixture(session: AsyncSession) -> None:
         )
 
 
+async def _ensure_incidents_trend_motivation_fixture(
+    session: AsyncSession,
+) -> None:
+    """Seed for ``/analytics/incidents_trend?group_by=motivation`` pact.
+
+    Response contract (PR #23 §6.A C1):
+
+        {buckets: eachLike({month, count, series: eachLike({key, count})}),
+         group_by: "motivation"}
+
+    Seed: 3 incidents across 2 months inside the pact window so both
+    the outer ``buckets`` eachLike AND the inner per-bucket ``series``
+    eachLike have non-empty arrays. Pact-ruby ``eachLike`` rejects
+    empty (``pitfall_pact_fixture_shape``).
+
+    Distinct titles per row keep these incidents separate from the
+    geo / dashboard fixtures so cross-state accumulation doesn't
+    cross-contaminate counts.
+    """
+    incidents = [
+        ("Pact fixture — incidents_trend motivation feb-espionage", "Espionage", date(2026, 2, 10)),
+        ("Pact fixture — incidents_trend motivation feb-finance", "Finance", date(2026, 2, 20)),
+        ("Pact fixture — incidents_trend motivation mar-espionage", "Espionage", date(2026, 3, 5)),
+    ]
+    for title, motivation, reported in incidents:
+        await _ensure_incident_with_motivation(
+            session,
+            title=title,
+            motivation=motivation,
+            reported=reported,
+        )
+
+
+async def _ensure_incidents_trend_sector_fixture(
+    session: AsyncSession,
+) -> None:
+    """Seed for ``/analytics/incidents_trend?group_by=sector`` pact.
+
+    Mirrors the motivation fixture on the ``incident_sectors``
+    junction. Same eachLike non-empty rules apply: ≥1 bucket and ≥1
+    series row per bucket.
+    """
+    incidents = [
+        ("Pact fixture — incidents_trend sector feb-gov", "GOV", date(2026, 2, 10)),
+        ("Pact fixture — incidents_trend sector feb-fin", "FIN", date(2026, 2, 20)),
+        ("Pact fixture — incidents_trend sector mar-ene", "ENE", date(2026, 3, 5)),
+    ]
+    for title, sector_code, reported in incidents:
+        await _ensure_incident_with_sector(
+            session,
+            title=title,
+            sector_code=sector_code,
+            reported=reported,
+        )
+
+
 async def _ensure_canonical_lazarus_fixture(session: AsyncSession) -> int:
     """Seed the canonical `Lazarus Group` fixture + one linked codename.
 
@@ -658,12 +765,16 @@ async def _ensure_min_actors(session: AsyncSession, minimum: int) -> None:
 async def _ensure_dashboard_fixture(session: AsyncSession) -> None:
     """Seed the full fixture set the /dashboard/summary pact requires.
 
-    - 1 source (FK for reports)
+    - 1 source (FK for reports) — seeds top_sources via the
+      reports.source_id → sources.name join chain
     - 1 group + 1 codename (for top_groups join chain)
     - 1 report linked to source + codename (populates reports_by_year
-      AND completes the report → codename → group chain for
-      top_groups)
+      AND completes the report → codename → group chain for top_groups
+      AND surfaces the source under top_sources)
     - 1 incident + 1 motivation (populates incidents_by_motivation)
+    - 1 incident + 1 sector (populates top_sectors — PR #23 §6.A C2;
+      separate row from the motivation-linked one to keep the two
+      junction surfaces independent)
     """
     await _ensure_canonical_lazarus_fixture(session)
     source_id = await _ensure_source(session)
@@ -698,6 +809,12 @@ async def _ensure_dashboard_fixture(session: AsyncSession) -> None:
         session,
         title="Pact fixture — Ronin bridge exploit",
         motivation="financial",
+    )
+    await _ensure_incident_with_sector(
+        session,
+        title="Pact fixture — dashboard sector seed",
+        sector_code="GOV",
+        reported=date(2026, 2, 20),
     )
 
 
@@ -1630,6 +1747,25 @@ async def provider_states(
             "seeded geo dataset and an authenticated analyst session"
         ):
             await _ensure_geo_fixture(session)
+            await session.commit()
+            await _seed_analyst_session(response, session_store)
+            continue
+
+        # PR #23 Group A C1 — lazarus.day parity, incidents_trend.
+        if state == (
+            "seeded incidents_trend motivation dataset "
+            "and an authenticated analyst session"
+        ):
+            await _ensure_incidents_trend_motivation_fixture(session)
+            await session.commit()
+            await _seed_analyst_session(response, session_store)
+            continue
+
+        if state == (
+            "seeded incidents_trend sector dataset "
+            "and an authenticated analyst session"
+        ):
+            await _ensure_incidents_trend_sector_fixture(session)
             await session.commit()
             await _seed_analyst_session(response, session_store)
             continue

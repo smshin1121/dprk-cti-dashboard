@@ -9,6 +9,8 @@ import {
   dashboardSummarySchema,
   geoResponseSchema,
   incidentDetailSchema,
+  INCIDENTS_TREND_UNKNOWN_KEY,
+  incidentsTrendResponseSchema,
   reportDetailSchema,
   reportItemSchema,
   reportListResponseSchema,
@@ -75,6 +77,7 @@ describe('currentUserSchema', () => {
 describe('dashboardSummarySchema', () => {
   // Lifted verbatim from contracts/openapi/openapi.json (PR #11 Group
   // K D13 example — components.schemas.DashboardSummary.examples[0]).
+  // PR #23 §6.A C2 extends this with `top_sectors` + `top_sources`.
   // If the BE example changes, this test breaks first — the exact
   // signal D7 relies on until OpenAPI→Zod codegen lands.
   const beHappyExample = {
@@ -95,6 +98,25 @@ describe('dashboardSummarySchema', () => {
       { group_id: 3, name: 'Lazarus Group', report_count: 412 },
       { group_id: 5, name: 'Kimsuky', report_count: 287 },
     ],
+    top_sectors: [
+      { sector_code: 'GOV', count: 42 },
+      { sector_code: 'FIN', count: 31 },
+      { sector_code: 'ENE', count: 12 },
+    ],
+    top_sources: [
+      {
+        source_id: 7,
+        source_name: 'Mandiant',
+        report_count: 23,
+        latest_report_date: '2026-04-12',
+      },
+      {
+        source_id: 12,
+        source_name: 'Chainalysis',
+        report_count: 17,
+        latest_report_date: '2026-03-28',
+      },
+    ],
   }
 
   const beEmptyExample = {
@@ -104,6 +126,8 @@ describe('dashboardSummarySchema', () => {
     reports_by_year: [],
     incidents_by_motivation: [],
     top_groups: [],
+    top_sectors: [],
+    top_sources: [],
   }
 
   it('parses the BE happy example verbatim', () => {
@@ -137,6 +161,63 @@ describe('dashboardSummarySchema', () => {
         reports_by_year: [{ year: 1800, count: 1 }],
       }),
     ).toThrow()
+  })
+
+  // PR #23 §6.A C2 — top_sectors + top_sources guards.
+
+  it('rejects negative count on a top_sectors entry', () => {
+    expect(() =>
+      dashboardSummarySchema.parse({
+        ...beEmptyExample,
+        top_sectors: [{ sector_code: 'GOV', count: -1 }],
+      }),
+    ).toThrow()
+  })
+
+  it('rejects missing sector_code on a top_sectors entry', () => {
+    expect(() =>
+      dashboardSummarySchema.parse({
+        ...beEmptyExample,
+        top_sectors: [{ count: 5 }],
+      }),
+    ).toThrow(/sector_code/i)
+  })
+
+  it('rejects missing report_count on a top_sources entry', () => {
+    expect(() =>
+      dashboardSummarySchema.parse({
+        ...beEmptyExample,
+        top_sources: [
+          {
+            source_id: 7,
+            source_name: 'Mandiant',
+            latest_report_date: '2026-04-12',
+          },
+        ],
+      }),
+    ).toThrow(/report_count/i)
+  })
+
+  it('accepts null latest_report_date on a top_sources entry (BE Optional[date])', () => {
+    const fixture = {
+      ...beEmptyExample,
+      top_sources: [
+        {
+          source_id: 7,
+          source_name: 'Mandiant',
+          report_count: 23,
+          latest_report_date: null,
+        },
+      ],
+    }
+    expect(dashboardSummarySchema.parse(fixture)).toEqual(fixture)
+  })
+
+  it('rejects missing top_sectors / top_sources fields entirely', () => {
+    const stripped = { ...beHappyExample } as Record<string, unknown>
+    delete stripped.top_sectors
+    delete stripped.top_sources
+    expect(() => dashboardSummarySchema.parse(stripped)).toThrow()
   })
 })
 
@@ -321,6 +402,142 @@ describe('trendResponseSchema', () => {
         buckets: [{ month: '2026-03', count: -1 }],
       }),
     ).toThrow()
+  })
+})
+
+describe('incidentsTrendResponseSchema', () => {
+  // Lifted verbatim from contracts/openapi/openapi.json — the
+  // ``motivation_populated``, ``sector_populated``, and ``empty``
+  // examples on ``GET /api/v1/analytics/incidents_trend`` (PR #23
+  // Group A C1). If the BE example changes, this test breaks first —
+  // desired, since it's the BE↔FE shape drift signal for this
+  // endpoint. Mirrors the ``trendResponseSchema`` BE-happy-example
+  // pattern above.
+  const beMotivationExample = {
+    buckets: [
+      {
+        month: '2026-01',
+        count: 14,
+        series: [
+          { key: 'Espionage', count: 9 },
+          { key: 'Finance', count: 5 },
+        ],
+      },
+      {
+        month: '2026-02',
+        count: 16,
+        series: [
+          { key: 'Espionage', count: 10 },
+          { key: 'Finance', count: 4 },
+          { key: INCIDENTS_TREND_UNKNOWN_KEY, count: 2 },
+        ],
+      },
+    ],
+    group_by: 'motivation' as const,
+  }
+
+  const beSectorExample = {
+    buckets: [
+      {
+        month: '2026-03',
+        count: 4,
+        series: [
+          { key: 'ENE', count: 1 },
+          { key: 'FIN', count: 1 },
+          { key: 'GOV', count: 2 },
+        ],
+      },
+    ],
+    group_by: 'sector' as const,
+  }
+
+  const beEmptyExample = { buckets: [], group_by: 'motivation' as const }
+
+  it('parses the BE motivation_populated example verbatim', () => {
+    expect(incidentsTrendResponseSchema.parse(beMotivationExample)).toEqual(
+      beMotivationExample,
+    )
+  })
+
+  it('parses the BE sector_populated example verbatim', () => {
+    expect(incidentsTrendResponseSchema.parse(beSectorExample)).toEqual(
+      beSectorExample,
+    )
+  })
+
+  it('parses the BE empty example verbatim', () => {
+    expect(incidentsTrendResponseSchema.parse(beEmptyExample)).toEqual(
+      beEmptyExample,
+    )
+  })
+
+  it('accepts the unknown-bucket sentinel as a regular `key` value', () => {
+    const fixture = {
+      buckets: [
+        {
+          month: '2026-03',
+          count: 3,
+          series: [{ key: INCIDENTS_TREND_UNKNOWN_KEY, count: 3 }],
+        },
+      ],
+      group_by: 'motivation' as const,
+    }
+    expect(incidentsTrendResponseSchema.parse(fixture)).toEqual(fixture)
+  })
+
+  it('rejects malformed month strings (must be YYYY-MM)', () => {
+    expect(() =>
+      incidentsTrendResponseSchema.parse({
+        buckets: [{ month: '2026-1', count: 0, series: [] }],
+        group_by: 'motivation',
+      }),
+    ).toThrow()
+  })
+
+  it('rejects negative outer count', () => {
+    expect(() =>
+      incidentsTrendResponseSchema.parse({
+        buckets: [{ month: '2026-03', count: -1, series: [] }],
+        group_by: 'motivation',
+      }),
+    ).toThrow()
+  })
+
+  it('rejects negative series count', () => {
+    expect(() =>
+      incidentsTrendResponseSchema.parse({
+        buckets: [
+          {
+            month: '2026-03',
+            count: 0,
+            series: [{ key: 'Espionage', count: -1 }],
+          },
+        ],
+        group_by: 'motivation',
+      }),
+    ).toThrow()
+  })
+
+  it('rejects unknown group_by values (Literal["motivation","sector"])', () => {
+    expect(() =>
+      incidentsTrendResponseSchema.parse({
+        buckets: [],
+        group_by: 'foo',
+      }),
+    ).toThrow()
+  })
+
+  it('rejects missing series field on a bucket', () => {
+    expect(() =>
+      incidentsTrendResponseSchema.parse({
+        buckets: [{ month: '2026-03', count: 5 }],
+        group_by: 'motivation',
+      }),
+    ).toThrow()
+  })
+
+  it('pins the unknown-bucket sentinel string to "unknown" (BE/FE drift guard)', () => {
+    expect(INCIDENTS_TREND_UNKNOWN_KEY).toBe('unknown')
   })
 })
 

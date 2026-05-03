@@ -459,6 +459,77 @@
         "title": "DashboardMotivationCount",
         "type": "object"
       },
+      "DashboardSectorCount": {
+        "description": "One entry in ``DashboardSummary.top_sectors`` (PR #23 §6.A C2).\n\nMirror of ``DashboardMotivationCount`` on the\n``incident_sectors`` junction. ``count`` is\n``COUNT(DISTINCT incident_id)`` per sector — an incident with\nmultiple sector links contributes +1 to each sector's bucket but\nnever multiplies its own count within a single bucket. Ordered by\n``count DESC, sector_code ASC``; length bounded by ``top_n``.",
+        "examples": [
+          {
+            "count": 18,
+            "sector_code": "GOV"
+          }
+        ],
+        "properties": {
+          "count": {
+            "minimum": 0.0,
+            "title": "Count",
+            "type": "integer"
+          },
+          "sector_code": {
+            "title": "Sector Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sector_code",
+          "count"
+        ],
+        "title": "DashboardSectorCount",
+        "type": "object"
+      },
+      "DashboardSourceCount": {
+        "description": "One entry in ``DashboardSummary.top_sources`` — \"Leading\nContributors\" parity with lazarus.day (PR #23 §6.A C2 + §6.C C6).\n\n``report_count`` is ``COUNT(DISTINCT reports.id)`` per source\n(mirror of ``top_groups.report_count``). ``latest_report_date``\nis ``MAX(reports.published)`` for the source within the filter\nwindow — null only when the source has zero reports in window\n(which means the row would not surface in the first place;\nnullable in the schema for shape symmetry with other date\ncolumns). Ordered by ``report_count DESC, source_id ASC``;\nlength bounded by ``top_n``.",
+        "examples": [
+          {
+            "latest_report_date": "2026-04-12",
+            "report_count": 23,
+            "source_id": 7,
+            "source_name": "Mandiant"
+          }
+        ],
+        "properties": {
+          "latest_report_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Report Date"
+          },
+          "report_count": {
+            "minimum": 0.0,
+            "title": "Report Count",
+            "type": "integer"
+          },
+          "source_id": {
+            "title": "Source Id",
+            "type": "integer"
+          },
+          "source_name": {
+            "title": "Source Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_id",
+          "source_name",
+          "report_count"
+        ],
+        "title": "DashboardSourceCount",
+        "type": "object"
+      },
       "DashboardSummary": {
         "description": "Response for ``GET /api/v1/dashboard/summary``.\n\nPlan D6 lock: three scalar totals + three aggregate arrays. The\nshape is the minimum an FE KPI card view (§14 Phase 2 W1–W2)\nneeds — no nesting beyond one level, no per-day series (that\nlives on the analytics endpoints in Phase 3).",
         "examples": [
@@ -503,6 +574,34 @@
                 "report_count": 287
               }
             ],
+            "top_sectors": [
+              {
+                "count": 42,
+                "sector_code": "GOV"
+              },
+              {
+                "count": 31,
+                "sector_code": "FIN"
+              },
+              {
+                "count": 12,
+                "sector_code": "ENE"
+              }
+            ],
+            "top_sources": [
+              {
+                "latest_report_date": "2026-04-12",
+                "report_count": 23,
+                "source_id": 7,
+                "source_name": "Mandiant"
+              },
+              {
+                "latest_report_date": "2026-03-28",
+                "report_count": 17,
+                "source_id": 12,
+                "source_name": "Chainalysis"
+              }
+            ],
             "total_actors": 12,
             "total_incidents": 154,
             "total_reports": 1204
@@ -528,6 +627,20 @@
               "$ref": "#/components/schemas/DashboardTopGroup"
             },
             "title": "Top Groups",
+            "type": "array"
+          },
+          "top_sectors": {
+            "items": {
+              "$ref": "#/components/schemas/DashboardSectorCount"
+            },
+            "title": "Top Sectors",
+            "type": "array"
+          },
+          "top_sources": {
+            "items": {
+              "$ref": "#/components/schemas/DashboardSourceCount"
+            },
+            "title": "Top Sources",
             "type": "array"
           },
           "total_actors": {
@@ -1013,6 +1126,148 @@
           "items"
         ],
         "title": "IncidentListResponse",
+        "type": "object"
+      },
+      "IncidentsTrendBucket": {
+        "description": "One monthly bucket in ``IncidentsTrendResponse.buckets``.\n\nSame ``month`` shape as ``TrendBucket`` (strict ``YYYY-MM``,\nzero-padded). Outer ``count`` is the total distinct incidents in\nthe bucket. ``series`` entries count category memberships, so\n``sum(series[].count)`` may exceed ``count`` when an incident has\nmultiple motivations or sectors. The\n``INCIDENTS_TREND_UNKNOWN_KEY`` slice absorbs incidents that have\nno junction row so they are not dropped.",
+        "examples": [
+          {
+            "count": 18,
+            "month": "2026-03",
+            "series": [
+              {
+                "count": 12,
+                "key": "Espionage"
+              },
+              {
+                "count": 5,
+                "key": "Finance"
+              },
+              {
+                "count": 1,
+                "key": "unknown"
+              }
+            ]
+          }
+        ],
+        "properties": {
+          "count": {
+            "minimum": 0.0,
+            "title": "Count",
+            "type": "integer"
+          },
+          "month": {
+            "pattern": "^\\d{4}-\\d{2}$",
+            "title": "Month",
+            "type": "string"
+          },
+          "series": {
+            "items": {
+              "$ref": "#/components/schemas/IncidentsTrendSeriesItem"
+            },
+            "title": "Series",
+            "type": "array"
+          }
+        },
+        "required": [
+          "month",
+          "count"
+        ],
+        "title": "IncidentsTrendBucket",
+        "type": "object"
+      },
+      "IncidentsTrendResponse": {
+        "description": "Response for ``GET /api/v1/analytics/incidents_trend``.\n\nDistinct from ``TrendResponse``: the fact table is ``incidents``\n(not ``reports``), bucketed by ``date_trunc('month',\nincidents.reported)`` with ``incidents.reported IS NOT NULL``\nupstream of the junction join (see ``tables.py:258-267``). Each\nbucket carries a ``series`` slice of motivation or sector\nmembership counts. The outer bucket ``count`` remains a distinct\nincident total. Plan PR #23 C1 lock.\n\n``group_by`` echoes the request's required query parameter\n(``\"motivation\"`` or ``\"sector\"``) so the FE doesn't need to thread\nit back through the response wrapper.\n\nZero-count months are **omitted**, not zero-filled -- same\nconvention as ``TrendResponse``.",
+        "examples": [
+          {
+            "buckets": [
+              {
+                "count": 14,
+                "month": "2026-01",
+                "series": [
+                  {
+                    "count": 9,
+                    "key": "Espionage"
+                  },
+                  {
+                    "count": 5,
+                    "key": "Finance"
+                  }
+                ]
+              },
+              {
+                "count": 16,
+                "month": "2026-02",
+                "series": [
+                  {
+                    "count": 10,
+                    "key": "Espionage"
+                  },
+                  {
+                    "count": 4,
+                    "key": "Finance"
+                  },
+                  {
+                    "count": 2,
+                    "key": "unknown"
+                  }
+                ]
+              }
+            ],
+            "group_by": "motivation"
+          },
+          {
+            "buckets": [],
+            "group_by": "sector"
+          }
+        ],
+        "properties": {
+          "buckets": {
+            "items": {
+              "$ref": "#/components/schemas/IncidentsTrendBucket"
+            },
+            "title": "Buckets",
+            "type": "array"
+          },
+          "group_by": {
+            "enum": [
+              "motivation",
+              "sector"
+            ],
+            "title": "Group By",
+            "type": "string"
+          }
+        },
+        "required": [
+          "group_by"
+        ],
+        "title": "IncidentsTrendResponse",
+        "type": "object"
+      },
+      "IncidentsTrendSeriesItem": {
+        "description": "One stacked-axis slice within an ``IncidentsTrendBucket``.\n\n``key`` is the motivation or sector label (e.g. ``\"Espionage\"``,\n``\"Government\"``). When an incident has no junction row, ``key`` is\nthe sentinel ``INCIDENTS_TREND_UNKNOWN_KEY`` (``\"unknown\"``) — see\nthat constant's docstring for the no-row-dropped invariant.",
+        "examples": [
+          {
+            "count": 12,
+            "key": "Espionage"
+          }
+        ],
+        "properties": {
+          "count": {
+            "minimum": 0.0,
+            "title": "Count",
+            "type": "integer"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "count"
+        ],
+        "title": "IncidentsTrendSeriesItem",
         "type": "object"
       },
       "LinkedIncidentSummary": {
@@ -2925,6 +3180,211 @@
         ]
       }
     },
+    "/api/v1/analytics/incidents_trend": {
+      "get": {
+        "description": "Distinct incidents per calendar month of ``incidents.reported`` within the filter window, sliced by motivation or sector via the required ``group_by`` query parameter (``motivation`` | ``sector``). Outer ``count`` per bucket is the distinct incident total; ``series`` counts category memberships and may sum above the outer count for multi-category incidents. Incidents with no junction row land in a sentinel ``key='unknown'`` slice rather than being dropped. Distinct from ``/analytics/trend`` because the fact table is ``incidents`` (not ``reports``); the two endpoints answer different analytical questions and do not share an envelope. Plan PR #23 C1 lock.",
+        "operationId": "incidents_trend_endpoint_api_v1_analytics_incidents_trend_get",
+        "parameters": [
+          {
+            "description": "Required slice axis. ``motivation`` joins ``incident_motivations``; ``sector`` joins ``incident_sectors``. Anything else is 422.",
+            "in": "query",
+            "name": "group_by",
+            "required": true,
+            "schema": {
+              "description": "Required slice axis. ``motivation`` joins ``incident_motivations``; ``sector`` joins ``incident_sectors``. Anything else is 422.",
+              "enum": [
+                "motivation",
+                "sector"
+              ],
+              "title": "Group By",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "date_from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Date From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "date_to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Date To"
+            }
+          },
+          {
+            "description": "Accepted for filter-surface uniformity with the other analytics endpoints, but ``incidents_trend`` is a documented no-op for ``group_id`` — the schema has no path from ``incidents`` to ``groups`` (same constraint as ``/analytics/geo`` and the ``incidents_by_motivation`` aggregate on ``/dashboard/summary``). Group-aware incident filters depend on a future drill-down view per plan §6.C C13.",
+            "in": "query",
+            "name": "group_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "integer"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Accepted for filter-surface uniformity with the other analytics endpoints, but ``incidents_trend`` is a documented no-op for ``group_id`` — the schema has no path from ``incidents`` to ``groups`` (same constraint as ``/analytics/geo`` and the ``incidents_by_motivation`` aggregate on ``/dashboard/summary``). Group-aware incident filters depend on a future drill-down view per plan §6.C C13.",
+              "title": "Group Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "empty": {
+                    "summary": "No incidents in window",
+                    "value": {
+                      "buckets": [],
+                      "group_by": "motivation"
+                    }
+                  },
+                  "motivation_populated": {
+                    "summary": "Motivation slice — two months of data",
+                    "value": {
+                      "buckets": [
+                        {
+                          "count": 14,
+                          "month": "2026-01",
+                          "series": [
+                            {
+                              "count": 9,
+                              "key": "Espionage"
+                            },
+                            {
+                              "count": 5,
+                              "key": "Finance"
+                            }
+                          ]
+                        },
+                        {
+                          "count": 16,
+                          "month": "2026-02",
+                          "series": [
+                            {
+                              "count": 10,
+                              "key": "Espionage"
+                            },
+                            {
+                              "count": 4,
+                              "key": "Finance"
+                            },
+                            {
+                              "count": 2,
+                              "key": "unknown"
+                            }
+                          ]
+                        }
+                      ],
+                      "group_by": "motivation"
+                    }
+                  },
+                  "sector_populated": {
+                    "summary": "Sector slice — one month, three sectors",
+                    "value": {
+                      "buckets": [
+                        {
+                          "count": 4,
+                          "month": "2026-03",
+                          "series": [
+                            {
+                              "count": 1,
+                              "key": "ENE"
+                            },
+                            {
+                              "count": 1,
+                              "key": "FIN"
+                            },
+                            {
+                              "count": 2,
+                              "key": "GOV"
+                            }
+                          ]
+                        }
+                      ],
+                      "group_by": "sector"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/IncidentsTrendResponse"
+                }
+              }
+            },
+            "description": "Incidents trend payload, sliced by axis."
+          },
+          "401": {
+            "description": "Missing or invalid session cookie"
+          },
+          "403": {
+            "description": "Role not analyst / researcher / policy / soc / admin"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "detail": [
+                    {
+                      "loc": [
+                        "query",
+                        "group_id"
+                      ],
+                      "msg": "group_id must be >= 1",
+                      "type": "value_error"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "Invalid query param — bad ISO date, negative ``group_id``, or ``top_n`` out of ``1..200`` (attack_matrix only). Plan D12 uniform 422 contract."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": "rate_limit_exceeded",
+                  "message": "60 per 1 minute"
+                }
+              }
+            },
+            "description": "Rate limit exceeded — same 60/min/user policy as other read endpoints (dashboard, reports, incidents, actors) but a per-decorated-route bucket. Exhausting /analytics/attack_matrix does NOT consume /analytics/trend or /dashboard/summary budget."
+          }
+        },
+        "summary": "Monthly incidents trend, sliced by motivation or sector",
+        "tags": [
+          "analytics"
+        ]
+      }
+    },
     "/api/v1/analytics/trend": {
       "get": {
         "description": "Distinct report count per calendar month of ``reports.published`` within the filter window. Bucket format is ``YYYY-MM``. Zero-count months are omitted, not zero-filled — the FE owns gap handling. Plan D2.",
@@ -3380,6 +3840,8 @@
                       "incidents_by_motivation": [],
                       "reports_by_year": [],
                       "top_groups": [],
+                      "top_sectors": [],
+                      "top_sources": [],
                       "total_actors": 0,
                       "total_incidents": 0,
                       "total_reports": 0
@@ -3422,6 +3884,34 @@
                           "group_id": 5,
                           "name": "Kimsuky",
                           "report_count": 287
+                        }
+                      ],
+                      "top_sectors": [
+                        {
+                          "count": 42,
+                          "sector_code": "GOV"
+                        },
+                        {
+                          "count": 31,
+                          "sector_code": "FIN"
+                        },
+                        {
+                          "count": 12,
+                          "sector_code": "ENE"
+                        }
+                      ],
+                      "top_sources": [
+                        {
+                          "latest_report_date": "2026-04-12",
+                          "report_count": 23,
+                          "source_id": 7,
+                          "source_name": "Mandiant"
+                        },
+                        {
+                          "latest_report_date": "2026-03-28",
+                          "report_count": 17,
+                          "source_id": 12,
+                          "source_name": "Chainalysis"
                         }
                       ],
                       "total_actors": 12,

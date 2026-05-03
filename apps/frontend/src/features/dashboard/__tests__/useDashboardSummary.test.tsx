@@ -15,6 +15,8 @@ const HAPPY_BODY = {
   reports_by_year: [{ year: 2024, count: 3 }],
   incidents_by_motivation: [{ motivation: 'financial', count: 2 }],
   top_groups: [{ group_id: 3, name: 'Lazarus Group', report_count: 3 }],
+  top_sectors: [],
+  top_sources: [],
 }
 
 function makeWrapper() {

@@ -44,13 +44,17 @@ Invariants enforced here (review priorities carried from PR #11):
 from __future__ import annotations
 
 from datetime import date
+from typing import Literal
 
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..schemas.read import INCIDENTS_TREND_UNKNOWN_KEY
 from ..tables import (
     codenames_table,
     incident_countries_table,
+    incident_motivations_table,
+    incident_sectors_table,
     incidents_table,
     report_codenames_table,
     report_techniques_table,
@@ -281,8 +285,124 @@ async def compute_geo(
     return {"countries": countries}
 
 
+async def compute_incidents_trend(
+    session: AsyncSession,
+    *,
+    group_by: Literal["motivation", "sector"],
+    date_from: date | None = None,
+    date_to: date | None = None,
+    group_ids: list[int] | None = None,  # accepted for uniformity, no-op
+) -> dict[str, object]:
+    """Build the monthly incidents trend payload, sliced by motivation or sector.
+
+    Distinct from ``compute_trend``: fact table is ``incidents`` (not
+    ``reports``), bucketed by ``incidents.reported`` (NOT NULL only --
+    same upstream filter as the list-endpoint cursor convention; see
+    ``tables.py:258-261``). Each bucket carries a ``series`` slice of
+    motivation or sector membership counts. PR #23 C1 lock.
+
+    Outer ``count`` semantics: it is the **number of distinct
+    incidents** in the month. An incident linked to N motivations (or
+    N sectors) contributes +1 to the outer monthly count and +1 to
+    each relevant series key, so ``sum(series[].count)`` may exceed
+    the outer count for multi-category incidents. Incidents with no
+    junction row still contribute to the outer count and land in the
+    ``INCIDENTS_TREND_UNKNOWN_KEY`` slice via COALESCE.
+
+    ``group_ids`` is accepted for API uniformity with the other
+    analytics endpoints but is a documented no-op -- the schema has no
+    path from ``incidents`` to ``groups`` (same constraint as
+    ``compute_geo`` and ``compute_dashboard_summary``'s
+    ``incidents_by_motivation`` aggregate).
+    """
+    del group_ids  # accepted-for-uniformity sink
+
+    dialect = _resolve_dialect(session)
+    month_col = _month_expr(incidents_table.c.reported, dialect).label("month")
+
+    if group_by == "motivation":
+        junction = incident_motivations_table
+        key_source = junction.c.motivation
+    else:
+        junction = incident_sectors_table
+        key_source = junction.c.sector_code
+
+    series_key = sa.func.coalesce(
+        key_source, sa.literal(INCIDENTS_TREND_UNKNOWN_KEY)
+    ).label("key")
+
+    monthly_stmt = (
+        sa.select(
+            month_col,
+            sa.func.count(sa.distinct(incidents_table.c.id)).label("count"),
+        )
+        .where(incidents_table.c.reported.is_not(None))
+        .group_by(month_col)
+        .order_by(month_col.asc())
+    )
+
+    series_stmt = (
+        sa.select(
+            month_col,
+            series_key,
+            sa.func.count(sa.distinct(incidents_table.c.id)).label("count"),
+        )
+        .select_from(
+            incidents_table.outerjoin(
+                junction, junction.c.incident_id == incidents_table.c.id
+            )
+        )
+        .where(incidents_table.c.reported.is_not(None))
+        .group_by(month_col, series_key)
+        .order_by(month_col.asc(), series_key.asc())
+    )
+    if date_from is not None:
+        monthly_stmt = monthly_stmt.where(incidents_table.c.reported >= date_from)
+        series_stmt = series_stmt.where(incidents_table.c.reported >= date_from)
+    if date_to is not None:
+        monthly_stmt = monthly_stmt.where(incidents_table.c.reported <= date_to)
+        series_stmt = series_stmt.where(incidents_table.c.reported <= date_to)
+
+    monthly_rows = (await session.execute(monthly_stmt)).all()
+    series_rows = (await session.execute(series_stmt)).all()
+
+    # Fold flat (month, key, count) tuples into nested buckets. The
+    # SQL ORDER BY ascending pins month order; series order is
+    # likewise stable but the test surface re-sorts by key for
+    # readability so the aggregator does not promise series order.
+    buckets: dict[str, dict[str, object]] = {}
+    for row in monthly_rows:
+        if row.month is None:
+            # Defensive -- `IS NOT NULL` filter should already exclude
+            # this. Belt-and-braces in case a dialect returns NULL for
+            # the month expression itself.
+            continue
+        buckets[row.month] = {
+            "month": row.month,
+            "count": int(row.count),
+            "series": [],
+        }
+
+    for row in series_rows:
+        if row.month is None:
+            continue
+        bucket = buckets.setdefault(
+            row.month,
+            {"month": row.month, "count": 0, "series": []},
+        )
+        slice_count = int(row.count)
+        series_list: list[dict[str, object]] = bucket["series"]  # type: ignore[assignment]
+        series_list.append({"key": row.key, "count": slice_count})
+
+    return {
+        "buckets": list(buckets.values()),
+        "group_by": group_by,
+    }
+
+
 __all__ = [
     "compute_attack_matrix",
     "compute_geo",
+    "compute_incidents_trend",
     "compute_trend",
 ]

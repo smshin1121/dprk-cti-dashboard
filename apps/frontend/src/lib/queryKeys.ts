@@ -20,6 +20,7 @@
 import type {
   AnalyticsFilters,
   AttackMatrixOptions,
+  IncidentsTrendGroupBy,
 } from './analyticsFilters'
 import type { DashboardSummaryFilters } from './dashboardFilters'
 import type {
@@ -72,6 +73,18 @@ export const queryKeys = {
 
   analyticsTrend: (filters: AnalyticsFilters) =>
     ['analytics', 'trend', filters] as const,
+
+  /**
+   * `/api/v1/analytics/incidents_trend` — PR #23 §6.A C1. Key carries
+   * `groupBy` so the motivation and sector axes occupy different cache
+   * slots even under identical date/group filters; the two stacked-
+   * area widgets (PR #23 §6.C C7/C8) MUST NOT share a cache entry.
+   */
+  analyticsIncidentsTrend: (
+    filters: AnalyticsFilters,
+    groupBy: IncidentsTrendGroupBy,
+  ) =>
+    ['analytics', 'incidents_trend', groupBy, filters] as const,
 
   analyticsGeo: (filters: AnalyticsFilters) =>
     ['analytics', 'geo', filters] as const,

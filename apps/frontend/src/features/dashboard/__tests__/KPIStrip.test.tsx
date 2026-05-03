@@ -25,6 +25,8 @@ const POPULATED_BODY = {
     { group_id: 3, name: 'Lazarus Group', report_count: 412 },
     { group_id: 5, name: 'Kimsuky', report_count: 287 },
   ],
+  top_sectors: [],
+  top_sources: [],
 }
 
 const EMPTY_BODY = {
@@ -34,6 +36,8 @@ const EMPTY_BODY = {
   reports_by_year: [],
   incidents_by_motivation: [],
   top_groups: [],
+  top_sectors: [],
+  top_sources: [],
 }
 
 function Wrapper({ children }: { children: ReactNode }) {

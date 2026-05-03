@@ -1,13 +1,16 @@
 /**
- * Plan D9 review invariant (PR #13 Group H → extended in Group I):
- * mounting every dashboard panel that is backed by
+ * Plan D9 review invariant (PR #13 Group H → extended through PR #23
+ * Group C): mounting every dashboard panel backed by
  * `useDashboardSummary()` fires ONE /dashboard/summary request, not
  * N. React Query's cache key is shared across subscribers with
  * identical filters, so every subscriber to `useDashboardSummary()`
  * shares one query.
  *
  * Group H pinned: KPIStrip + MotivationDonut + YearBar (3 panels).
- * Group I adds: GroupsMiniList (4th panel on the same hook).
+ * Group I adds: GroupsMiniList (4th panel).
+ * PR #23 §6.C C9 + C6 add: SectorBreakdown + ContributorsList (5th
+ * + 6th panels — both consume the new top_sectors / top_sources
+ * fields shipped in §6.A C2).
  *
  * If a future edit switches any of these components to a bespoke
  * hook (or forgets to route through `useDashboardSummary`), this
@@ -23,9 +26,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createQueryClient } from '../../../lib/queryClient'
 import { useFilterStore } from '../../../stores/filters'
+import { ContributorsList } from '../ContributorsList'
 import { GroupsMiniList } from '../GroupsMiniList'
 import { KPIStrip } from '../KPIStrip'
 import { MotivationDonut } from '../MotivationDonut'
+import { SectorBreakdown } from '../SectorBreakdown'
 import { YearBar } from '../YearBar'
 
 const SUMMARY_BODY = {
@@ -37,6 +42,8 @@ const SUMMARY_BODY = {
   top_groups: [
     { group_id: 1, name: 'Lazarus Group', report_count: 3 },
   ],
+  top_sectors: [],
+  top_sources: [],
 }
 
 function makeWrapper() {
@@ -66,7 +73,7 @@ afterEach(() => {
 })
 
 describe('dashboard summary shared cache', () => {
-  it('mounting KPIStrip + MotivationDonut + YearBar + GroupsMiniList fires ONE /dashboard/summary request', async () => {
+  it('mounting all six summary subscribers fires ONE /dashboard/summary request', async () => {
     const spy = vi.spyOn(global, 'fetch').mockImplementation(
       () => Promise.resolve(new Response(JSON.stringify(SUMMARY_BODY), { status: 200 })),
     )
@@ -78,6 +85,8 @@ describe('dashboard summary shared cache', () => {
         <MotivationDonut />
         <YearBar />
         <GroupsMiniList />
+        <SectorBreakdown />
+        <ContributorsList />
       </>,
       { wrapper: Wrapper },
     )
@@ -86,8 +95,9 @@ describe('dashboard summary shared cache', () => {
     const summaryCalls = spy.mock.calls.filter(([url]) =>
       String(url).includes('/api/v1/dashboard/summary'),
     )
-    // Four subscribers, one shared cache key → ONE fetch. If this
-    // climbs to 2+, one of the components bypassed useDashboardSummary.
+    // Six subscribers, one shared cache key → ONE fetch. If this
+    // climbs to 2+, one of the components bypassed
+    // useDashboardSummary.
     expect(summaryCalls).toHaveLength(1)
   })
 })

@@ -15,7 +15,7 @@ import { createQueryClient } from '../../lib/queryClient'
 import { useFilterStore } from '../../stores/filters'
 import { DashboardPage } from '../DashboardPage'
 
-// Minimal bodies for the three endpoints the dashboard consumes.
+// Minimal bodies for the endpoints the dashboard consumes.
 const SUMMARY_BODY = {
   total_reports: 12,
   total_incidents: 5,
@@ -23,6 +23,43 @@ const SUMMARY_BODY = {
   reports_by_year: [{ year: 2026, count: 12 }],
   incidents_by_motivation: [{ motivation: 'financial', count: 3 }],
   top_groups: [{ group_id: 1, name: 'Lazarus Group', report_count: 5 }],
+  top_sectors: [{ sector_code: 'GOV', count: 4 }],
+  top_sources: [
+    {
+      source_id: 7,
+      source_name: 'Mandiant',
+      report_count: 3,
+      latest_report_date: '2026-04-10',
+    },
+  ],
+}
+
+const INCIDENTS_TREND_MOTIVATION_BODY = {
+  buckets: [
+    {
+      month: '2026-02',
+      count: 3,
+      series: [
+        { key: 'Espionage', count: 2 },
+        { key: 'Finance', count: 1 },
+      ],
+    },
+  ],
+  group_by: 'motivation' as const,
+}
+
+const INCIDENTS_TREND_SECTOR_BODY = {
+  buckets: [
+    {
+      month: '2026-02',
+      count: 4,
+      series: [
+        { key: 'GOV', count: 2 },
+        { key: 'FIN', count: 2 },
+      ],
+    },
+  ],
+  group_by: 'sector' as const,
 }
 
 const TREND_BODY = {
@@ -69,6 +106,12 @@ function routeFor(url: string): unknown {
   if (u.pathname === '/api/v1/analytics/trend') return TREND_BODY
   if (u.pathname === '/api/v1/analytics/geo') return GEO_BODY
   if (u.pathname === '/api/v1/analytics/attack_matrix') return ATTACK_MATRIX_BODY
+  if (u.pathname === '/api/v1/analytics/incidents_trend') {
+    const groupBy = u.searchParams.get('group_by')
+    return groupBy === 'sector'
+      ? INCIDENTS_TREND_SECTOR_BODY
+      : INCIDENTS_TREND_MOTIVATION_BODY
+  }
   if (u.pathname === '/api/v1/reports') return REPORTS_BODY
   return null
 }
@@ -135,6 +178,26 @@ describe('DashboardPage — §4.2 area [B]-[F] wiring (PR #13 Group I)', () => {
     await waitFor(() =>
       expect(screen.getByTestId('report-feed')).toBeInTheDocument(),
     )
+
+    // PR #23 §6.C — five lazarus.day-parity panels added to the
+    // grid. Two ranked-slice widgets (C9 SectorBreakdown + C6
+    // ContributorsList) sit alongside the existing donut/yearbar; two
+    // time-series widgets (C7 MotivationStackedArea + C8
+    // SectorStackedArea) sit alongside the existing trend/groups; one
+    // geo-accessibility widget (C10 LocationsRanked) sits below the
+    // WorldMap row sharing the /analytics/geo cache slot.
+    await waitFor(() =>
+      expect(screen.getByTestId('locations-ranked')).toBeInTheDocument(),
+    )
+    expect(screen.getByTestId('sector-breakdown')).toBeInTheDocument()
+    expect(screen.getByTestId('contributors-list')).toBeInTheDocument()
+    await waitFor(() =>
+      expect(
+        screen.getByTestId('motivation-stacked-area'),
+      ).toBeInTheDocument(),
+    )
+    expect(screen.getByTestId('sector-stacked-area')).toBeInTheDocument()
+
     // PR #14 Group F regression guard — the PR #13 stub must not
     // reappear on the dashboard. If a future edit re-mounts it,
     // this assertion fires red.
@@ -159,15 +222,57 @@ describe('DashboardPage — §4.2 area [B]-[F] wiring (PR #13 Group I)', () => {
     const spy = mockAllEndpoints()
     const { Wrapper } = makeWrapper()
     render(<DashboardPage />, { wrapper: Wrapper })
-    // Wait until the page has finished mounting its queries.
+    // Wait until the page has finished mounting its queries —
+    // ContributorsList is the last summary-subscriber added (PR #23
+    // §6.C C6) so its presence is the strongest "all six subscribed"
+    // signal.
     await waitFor(() =>
-      expect(screen.getByTestId('groups-mini-list')).toBeInTheDocument(),
+      expect(screen.getByTestId('contributors-list')).toBeInTheDocument(),
     )
     const summaryCalls = spy.mock.calls.filter(([url]) =>
       String(url).includes('/api/v1/dashboard/summary'),
     )
-    // KPIStrip + MotivationDonut + YearBar + GroupsMiniList = 4
-    // subscribers, one shared cache key → exactly ONE fetch.
+    // KPIStrip + MotivationDonut + YearBar + GroupsMiniList +
+    // SectorBreakdown + ContributorsList = 6 subscribers, one shared
+    // cache key → exactly ONE fetch.
     expect(summaryCalls).toHaveLength(1)
+  })
+
+  it('WorldMap + LocationsRanked share ONE /analytics/geo fetch (PR #23 C10)', async () => {
+    const spy = mockAllEndpoints()
+    const { Wrapper } = makeWrapper()
+    render(<DashboardPage />, { wrapper: Wrapper })
+    await waitFor(() =>
+      expect(screen.getByTestId('locations-ranked')).toBeInTheDocument(),
+    )
+    const geoCalls = spy.mock.calls.filter(([url]) =>
+      String(url).includes('/api/v1/analytics/geo'),
+    )
+    // WorldMap + LocationsRanked = 2 subscribers, one shared cache
+    // key → exactly ONE fetch. If a future regression switches
+    // LocationsRanked to a bespoke hook this drops to 2 and fires red.
+    expect(geoCalls).toHaveLength(1)
+  })
+
+  it('motivation + sector stacked-area widgets occupy distinct cache slots (PR #23 C5)', async () => {
+    const spy = mockAllEndpoints()
+    const { Wrapper } = makeWrapper()
+    render(<DashboardPage />, { wrapper: Wrapper })
+    await waitFor(() =>
+      expect(
+        screen.getByTestId('sector-stacked-area'),
+      ).toBeInTheDocument(),
+    )
+    const incidentsTrendCalls = spy.mock.calls.filter(([url]) =>
+      String(url).includes('/api/v1/analytics/incidents_trend'),
+    )
+    // Two subscribers (motivation + sector) on different axes ⇒
+    // two cache keys ⇒ two fetches. If a future regression collapses
+    // the keys this drops to 1 and the test fires red.
+    expect(incidentsTrendCalls).toHaveLength(2)
+    const groupByValues = incidentsTrendCalls
+      .map(([url]) => new URL(String(url)).searchParams.get('group_by'))
+      .sort()
+    expect(groupByValues).toEqual(['motivation', 'sector'])
   })
 })

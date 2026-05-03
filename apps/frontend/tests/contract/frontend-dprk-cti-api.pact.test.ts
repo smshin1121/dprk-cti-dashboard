@@ -11,6 +11,8 @@
  *   /api/v1/analytics/attack_matrix           — happy with filters [PR #13 J]
  *   /api/v1/analytics/trend                   — happy with filters [PR #13 J]
  *   /api/v1/analytics/geo                     — happy with filters [PR #13 J]
+ *   /api/v1/analytics/incidents_trend         — group_by=motivation  [PR #23 A]
+ *                                              — group_by=sector     [PR #23 A]
  *   /api/v1/reports/{id}                      — detail happy [PR #14 G]
  *   /api/v1/incidents/{id}                    — detail happy [PR #14 G]
  *   /api/v1/actors/{id}                       — detail happy [PR #14 G]
@@ -175,6 +177,25 @@ describe('GET /api/v1/dashboard/summary', () => {
             group_id: integer(3),
             name: string('Lazarus Group'),
             report_count: integer(412),
+          }),
+          // PR #23 §6.A C2 — top_sectors mirrors top_groups on the
+          // incident_sectors junction; top_sources is the "Leading
+          // Contributors" field via reports.source_id → sources.name.
+          // Both eachLike requires non-empty arrays — the BE fixture
+          // (`_ensure_dashboard_fixture`) seeds at least one
+          // sector-linked incident + at least one source-linked
+          // report inside the pact filter window.
+          top_sectors: eachLike({
+            sector_code: string('GOV'),
+            count: integer(1),
+          }),
+          top_sources: eachLike({
+            source_id: integer(1),
+            source_name: string('Mandiant'),
+            report_count: integer(1),
+            // `latest_report_date` is `MAX(reports.published)` —
+            // ISO YYYY-MM-DD string in the BE response.
+            latest_report_date: string('2026-03-15'),
           }),
         }),
       })
@@ -431,6 +452,156 @@ describe('GET /api/v1/analytics/trend', () => {
       // wire shape without pushing regex matchers into pact.
       expect(body.buckets[0].month).toHaveLength(7)
       expect(body.buckets[0].count).toBeTypeOf('number')
+    })
+  })
+})
+
+// ---------------------------------------------------------------------
+// /analytics/incidents_trend — PR #23 §6.A C1 (lazarus.day parity)
+// ---------------------------------------------------------------------
+//
+// Distinct from /analytics/trend: fact table is `incidents` (not
+// `reports`); each bucket carries a `series` slice keyed by motivation
+// or sector. `group_by` is REQUIRED; missing it is 422 (covered by
+// integration test, not pact). Two interactions below — one per axis —
+// pin the wire shape on a populated fixture. Empty case is covered by
+// the BE integration test rather than a third pact interaction (would
+// add no contract signal beyond the BE-owned shape; pact-ruby
+// `eachLike` rejects empty arrays anyway, so a "buckets:[]" fixture
+// would not satisfy the matcher cascade).
+
+describe('GET /api/v1/analytics/incidents_trend', () => {
+  it('returns motivation-axis buckets with non-empty series under date filters', async () => {
+    // BE state handler:
+    //   `_ensure_incidents_trend_motivation_fixture`. Seeds 3
+    //   incidents (Feb-Espionage, Feb-Finance, Mar-Espionage) inside
+    //   the pact window so both eachLike arrays (`buckets` outer +
+    //   `series` inner) are non-empty. `group_by` echoes back as a
+    //   plain literal — no matcher needed since it's a Literal type
+    //   the response model pins exactly.
+    provider
+      .given(
+        'seeded incidents_trend motivation dataset and an authenticated analyst session',
+      )
+      .uponReceiving(
+        'a request for the incidents trend bucketed by motivation',
+      )
+      .withRequest({
+        method: 'GET',
+        path: '/api/v1/analytics/incidents_trend',
+        query: {
+          group_by: 'motivation',
+          date_from: '2026-01-01',
+          date_to: '2026-04-18',
+        },
+      })
+      .willRespondWith({
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+        // PR #23 §6.A C1 wire shape. Outer `buckets` is eachLike to
+        // pin "≥1 month" non-empty; inner `series` is eachLike to
+        // pin "≥1 axis row per bucket". Month/key are matched as
+        // strings (FE Zod regex on `month` enforces YYYY-MM at
+        // ingest); counts are integer. The "unknown" sentinel is a
+        // valid `key` value but not pinned in the example — any
+        // motivation string passes.
+        body: like({
+          buckets: eachLike({
+            month: string('2026-02'),
+            count: integer(2),
+            series: eachLike({
+              key: string('Espionage'),
+              count: integer(1),
+            }),
+          }),
+          group_by: 'motivation',
+        }),
+      })
+
+    await provider.executeTest(async (mockServer) => {
+      const url = new URL(
+        `${mockServer.url}/api/v1/analytics/incidents_trend`,
+      )
+      url.searchParams.append('group_by', 'motivation')
+      url.searchParams.append('date_from', '2026-01-01')
+      url.searchParams.append('date_to', '2026-04-18')
+      const res = await fetch(url.toString())
+      expect(res.status).toBe(200)
+      const body = (await res.json()) as {
+        buckets: {
+          month: string
+          count: number
+          series: { key: string; count: number }[]
+        }[]
+        group_by: 'motivation' | 'sector'
+      }
+      expect(body.group_by).toBe('motivation')
+      expect(Array.isArray(body.buckets)).toBe(true)
+      expect(body.buckets[0].month).toHaveLength(7)
+      expect(body.buckets[0].count).toBeTypeOf('number')
+      expect(Array.isArray(body.buckets[0].series)).toBe(true)
+      expect(body.buckets[0].series[0].key).toBeTypeOf('string')
+      expect(body.buckets[0].series[0].count).toBeTypeOf('number')
+    })
+  })
+
+  it('returns sector-axis buckets with non-empty series under date filters', async () => {
+    // BE state handler: `_ensure_incidents_trend_sector_fixture`.
+    // Seeds 3 incidents on the `incident_sectors` junction (GOV/FIN
+    // /ENE) across 2 months — same eachLike non-empty rules as the
+    // motivation interaction.
+    provider
+      .given(
+        'seeded incidents_trend sector dataset and an authenticated analyst session',
+      )
+      .uponReceiving(
+        'a request for the incidents trend bucketed by sector',
+      )
+      .withRequest({
+        method: 'GET',
+        path: '/api/v1/analytics/incidents_trend',
+        query: {
+          group_by: 'sector',
+          date_from: '2026-01-01',
+          date_to: '2026-04-18',
+        },
+      })
+      .willRespondWith({
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+        body: like({
+          buckets: eachLike({
+            month: string('2026-02'),
+            count: integer(2),
+            series: eachLike({
+              key: string('GOV'),
+              count: integer(1),
+            }),
+          }),
+          group_by: 'sector',
+        }),
+      })
+
+    await provider.executeTest(async (mockServer) => {
+      const url = new URL(
+        `${mockServer.url}/api/v1/analytics/incidents_trend`,
+      )
+      url.searchParams.append('group_by', 'sector')
+      url.searchParams.append('date_from', '2026-01-01')
+      url.searchParams.append('date_to', '2026-04-18')
+      const res = await fetch(url.toString())
+      expect(res.status).toBe(200)
+      const body = (await res.json()) as {
+        buckets: {
+          month: string
+          count: number
+          series: { key: string; count: number }[]
+        }[]
+        group_by: 'motivation' | 'sector'
+      }
+      expect(body.group_by).toBe('sector')
+      expect(Array.isArray(body.buckets)).toBe(true)
+      expect(body.buckets[0].series.length).toBeGreaterThan(0)
     })
   })
 })

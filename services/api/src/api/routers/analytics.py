@@ -1,17 +1,18 @@
-"""Analytics router — PR #13 Phase 2.4 plan D2.
+"""Analytics router — PR #13 Phase 2.4 plan D2 + PR #23 Phase 3.5 §6.A.
 
-Three read-only endpoints that feed the dashboard visualizations layer:
+Read-only endpoints that feed the dashboard visualizations layer:
 
-    GET /api/v1/analytics/attack_matrix  → AttackMatrixResponse
-    GET /api/v1/analytics/trend          → TrendResponse
-    GET /api/v1/analytics/geo            → GeoResponse
+    GET /api/v1/analytics/attack_matrix    → AttackMatrixResponse  (PR #13)
+    GET /api/v1/analytics/trend            → TrendResponse         (PR #13)
+    GET /api/v1/analytics/geo              → GeoResponse           (PR #13)
+    GET /api/v1/analytics/incidents_trend  → IncidentsTrendResponse (PR #23)
 
-All three share the ``date_from`` / ``date_to`` / ``group_id[]`` query
-contract with ``/dashboard/summary``. Rate limit is the same 60/min
-per-user bucket as PR #11 read endpoints (plan D2 lock). RBAC matches
-the rest of the read surface — analyst / researcher / policy / soc /
-admin. Aggregation lives in ``api.read.analytics_aggregator``; this
-router stays thin.
+All endpoints share the ``date_from`` / ``date_to`` / ``group_id[]``
+query contract with ``/dashboard/summary``. Rate limit is the same
+60/min per-user bucket as PR #11 read endpoints (plan D2 lock). RBAC
+matches the rest of the read surface — analyst / researcher / policy /
+soc / admin. Aggregation lives in ``api.read.analytics_aggregator``;
+this router stays thin.
 
 The four §5.4 design-doc stubs (``/attack-heatmap``,
 ``/attribution-graph``, ``/geopolitical``, ``/forecast``) that lived
@@ -23,7 +24,7 @@ fresh DTOs.
 from __future__ import annotations
 
 from datetime import date
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Query, Request
 from pydantic import AfterValidator
@@ -36,11 +37,14 @@ from ..rate_limit import get_limiter
 from ..read.analytics_aggregator import (
     compute_attack_matrix,
     compute_geo,
+    compute_incidents_trend,
     compute_trend,
 )
 from ..schemas.read import (
+    INCIDENTS_TREND_UNKNOWN_KEY,
     AttackMatrixResponse,
     GeoResponse,
+    IncidentsTrendResponse,
     TrendResponse,
 )
 
@@ -330,3 +334,137 @@ async def geo_endpoint(
         group_ids=group_id,
     )
     return GeoResponse.model_validate(raw)
+
+
+# ---------------------------------------------------------------------------
+# /incidents_trend — PR #23 Group A C1 (lazarus.day parity)
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/incidents_trend",
+    response_model=IncidentsTrendResponse,
+    summary="Monthly incidents trend, sliced by motivation or sector",
+    description=(
+        "Distinct incidents per calendar month of ``incidents.reported`` "
+        "within the filter window, sliced by motivation or sector via "
+        "the required ``group_by`` query parameter "
+        "(``motivation`` | ``sector``). Outer ``count`` per bucket "
+        "is the distinct incident total; ``series`` counts category "
+        "memberships and may sum above the outer count for multi-"
+        "category incidents. Incidents with no junction row land in a "
+        "sentinel ``key='unknown'`` slice rather than being dropped. "
+        "Distinct from ``/analytics/trend`` because the "
+        "fact table is ``incidents`` (not ``reports``); the two "
+        "endpoints answer different analytical questions and do not "
+        "share an envelope. Plan PR #23 C1 lock."
+    ),
+    responses={
+        200: {
+            "description": "Incidents trend payload, sliced by axis.",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "motivation_populated": {
+                            "summary": (
+                                "Motivation slice — two months of data"
+                            ),
+                            "value": {
+                                "buckets": [
+                                    {
+                                        "month": "2026-01",
+                                        "count": 14,
+                                        "series": [
+                                            {"key": "Espionage", "count": 9},
+                                            {"key": "Finance", "count": 5},
+                                        ],
+                                    },
+                                    {
+                                        "month": "2026-02",
+                                        "count": 16,
+                                        "series": [
+                                            {"key": "Espionage", "count": 10},
+                                            {"key": "Finance", "count": 4},
+                                            {
+                                                "key": INCIDENTS_TREND_UNKNOWN_KEY,
+                                                "count": 2,
+                                            },
+                                        ],
+                                    },
+                                ],
+                                "group_by": "motivation",
+                            },
+                        },
+                        "sector_populated": {
+                            "summary": (
+                                "Sector slice — one month, three sectors"
+                            ),
+                            "value": {
+                                "buckets": [
+                                    {
+                                        "month": "2026-03",
+                                        "count": 4,
+                                        "series": [
+                                            {"key": "ENE", "count": 1},
+                                            {"key": "FIN", "count": 1},
+                                            {"key": "GOV", "count": 2},
+                                        ],
+                                    }
+                                ],
+                                "group_by": "sector",
+                            },
+                        },
+                        "empty": {
+                            "summary": "No incidents in window",
+                            "value": {"buckets": [], "group_by": "motivation"},
+                        },
+                    }
+                }
+            },
+        },
+        **_RESPONSES_COMMON_AUTH,
+        422: _RESPONSES_422_COMMON,
+    },
+)
+@_limiter.limit("60/minute")
+async def incidents_trend_endpoint(
+    request: Request,
+    group_by: Annotated[
+        Literal["motivation", "sector"],
+        Query(
+            description=(
+                "Required slice axis. ``motivation`` joins "
+                "``incident_motivations``; ``sector`` joins "
+                "``incident_sectors``. Anything else is 422."
+            ),
+        ),
+    ],
+    date_from: Annotated[date | None, Query()] = None,
+    date_to: Annotated[date | None, Query()] = None,
+    group_id: Annotated[
+        list[int] | None,
+        Query(
+            description=(
+                "Accepted for filter-surface uniformity with the other "
+                "analytics endpoints, but ``incidents_trend`` is a "
+                "documented no-op for ``group_id`` — the schema has no "
+                "path from ``incidents`` to ``groups`` (same constraint "
+                "as ``/analytics/geo`` and the "
+                "``incidents_by_motivation`` aggregate on "
+                "``/dashboard/summary``). Group-aware incident filters "
+                "depend on a future drill-down view per plan §6.C C13."
+            ),
+        ),
+        AfterValidator(_validate_group_ids),
+    ] = None,
+    session: AsyncSession = Depends(get_db),
+    _current_user: CurrentUser = Depends(require_role(*_READ_ROLES)),
+) -> IncidentsTrendResponse:
+    raw = await compute_incidents_trend(
+        session,
+        group_by=group_by,
+        date_from=date_from,
+        date_to=date_to,
+        group_ids=group_id,
+    )
+    return IncidentsTrendResponse.model_validate(raw)

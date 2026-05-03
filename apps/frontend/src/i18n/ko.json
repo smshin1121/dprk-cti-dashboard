@@ -65,6 +65,31 @@
       "title": "월별 보고서 추이",
       "empty": "분석할 추이 데이터가 없습니다."
     },
+    "motivationStackedArea": {
+      "title": "월별 동기 추이",
+      "empty": "현재 필터에 해당하는 동기 추이 데이터가 없습니다.",
+      "unknownLabel": "미분류"
+    },
+    "sectorStackedArea": {
+      "title": "월별 표적 산업 추이",
+      "empty": "현재 필터에 해당하는 산업 추이 데이터가 없습니다.",
+      "unknownLabel": "미분류"
+    },
+    "sectorBreakdown": {
+      "title": "주요 표적 산업",
+      "empty": "현재 필터에 해당하는 산업 데이터가 없습니다."
+    },
+    "contributorsList": {
+      "title": "주요 보고 출처",
+      "empty": "현재 필터에 해당하는 출처가 없습니다.",
+      "reportsSuffix": "건",
+      "latestPrefix": "최근"
+    },
+    "locationsRanked": {
+      "title": "주요 침해 지역",
+      "empty": "현재 필터에 해당하는 지역 데이터가 없습니다.",
+      "incidentsSuffix": "건"
+    },
     "groupsMiniList": {
       "title": "상위 조직",
       "empty": "현재 필터에 해당하는 조직이 없습니다.",

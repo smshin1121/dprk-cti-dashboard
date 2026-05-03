@@ -77,6 +77,8 @@ from api.routers.pact_states import (  # noqa: E402
     _ensure_dashboard_fixture,
     _ensure_geo_fixture,
     _ensure_incident_detail_fixture,
+    _ensure_incidents_trend_motivation_fixture,
+    _ensure_incidents_trend_sector_fixture,
     _ensure_min_actors,
     _ensure_report_detail_fixture,
     _ensure_search_empty_fixture,
@@ -91,6 +93,7 @@ from api.main import app  # noqa: E402
 from api.read.analytics_aggregator import (  # noqa: E402
     compute_attack_matrix,
     compute_geo,
+    compute_incidents_trend,
     compute_trend,
 )
 from api.read.dashboard_aggregator import compute_dashboard_summary  # noqa: E402
@@ -201,6 +204,41 @@ async def test_dashboard_fixture_satisfies_each_pact_matcher(
     assert isinstance(first_tg["name"], str) and first_tg["name"]
     assert isinstance(first_tg["report_count"], int)
     assert first_tg["report_count"] >= 1
+
+    # PR #23 §6.A C2: top_sectors = eachLike({sector_code, count}).
+    # Fixture seeds one incident with a "GOV" sector link inside the
+    # pact window. eachLike rejects empty arrays.
+    assert summary["top_sectors"], (
+        "top_sectors is empty — _ensure_dashboard_fixture must seed "
+        "at least one incident_sectors row whose incidents.reported "
+        "lands inside the pact filter window 2026-01-01..2026-04-18."
+    )
+    first_sector = summary["top_sectors"][0]
+    assert isinstance(first_sector["sector_code"], str) and first_sector["sector_code"]
+    assert isinstance(first_sector["count"], int) and first_sector["count"] >= 1
+
+    # PR #23 §6.A C2: top_sources = eachLike({source_id, source_name,
+    # report_count, latest_report_date}). Seeded by the same source +
+    # report rows the existing fixture provides.
+    assert summary["top_sources"], (
+        "top_sources is empty — _ensure_dashboard_fixture must seed "
+        "at least one report whose source_id resolves to a sources "
+        "row AND whose published date lands in the pact window."
+    )
+    first_source = summary["top_sources"][0]
+    assert isinstance(first_source["source_id"], int)
+    assert isinstance(first_source["source_name"], str) and first_source["source_name"]
+    assert isinstance(first_source["report_count"], int) and first_source["report_count"] >= 1
+    # latest_report_date is a date object on the BE (serialized as
+    # ISO YYYY-MM-DD on the wire). The aggregator returns it raw.
+    from datetime import date as _date  # noqa: PLC0415
+    assert (
+        first_source["latest_report_date"] is None
+        or isinstance(first_source["latest_report_date"], _date)
+    ), (
+        "pact: top_sources.latest_report_date must be a date or null "
+        f"— got {type(first_source['latest_report_date'])!r}"
+    )
 
 
 async def test_actor_canonical_fixture_satisfies_each_pact_matcher(
@@ -471,6 +509,102 @@ async def test_geo_fixture_satisfies_pact_matchers_and_includes_kp(
     )
 
 
+async def test_incidents_trend_motivation_fixture_satisfies_pact_matchers(
+    clean_pg: None, pg_session: AsyncSession
+) -> None:
+    """``/analytics/incidents_trend?group_by=motivation`` pact:
+    ``{buckets: eachLike({month, count, series: eachLike({key, count})}),
+       group_by: "motivation"}``.
+
+    Both the outer ``buckets`` eachLike AND the inner per-bucket
+    ``series`` eachLike must be non-empty for pact-ruby to accept the
+    response (``pitfall_pact_fixture_shape``).
+    """
+    from datetime import date
+    import re
+
+    await _ensure_incidents_trend_motivation_fixture(pg_session)
+    await pg_session.commit()
+
+    response = await compute_incidents_trend(
+        pg_session,
+        group_by="motivation",
+        date_from=date(2026, 1, 1),
+        date_to=date(2026, 4, 18),
+    )
+
+    assert response["group_by"] == "motivation"
+    buckets = response["buckets"]
+    assert buckets, (
+        "buckets is empty — incidents_trend pact's outer eachLike "
+        "will fail. Fixture incidents must be dated inside the pact "
+        "window 2026-01-01..2026-04-18 with motivation links."
+    )
+    month_re = re.compile(r"^\d{4}-\d{2}$")
+    for bucket in buckets:
+        assert month_re.match(bucket["month"]), (
+            f"month {bucket['month']!r} does not match YYYY-MM regex"
+        )
+        assert (
+            isinstance(bucket["count"], int) and bucket["count"] >= 1
+        ), "pact: bucket.count integer(≥1) under outer eachLike"
+        series = bucket["series"]
+        assert series, (
+            f"series for {bucket['month']} is empty — inner eachLike "
+            "will fail. Each bucket must carry ≥1 series row."
+        )
+        invariant = sum(item["count"] for item in series)
+        assert invariant == bucket["count"], (
+            f"sum(series.count)={invariant} != bucket.count="
+            f"{bucket['count']} for {bucket['month']}"
+        )
+        for item in series:
+            assert isinstance(item["key"], str) and item["key"], (
+                "pact: series.key non-empty string"
+            )
+            assert isinstance(item["count"], int) and item["count"] >= 1, (
+                "pact: series.count integer(≥1) under inner eachLike"
+            )
+
+
+async def test_incidents_trend_sector_fixture_satisfies_pact_matchers(
+    clean_pg: None, pg_session: AsyncSession
+) -> None:
+    """Sector-axis equivalent of the motivation fixture matcher test."""
+    from datetime import date
+    import re
+
+    await _ensure_incidents_trend_sector_fixture(pg_session)
+    await pg_session.commit()
+
+    response = await compute_incidents_trend(
+        pg_session,
+        group_by="sector",
+        date_from=date(2026, 1, 1),
+        date_to=date(2026, 4, 18),
+    )
+
+    assert response["group_by"] == "sector"
+    buckets = response["buckets"]
+    assert buckets, (
+        "buckets is empty — sector incidents_trend pact eachLike fails"
+    )
+    month_re = re.compile(r"^\d{4}-\d{2}$")
+    for bucket in buckets:
+        assert month_re.match(bucket["month"])
+        assert isinstance(bucket["count"], int) and bucket["count"] >= 1
+        series = bucket["series"]
+        assert series, (
+            f"series for {bucket['month']} is empty — inner eachLike "
+            "fails for sector axis"
+        )
+        invariant = sum(item["count"] for item in series)
+        assert invariant == bucket["count"]
+        for item in series:
+            assert isinstance(item["key"], str) and item["key"]
+            assert isinstance(item["count"], int) and item["count"] >= 1
+
+
 async def test_analytics_pact_fixtures_are_idempotent(
     clean_pg: None, pg_session: AsyncSession
 ) -> None:
@@ -485,6 +619,10 @@ async def test_analytics_pact_fixtures_are_idempotent(
     await _ensure_trend_fixture(pg_session)  # repeat
     await _ensure_geo_fixture(pg_session)
     await _ensure_geo_fixture(pg_session)  # repeat
+    await _ensure_incidents_trend_motivation_fixture(pg_session)
+    await _ensure_incidents_trend_motivation_fixture(pg_session)  # repeat
+    await _ensure_incidents_trend_sector_fixture(pg_session)
+    await _ensure_incidents_trend_sector_fixture(pg_session)  # repeat
     await pg_session.commit()
 
     # Exactly 3 techniques (T1566/T1190/T1059) — not 6.

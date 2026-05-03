@@ -61,9 +61,11 @@ from ..tables import (
     codenames_table,
     groups_table,
     incident_motivations_table,
+    incident_sectors_table,
     incidents_table,
     report_codenames_table,
     reports_table,
+    sources_table,
 )
 from .repositories import _resolve_dialect
 
@@ -251,6 +253,94 @@ async def compute_dashboard_summary(
         for row in top_rows
     ]
 
+    # ---- top_sectors (PR #23 §6.A C2) --------------------------------
+    # Mirror of incidents_by_motivation on the incident_sectors
+    # junction. COUNT(DISTINCT incident_id) so an incident with two
+    # sector links contributes +1 to each sector's bucket without
+    # multiplying its own count within a single bucket. Ordered
+    # count DESC, sector_code ASC for tie stability; capped at
+    # bounded_top_n. group_ids is no-op (incidents have no group
+    # path, same as incidents_by_motivation).
+    sector_stmt = (
+        sa.select(
+            incident_sectors_table.c.sector_code,
+            sa.func.count(
+                sa.distinct(incident_sectors_table.c.incident_id)
+            ).label("count"),
+        )
+        .select_from(
+            incident_sectors_table.join(
+                incidents_table,
+                incident_sectors_table.c.incident_id == incidents_table.c.id,
+            )
+        )
+        .group_by(incident_sectors_table.c.sector_code)
+        .order_by(sa.desc("count"), incident_sectors_table.c.sector_code.asc())
+        .limit(bounded_top_n)
+    )
+    if date_from is not None:
+        sector_stmt = sector_stmt.where(
+            incidents_table.c.reported >= date_from
+        )
+    if date_to is not None:
+        sector_stmt = sector_stmt.where(
+            incidents_table.c.reported <= date_to
+        )
+    sector_rows = (await session.execute(sector_stmt)).all()
+    top_sectors = [
+        {"sector_code": row.sector_code, "count": int(row.count)}
+        for row in sector_rows
+    ]
+
+    # ---- top_sources (PR #23 §6.A C2 + §6.C C6) ----------------------
+    # "Leading Contributors" — distinct report count per source within
+    # the date window. INNER JOIN reports → sources (so reports with
+    # null source_id, which the schema allows, are excluded). Ordered
+    # report_count DESC, source_id ASC for tie stability. Capped at
+    # bounded_top_n. ``latest_report_date`` is MAX(reports.published)
+    # under the same date filter — PG and sqlite both skip NULLs in
+    # MAX, so it's the latest in-window date for the source.
+    # group_ids is a documented no-op for top_sources to keep the
+    # filter surface symmetric with the rest of the reports-rooted
+    # aggregations on this endpoint (total_reports / reports_by_year)
+    # which also ignore group_ids; group-aware contributors live on a
+    # future drill-down view per plan §6.C C13.
+    top_sources_stmt = (
+        sa.select(
+            sources_table.c.id.label("source_id"),
+            sources_table.c.name.label("source_name"),
+            sa.func.count(sa.distinct(reports_table.c.id)).label("report_count"),
+            sa.func.max(reports_table.c.published).label("latest_report_date"),
+        )
+        .select_from(
+            sources_table.join(
+                reports_table,
+                reports_table.c.source_id == sources_table.c.id,
+            )
+        )
+        .group_by(sources_table.c.id, sources_table.c.name)
+        .order_by(sa.desc("report_count"), sources_table.c.id.asc())
+        .limit(bounded_top_n)
+    )
+    if date_from is not None:
+        top_sources_stmt = top_sources_stmt.where(
+            reports_table.c.published >= date_from
+        )
+    if date_to is not None:
+        top_sources_stmt = top_sources_stmt.where(
+            reports_table.c.published <= date_to
+        )
+    top_sources_rows = (await session.execute(top_sources_stmt)).all()
+    top_sources = [
+        {
+            "source_id": int(row.source_id),
+            "source_name": row.source_name,
+            "report_count": int(row.report_count),
+            "latest_report_date": row.latest_report_date,
+        }
+        for row in top_sources_rows
+    ]
+
     return {
         "total_reports": total_reports,
         "total_incidents": total_incidents,
@@ -258,6 +348,8 @@ async def compute_dashboard_summary(
         "reports_by_year": reports_by_year,
         "incidents_by_motivation": incidents_by_motivation,
         "top_groups": top_groups,
+        "top_sectors": top_sectors,
+        "top_sources": top_sources,
     }
 
 

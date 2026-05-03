@@ -17,6 +17,8 @@ const SUMMARY_BODY = {
     { motivation: 'espionage', count: 2 },
   ],
   top_groups: [],
+  top_sectors: [],
+  top_sources: [],
 }
 
 const EMPTY_MOTIVATION_BODY = {

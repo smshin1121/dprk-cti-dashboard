@@ -19,6 +19,8 @@ const SUMMARY_BODY = {
     { group_id: 2, name: 'Kimsuky', report_count: 7 },
     { group_id: 3, name: 'Andariel', report_count: 3 },
   ],
+  top_sectors: [],
+  top_sources: [],
 }
 
 const EMPTY_GROUPS_BODY = { ...SUMMARY_BODY, top_groups: [] }
