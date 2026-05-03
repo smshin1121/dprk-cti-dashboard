@@ -84,12 +84,15 @@ function pivotToWideFormat(
     }
   }
 
-  // Sort with the unknown sentinel pinned last (visually grounded —
-  // unknown is the "tail" slice, so it sits at the bottom of the
-  // stack consistently across both axes).
+  // Sort with the unknown sentinel pinned FIRST so it renders as the
+  // first <Area> child of <AreaChart>. In a Recharts stack the first
+  // sibling sits at the visual BOTTOM of the stack (closest to the X
+  // axis); subsequent siblings stack on top. Putting unknown first
+  // grounds it as the "tail" slice at the bottom, consistently across
+  // both axes.
   const orderedKeys = Array.from(allKeys).sort((a, b) => {
-    if (a === INCIDENTS_TREND_UNKNOWN_KEY) return 1
-    if (b === INCIDENTS_TREND_UNKNOWN_KEY) return -1
+    if (a === INCIDENTS_TREND_UNKNOWN_KEY) return -1
+    if (b === INCIDENTS_TREND_UNKNOWN_KEY) return 1
     return a.localeCompare(b)
   })
 
