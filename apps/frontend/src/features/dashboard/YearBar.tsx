@@ -145,7 +145,7 @@ export function YearBar(): JSX.Element {
         />
         <Tooltip
           content={<YearTooltip />}
-          cursor={{ fill: 'rgba(255,255,255,0.06)' }}
+          cursor={{ fill: CHART_CHROME.tooltipCursorFill }}
         />
         <Bar
           dataKey="count"

@@ -105,7 +105,7 @@ export function ReportTimeline({
     return (
       <div
         data-testid="reports-timeline-empty"
-        className="editorial-band-light rounded-none border border-border-card bg-surface p-6 text-center text-sm text-ink-muted"
+        className="editorial-band-light bg-app p-6 text-center text-sm text-ink-muted"
       >
         No reports match the current filters.
       </div>
@@ -145,7 +145,7 @@ export function ReportTimeline({
                     >
                       <span
                         aria-hidden="true"
-                        className="absolute -left-[23px] top-2 inline-block h-2 w-2 rounded-full bg-signal"
+                        className="absolute -left-[23px] top-2 inline-block h-2 w-2 rounded-full bg-ink"
                       />
                       <a
                         href={row.url}

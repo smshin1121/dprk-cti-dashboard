@@ -81,6 +81,9 @@ export function chartSeriesColor(index: number): string {
  * `tooltipBorder` — Ferrari `--hairline` (#303030) for tooltip 1px outline.
  * `tooltipBg` — Ferrari `--canvas-elevated` for tooltip background.
  * `tooltipText` — Ferrari `--ink` for tooltip text.
+ * `tooltipCursorFill` — semi-transparent white over the chart to mark
+ *   the hover bar / column without competing with the series palette.
+ *   Lower alpha so the underlying series color stays legible.
  */
 export const CHART_CHROME = {
   gridStroke: '#969696', // --body
@@ -88,4 +91,5 @@ export const CHART_CHROME = {
   tooltipBorder: '#303030', // --hairline (== --canvas-elevated)
   tooltipBg: '#303030', // --canvas-elevated
   tooltipText: '#ffffff', // --ink
+  tooltipCursorFill: 'rgba(255,255,255,0.06)', // ink @ 6% — hover scrim
 } as const

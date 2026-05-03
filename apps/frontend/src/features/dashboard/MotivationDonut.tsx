@@ -34,12 +34,7 @@ import { useTranslation } from 'react-i18next'
 
 import { cn } from '../../lib/utils'
 import { useDashboardSummary } from './useDashboardSummary'
-import { TOL_MUTED, chartSeriesColor } from './_palette'
-
-// Tol Muted (9 colors) — qualitative palette via chartSeriesColor for
-// safe rotation past index 8. The widget uses the first six entries
-// (indigo, cyan, teal, green, olive, sand) for top-motivations.
-const COLORS = TOL_MUTED.slice(0, 6)
+import { chartSeriesColor } from './_palette'
 
 const CHART_SIZE = 240
 const INNER_RADIUS = 60
