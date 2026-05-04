@@ -29,10 +29,21 @@ import type { ReactNode } from 'react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+// Side-effect: AlertsRailSection (mounted by DashboardRightRail inside
+// DashboardPage) reuses `dashboard.alerts.title` via useTranslation —
+// initialize the i18n bootstrap so t() resolves to real copy and
+// react-i18next does not log NO_I18NEXT_INSTANCE.
+import '../../i18n'
+
 import { createQueryClient } from '../../lib/queryClient'
 import { useFilterStore } from '../../stores/filters'
 import { DashboardPage } from '../DashboardPage'
 
+// Per-endpoint fixture bodies — DashboardPage mounts 14 widgets that
+// each consume their own endpoint shape. Returning SUMMARY_BODY for
+// every URL would push WorldMap / AttackHeatmap / TrendChart / etc.
+// into their error states (zod parse failure) and the testids the T6
+// contract waits for (e.g. `world-map`) would never appear.
 const SUMMARY_BODY = {
   total_reports: 12,
   total_incidents: 5,
@@ -51,10 +62,93 @@ const SUMMARY_BODY = {
   ],
 }
 
+const TREND_BODY = {
+  buckets: [
+    { month: '2026-01', count: 4 },
+    { month: '2026-02', count: 3 },
+  ],
+}
+
+const GEO_BODY = {
+  countries: [
+    { iso2: 'KR', count: 3 },
+    { iso2: 'KP', count: 1 },
+  ],
+}
+
+const ATTACK_MATRIX_BODY = {
+  tactics: [{ id: 'TA0001', name: 'Initial Access' }],
+  rows: [
+    {
+      tactic_id: 'TA0001',
+      techniques: [{ technique_id: 'T1566', count: 2 }],
+    },
+  ],
+}
+
+const INCIDENTS_TREND_MOTIVATION_BODY = {
+  buckets: [
+    {
+      month: '2026-02',
+      count: 3,
+      series: [
+        { key: 'Espionage', count: 2 },
+        { key: 'Finance', count: 1 },
+      ],
+    },
+  ],
+  group_by: 'motivation' as const,
+}
+
+const INCIDENTS_TREND_SECTOR_BODY = {
+  buckets: [
+    {
+      month: '2026-02',
+      count: 4,
+      series: [
+        { key: 'GOV', count: 2 },
+        { key: 'FIN', count: 2 },
+      ],
+    },
+  ],
+  group_by: 'sector' as const,
+}
+
+const REPORTS_BODY = {
+  items: [
+    {
+      id: 1,
+      title: 'Feed report',
+      url: 'https://example.test/1',
+      url_canonical: 'https://example.test/1',
+      published: '2026-04-15',
+      source_name: 'Example',
+    },
+  ],
+  next_cursor: null,
+}
+
+function routeFor(url: string): unknown {
+  const u = new URL(url, 'http://localhost')
+  if (u.pathname === '/api/v1/dashboard/summary') return SUMMARY_BODY
+  if (u.pathname === '/api/v1/analytics/trend') return TREND_BODY
+  if (u.pathname === '/api/v1/analytics/geo') return GEO_BODY
+  if (u.pathname === '/api/v1/analytics/attack_matrix') return ATTACK_MATRIX_BODY
+  if (u.pathname === '/api/v1/analytics/incidents_trend') {
+    return u.searchParams.get('group_by') === 'sector'
+      ? INCIDENTS_TREND_SECTOR_BODY
+      : INCIDENTS_TREND_MOTIVATION_BODY
+  }
+  if (u.pathname === '/api/v1/reports') return REPORTS_BODY
+  return null
+}
+
 function mockAllEndpoints(): void {
-  vi.spyOn(global, 'fetch').mockImplementation(async () =>
-    new Response(JSON.stringify(SUMMARY_BODY), { status: 200 }),
-  )
+  vi.spyOn(global, 'fetch').mockImplementation(async (input) => {
+    const body = routeFor(String(input))
+    if (body == null) return new Response('unhandled', { status: 500 })
+    return new Response(JSON.stringify(body), { status: 200 })
+  })
 }
 
 function makeWrapper() {

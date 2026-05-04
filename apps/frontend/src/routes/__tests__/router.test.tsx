@@ -63,7 +63,10 @@ describe('Router tree — protected route mounts', () => {
   })
 
   it.each([
-    ['/dashboard', 'dashboard-page', /Dashboard/],
+    // PR 2 T9 relayout: dashboard-heading-row's <h1> reads "Threat
+    // Overview" (per plan L11 / DESIGN.md ## Dashboard Workspace
+    // Pattern). The old sr-only "Dashboard" heading was removed.
+    ['/dashboard', 'dashboard-page', /Threat Overview/i],
     ['/actors', 'actors-page', /Actors/],
     ['/reports', 'reports-page', /Reports/],
     ['/incidents', 'incidents-page', /Incidents/],
