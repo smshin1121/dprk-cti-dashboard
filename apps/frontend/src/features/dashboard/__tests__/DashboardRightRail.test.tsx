@@ -21,6 +21,13 @@
 import { render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
+// Side-effect import: AlertsRailSection (mounted via DashboardRightRail)
+// reuses the existing `dashboard.alerts.title` key via useTranslation,
+// so the i18n bootstrap must initialize before render in this isolated
+// suite. Without it react-i18next emits a NO_I18NEXT_INSTANCE warning
+// and t() falls back to returning the literal key.
+import '../../../i18n'
+
 import { DashboardRightRail } from '../DashboardRightRail'
 
 describe('DashboardRightRail', () => {

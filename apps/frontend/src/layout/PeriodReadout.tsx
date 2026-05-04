@@ -23,8 +23,6 @@
 import { useEffect, useReducer, useRef } from 'react'
 import { flushSync } from 'react-dom'
 
-import { ArrowUp } from 'lucide-react'
-
 import { useFilterStore } from '../stores/filters'
 
 const ALL_TIME_FALLBACK = 'All time'
@@ -88,7 +86,7 @@ export function PeriodReadout(): JSX.Element {
           data-testid="period-readout-hint"
           className="flex items-center gap-1 text-xs text-ink-subtle"
         >
-          <ArrowUp aria-hidden className="h-3 w-3" />
+          <span aria-hidden>↑</span>
           change in filter bar
         </span>
       </div>
