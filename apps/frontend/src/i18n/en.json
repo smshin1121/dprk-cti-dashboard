@@ -98,19 +98,26 @@
       "empty": "No reports for current filters."
     },
     "alerts": {
-      "trigger": "Alerts",
       "title": "Alerts",
-      "empty": "No alerts right now.",
-      "phaseNote": "Phase 4 preview — requires real-time wiring.",
-      "close": "Close"
+      "phase4Pill": "Phase 4",
+      "emptyState": "Phase 4 — no live alerts wired yet"
     },
-    "hero": {
-      "label": "Current Threat Surface",
-      "subheading": "DPRK CTI — current threat surface",
-      "ctaPrimary": "Browse incidents",
-      "ctaOutline": "Browse reports",
-      "loading": "Loading incident count",
-      "populatedAria": "Total incidents: {{count}}"
+    "heading": {
+      "threatOverview": "Threat Overview"
+    },
+    "period": {
+      "label": "Period",
+      "hint": "change in filter bar"
+    },
+    "recent": {
+      "emptyState": "Phase 4 — no activity wired yet"
+    },
+    "drilldown": {
+      "emptyState": "Phase 4 — drilldown not wired yet"
+    },
+    "actorNetwork": {
+      "title": "Actor network · co-occurrence",
+      "plannedEmptyState": "Planned · no data yet"
     }
   }
 }

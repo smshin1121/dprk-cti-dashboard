@@ -50,4 +50,31 @@ describe('i18n bootstrap', () => {
       expect(ko).not.toBe(en)
     }
   })
+
+  it('translates every PR 2 dashboard workspace key in both locales (L11 9-key contract)', () => {
+    // Per `docs/plans/dashboard-workspace-retrofit.md` L11 + Codex F5
+    // (round-1) — eslint-plugin-i18next is NOT configured in this
+    // repo, so this presence assertion is the contract that catches a
+    // future refactor accidentally dropping or renaming any of the 9
+    // keys the new PR 2 dashboard workspace uses.
+    const keys = [
+      'dashboard.heading.threatOverview',
+      'dashboard.period.label',
+      'dashboard.period.hint',
+      'dashboard.alerts.phase4Pill',
+      'dashboard.alerts.emptyState',
+      'dashboard.recent.emptyState',
+      'dashboard.drilldown.emptyState',
+      'dashboard.actorNetwork.title',
+      'dashboard.actorNetwork.plannedEmptyState',
+    ] as const
+    for (const key of keys) {
+      const ko = i18n.getResource('ko', 'translation', key)
+      const en = i18n.getResource('en', 'translation', key)
+      expect(typeof ko, `ko missing ${key}`).toBe('string')
+      expect(ko.length, `ko empty ${key}`).toBeGreaterThan(0)
+      expect(typeof en, `en missing ${key}`).toBe('string')
+      expect(en.length, `en empty ${key}`).toBeGreaterThan(0)
+    }
+  })
 })

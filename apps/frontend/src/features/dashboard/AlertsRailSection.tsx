@@ -22,12 +22,10 @@
  *
  * Purity: NO data fetches. Phase 4 wires the live alerts feed.
  *
- * i18n: the title reuses the existing `dashboard.alerts.title` key
- * (carried over from the deleted AlertsDrawer; pre-existing in both
- * `en.json` and `ko.json`) so locale switching keeps working without
- * regression. The new Phase 4 pill + empty-state copy are hardcoded
- * for T7; T11 swaps them to `dashboard.alerts.phase4Pill` /
- * `dashboard.alerts.emptyState` per L11.
+ * i18n: title via `dashboard.alerts.title` (carried over from the
+ * deleted AlertsDrawer; pre-existing in both locales). Phase 4 pill
+ * via `dashboard.alerts.phase4Pill` and empty-state line via
+ * `dashboard.alerts.emptyState` per L11 (T11).
  */
 
 import { useTranslation } from 'react-i18next'
@@ -54,14 +52,14 @@ export function AlertsRailSection(): JSX.Element {
           data-testid="alerts-rail-phase4-pill"
           className="rounded-none border border-border-card bg-app px-2 py-0.5 text-[10px] font-cta uppercase tracking-caption text-ink-muted"
         >
-          Phase 4
+          {t('dashboard.alerts.phase4Pill')}
         </span>
       </header>
       <p
         data-testid="alerts-rail-empty-state"
         className="text-xs text-ink-muted"
       >
-        Phase 4 — no live alerts wired yet
+        {t('dashboard.alerts.emptyState')}
       </p>
     </section>
   )

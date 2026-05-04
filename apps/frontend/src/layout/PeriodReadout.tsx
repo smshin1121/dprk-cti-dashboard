@@ -15,13 +15,16 @@
  * (Shell static-source guard at `__tests__/Shell.architectural-guard
  * .test.tsx` pins this contract).
  *
- * i18n: T7 hardcodes the user-visible strings ("Period", "All time",
- * "change in filter bar"). T11 swaps these to `dashboard.period.*` keys
- * once the i18n table grows.
+ * i18n: `dashboard.period.label` + `dashboard.period.hint` carry the
+ * user-visible strings (T11). The "All time" fallback for the empty
+ * date-range state is rendered as a literal English string for now —
+ * it is not in the locked L11 9-key list and will be swept into a
+ * follow-up if a localized form is needed.
  */
 
 import { useEffect, useReducer, useRef } from 'react'
 import { flushSync } from 'react-dom'
+import { useTranslation } from 'react-i18next'
 
 import { useFilterStore } from '../stores/filters'
 
@@ -39,6 +42,7 @@ function formatRange(from: string | null, to: string | null): string {
 }
 
 export function PeriodReadout(): JSX.Element {
+  const { t } = useTranslation()
   // Subscribe to the filter store via a manual force-render that
   // flushSync's the commit. zustand v5's default `useStore` hook
   // goes through React's deferred scheduler, which means an external
@@ -76,7 +80,7 @@ export function PeriodReadout(): JSX.Element {
         data-testid="period-readout-label"
         className="text-[10px] font-cta uppercase tracking-caption text-ink-subtle"
       >
-        Period
+        {t('dashboard.period.label')}
       </span>
       <div className="flex items-center gap-2 text-sm text-ink tabular-nums">
         <span data-testid="period-readout-value">
@@ -87,7 +91,7 @@ export function PeriodReadout(): JSX.Element {
           className="flex items-center gap-1 text-xs text-ink-subtle"
         >
           <span aria-hidden>↑</span>
-          change in filter bar
+          {t('dashboard.period.hint')}
         </span>
       </div>
     </div>

@@ -25,14 +25,19 @@
  *
  * Purity: NO live data fetches at mount. Phase 4 wires real feeds.
  *
- * i18n: T7 hardcodes user-visible strings. T11 swaps to
- * `dashboard.alerts.*` / `dashboard.recent.emptyState` /
- * `dashboard.drilldown.emptyState` per L11.
+ * i18n: AlertsRailSection owns its own keys; the local recent +
+ * drilldown empty-state lines wire `dashboard.recent.emptyState` /
+ * `dashboard.drilldown.emptyState` per L11 (T11). The "Recent
+ * activity" title is rendered as an English literal — it is not in
+ * the locked L11 9-key list and gets a key in a follow-up sweep.
  */
+
+import { useTranslation } from 'react-i18next'
 
 import { AlertsRailSection } from './AlertsRailSection'
 
 export function DashboardRightRail(): JSX.Element {
+  const { t } = useTranslation()
   return (
     <aside
       data-testid="dashboard-right-rail"
@@ -56,7 +61,7 @@ export function DashboardRightRail(): JSX.Element {
           data-testid="recent-activity-empty-state"
           className="text-xs text-ink-muted"
         >
-          Phase 4 — no activity wired yet
+          {t('dashboard.recent.emptyState')}
         </p>
       </section>
 
@@ -65,7 +70,7 @@ export function DashboardRightRail(): JSX.Element {
         className="flex flex-col gap-2 px-4 py-3"
       >
         <p className="text-xs text-ink-muted">
-          Phase 4 — drilldown not wired yet
+          {t('dashboard.drilldown.emptyState')}
         </p>
       </section>
     </aside>

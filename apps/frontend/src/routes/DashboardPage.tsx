@@ -49,6 +49,8 @@
  * fills the slot with the live SNA visualization.
  */
 
+import { useTranslation } from 'react-i18next'
+
 import { AttackHeatmap } from '../features/dashboard/AttackHeatmap'
 import { ContributorsList } from '../features/dashboard/ContributorsList'
 import { DashboardLeftRail } from '../features/dashboard/DashboardLeftRail'
@@ -69,6 +71,7 @@ import { YearBar } from '../features/dashboard/YearBar'
 import { PeriodReadout } from '../layout/PeriodReadout'
 
 export function DashboardPage(): JSX.Element {
+  const { t } = useTranslation()
   return (
     <section
       data-testid="dashboard-page"
@@ -86,7 +89,7 @@ export function DashboardPage(): JSX.Element {
             id="dashboard-heading"
             className="text-xl font-semibold tracking-tight text-ink"
           >
-            Threat Overview
+            {t('dashboard.heading.threatOverview')}
           </h1>
           <PeriodReadout />
         </header>
@@ -129,13 +132,13 @@ export function DashboardPage(): JSX.Element {
             data-testid="actor-network-graph-title"
             className="mb-3 text-sm font-semibold text-ink"
           >
-            Actor network · co-occurrence
+            {t('dashboard.actorNetwork.title')}
           </h3>
           <p
             data-testid="actor-network-graph-empty-state"
             className="text-sm text-ink-muted"
           >
-            Planned · no data yet
+            {t('dashboard.actorNetwork.plannedEmptyState')}
           </p>
         </section>
 
