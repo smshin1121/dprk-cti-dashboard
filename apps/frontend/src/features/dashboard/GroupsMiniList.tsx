@@ -36,8 +36,19 @@
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
+import { RankedRowWithShareBar } from '../../layout/RankedRowWithShareBar'
 import { cn } from '../../lib/utils'
 import { useDashboardSummary } from './useDashboardSummary'
+
+function groupAvatarInitials(name: string): string {
+  // Two-char initials from a group name. Falls back to first 2 chars
+  // when the name has only one word (e.g. "Lazarus" → "LA").
+  const parts = name.trim().split(/\s+/)
+  if (parts.length >= 2) {
+    return (parts[0][0] + parts[1][0]).toUpperCase()
+  }
+  return name.slice(0, 2).toUpperCase()
+}
 
 export function GroupsMiniList(): JSX.Element {
   const { t } = useTranslation()
@@ -78,6 +89,11 @@ export function GroupsMiniList(): JSX.Element {
   }
 
   const groups = data?.top_groups ?? []
+  // Head row's report_count is the max (BE sorts top_groups by
+  // report_count DESC); coerce to 1 if the head somehow holds 0
+  // to avoid divide-by-zero.
+  const maxReportCount =
+    groups.length > 0 ? Math.max(groups[0].report_count, 1) : 1
 
   if (groups.length === 0) {
     return (
@@ -107,33 +123,34 @@ export function GroupsMiniList(): JSX.Element {
       >
         {t('dashboard.groupsMiniList.title')}
       </h3>
-      <ol data-testid="groups-mini-list-items" className="divide-y divide-border-card">
-        {groups.map((group) => (
-          <li
-            key={group.group_id}
-            data-testid={`groups-mini-list-item-${group.group_id}`}
-            data-group-id={group.group_id}
-            data-report-count={group.report_count}
-            className="px-1 py-2 text-sm"
-          >
-            {/* PR #14 D11: row navigates to `/actors/:id` — the
-                `top_groups` payload carries `group_id` which aligns
-                with the actor PK (groups are actor rows in this
-                schema; see `actors_table` migration 0001). */}
-            <Link
-              to={`/actors/${group.group_id}`}
-              className="flex items-center justify-between gap-3 rounded-none hover:text-signal focus:outline-none focus:ring-2 focus:ring-ring"
+      <ol data-testid="groups-mini-list-items" className="flex flex-col">
+        {groups.map((group) => {
+          const ratio = (group.report_count / maxReportCount) * 100
+          return (
+            <li
+              key={group.group_id}
+              data-testid={`groups-mini-list-item-${group.group_id}`}
+              data-group-id={group.group_id}
+              data-report-count={group.report_count}
             >
-              <span className="truncate font-medium text-ink">{group.name}</span>
-              <span className="shrink-0 rounded-none bg-app px-2 py-0.5 text-xs font-mono text-ink-muted">
-                {group.report_count}{' '}
-                <span className="text-ink-subtle">
-                  {t('dashboard.groupsMiniList.reportsSuffix')}
-                </span>
-              </span>
-            </Link>
-          </li>
-        ))}
+              {/* PR #14 D11: row navigates to `/actors/:id` — the
+                  `top_groups` payload carries `group_id` which aligns
+                  with the actor PK. */}
+              <Link
+                to={`/actors/${group.group_id}`}
+                className="block focus:outline-none focus:ring-2 focus:ring-ring"
+              >
+                <RankedRowWithShareBar
+                  avatarText={groupAvatarInitials(group.name)}
+                  name={group.name}
+                  value={`${group.report_count} ${t('dashboard.groupsMiniList.reportsSuffix')}`}
+                  shareBarPct={ratio}
+                  barFillTestId={`groups-mini-list-bar-${group.group_id}`}
+                />
+              </Link>
+            </li>
+          )
+        })}
       </ol>
     </section>
   )

@@ -62,7 +62,7 @@ export function DashboardLeftRail(): JSX.Element {
   return (
     <aside
       data-testid="dashboard-left-rail"
-      className="flex w-60 shrink-0 flex-col gap-6 border-r border-border-card bg-surface p-4 text-sm"
+      className="flex w-full flex-col gap-6 border-b border-border-card bg-surface p-4 text-sm lg:w-60 lg:shrink-0 lg:border-b-0 lg:border-r"
     >
       <RailGroup title="Sections" testid="left-rail-sections">
         <ul className="flex flex-col">

@@ -26,9 +26,9 @@
 
 import { useTranslation } from 'react-i18next'
 
+import { RankedRowWithShareBar } from '../../layout/RankedRowWithShareBar'
 import { cn } from '../../lib/utils'
 import { useDashboardSummary } from './useDashboardSummary'
-import { chartSeriesColor } from './_palette'
 
 export function SectorBreakdown(): JSX.Element {
   const { t } = useTranslation()
@@ -104,10 +104,7 @@ export function SectorBreakdown(): JSX.Element {
       >
         {t('dashboard.sectorBreakdown.title')}
       </h3>
-      <ol
-        data-testid="sector-breakdown-items"
-        className="flex flex-col gap-2"
-      >
+      <ol data-testid="sector-breakdown-items" className="flex flex-col">
         {sectors.map((sector) => {
           const ratio = (sector.count / maxCount) * 100
           return (
@@ -116,28 +113,14 @@ export function SectorBreakdown(): JSX.Element {
               data-testid={`sector-breakdown-item-${sector.sector_code}`}
               data-sector-code={sector.sector_code}
               data-count={sector.count}
-              className="text-sm"
             >
-              <div className="flex items-center justify-between gap-3">
-                <span className="font-medium text-ink">
-                  {sector.sector_code}
-                </span>
-                <span className="font-mono text-xs text-ink-muted">
-                  {sector.count}
-                </span>
-              </div>
-              <div className="mt-1 h-1.5 w-full overflow-hidden rounded-none bg-app">
-                <div
-                  data-testid={`sector-breakdown-bar-${sector.sector_code}`}
-                  role="presentation"
-                  aria-hidden="true"
-                  className="h-full"
-                  style={{
-                    width: `${ratio}%`,
-                    backgroundColor: chartSeriesColor(0),
-                  }}
-                />
-              </div>
+              <RankedRowWithShareBar
+                avatarText={sector.sector_code}
+                name={sector.sector_code}
+                value={String(sector.count)}
+                shareBarPct={ratio}
+                barFillTestId={`sector-breakdown-bar-${sector.sector_code}`}
+              />
             </li>
           )
         })}

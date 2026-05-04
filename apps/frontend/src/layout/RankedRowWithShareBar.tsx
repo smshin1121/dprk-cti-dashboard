@@ -43,6 +43,16 @@ interface RankedRowWithShareBarProps {
   readonly shareBarPct: number
   /** Optional percentage caption — pre-formatted (e.g. "33%"). */
   readonly pct?: string
+  /**
+   * Optional override for the bar-fill `data-testid`. When set, the
+   * default `ranked-row-bar-fill` testid is replaced with this string.
+   * Panel consumers (LocationsRanked / SectorBreakdown / etc.) pass
+   * their per-row testid (e.g. `locations-ranked-bar-KR`) so existing
+   * panel tests can target a specific row's bar fill without losing
+   * the shared component contract. T2 RED isolated-component tests
+   * never pass this prop and continue to assert against the default.
+   */
+  readonly barFillTestId?: string
 }
 
 function clamp(n: number, lo: number, hi: number): number {
@@ -56,6 +66,7 @@ export function RankedRowWithShareBar({
   value,
   shareBarPct,
   pct,
+  barFillTestId,
 }: RankedRowWithShareBarProps): JSX.Element {
   const widthPct = clamp(shareBarPct, 0, 100)
 
@@ -108,7 +119,7 @@ export function RankedRowWithShareBar({
           className="h-1 w-full overflow-hidden rounded-none bg-app"
         >
           <div
-            data-testid="ranked-row-bar-fill"
+            data-testid={barFillTestId ?? 'ranked-row-bar-fill'}
             role="presentation"
             aria-hidden
             className="h-full bg-ink-muted"

@@ -26,9 +26,9 @@
 
 import { useTranslation } from 'react-i18next'
 
+import { RankedRowWithShareBar } from '../../layout/RankedRowWithShareBar'
 import { useGeo } from '../analytics/useGeo'
 import { cn } from '../../lib/utils'
-import { chartSeriesColor } from './_palette'
 
 const TOP_N = 10
 
@@ -105,10 +105,7 @@ export function LocationsRanked(): JSX.Element {
       >
         {t('dashboard.locationsRanked.title')}
       </h3>
-      <ol
-        data-testid="locations-ranked-items"
-        className="flex flex-col gap-2"
-      >
+      <ol data-testid="locations-ranked-items" className="flex flex-col">
         {countries.map((country) => {
           const ratio = (country.count / maxCount) * 100
           return (
@@ -117,29 +114,14 @@ export function LocationsRanked(): JSX.Element {
               data-testid={`locations-ranked-item-${country.iso2}`}
               data-iso2={country.iso2}
               data-count={country.count}
-              className="text-sm"
             >
-              <div className="flex items-center justify-between gap-3">
-                <span className="font-medium text-ink">{country.iso2}</span>
-                <span className="font-mono text-xs text-ink-muted">
-                  {country.count}{' '}
-                  <span className="text-ink-subtle">
-                    {t('dashboard.locationsRanked.incidentsSuffix')}
-                  </span>
-                </span>
-              </div>
-              <div className="mt-1 h-1.5 w-full overflow-hidden rounded-none bg-app">
-                <div
-                  data-testid={`locations-ranked-bar-${country.iso2}`}
-                  role="presentation"
-                  aria-hidden="true"
-                  className="h-full"
-                  style={{
-                    width: `${ratio}%`,
-                    backgroundColor: chartSeriesColor(0),
-                  }}
-                />
-              </div>
+              <RankedRowWithShareBar
+                avatarText={country.iso2}
+                name={country.iso2}
+                value={`${country.count} ${t('dashboard.locationsRanked.incidentsSuffix')}`}
+                shareBarPct={ratio}
+                barFillTestId={`locations-ranked-bar-${country.iso2}`}
+              />
             </li>
           )
         })}

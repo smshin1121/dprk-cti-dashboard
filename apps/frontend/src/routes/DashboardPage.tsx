@@ -73,7 +73,7 @@ export function DashboardPage(): JSX.Element {
     <section
       data-testid="dashboard-page"
       aria-labelledby="dashboard-heading"
-      className="flex min-h-screen"
+      className="flex min-h-screen flex-col lg:flex-row"
     >
       <DashboardLeftRail />
 
@@ -91,11 +91,20 @@ export function DashboardPage(): JSX.Element {
           <PeriodReadout />
         </header>
 
-        {/* [B] KPI strip — full width */}
-        <KPIStrip />
+        {/* [B] KPI strip — full width. id="overview" is the
+            in-page scroll target for the left-rail "Overview" anchor
+            (DESIGN.md ## Dashboard Workspace Pattern). */}
+        <div id="overview" className="scroll-mt-16">
+          <KPIStrip />
+        </div>
 
-        {/* [C] top grid — world map left, ATT&CK right */}
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        {/* [C] top grid — world map left, ATT&CK right.
+            id="geo" is the in-page scroll target for the left-rail
+            "Geo" anchor. */}
+        <div
+          id="geo"
+          className="grid scroll-mt-16 grid-cols-1 gap-4 lg:grid-cols-3"
+        >
           <div className="lg:col-span-2">
             <WorldMap />
           </div>
@@ -136,18 +145,31 @@ export function DashboardPage(): JSX.Element {
             /analytics/geo round-trip. */}
         <LocationsRanked />
 
-        {/* [D] ranked slice band — donut/yearbar + sector/contributors */}
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        {/* [D] ranked slice band — donut/yearbar + sector/contributors.
+            id="motivation" / id="sectors" are scroll targets for the
+            left-rail "Motivation" / "Sectors" anchors. */}
+        <div
+          id="motivation"
+          className="grid scroll-mt-16 grid-cols-1 gap-4 md:grid-cols-2"
+        >
           <MotivationDonut />
           <YearBar />
         </div>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <div
+          id="sectors"
+          className="grid scroll-mt-16 grid-cols-1 gap-4 md:grid-cols-2"
+        >
           <SectorBreakdown />
           <ContributorsList />
         </div>
 
-        {/* [E] time-series band — trend/groups + incidents stacked-area */}
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        {/* [E] time-series band — trend/groups + incidents stacked-area.
+            id="trends" is the scroll target for the left-rail "Trends"
+            anchor. */}
+        <div
+          id="trends"
+          className="grid scroll-mt-16 grid-cols-1 gap-4 md:grid-cols-2"
+        >
           <TrendChart />
           <GroupsMiniList />
         </div>
@@ -155,7 +177,11 @@ export function DashboardPage(): JSX.Element {
           <MotivationStackedArea />
           <SectorStackedArea />
         </div>
-        <ReportFeed />
+        {/* id="reports" is the scroll target for the left-rail
+            "Reports" anchor — pinned to the ReportFeed band. */}
+        <div id="reports" className="scroll-mt-16">
+          <ReportFeed />
+        </div>
       </div>
 
       <DashboardRightRail />
