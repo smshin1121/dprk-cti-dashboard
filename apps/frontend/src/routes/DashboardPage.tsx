@@ -23,16 +23,16 @@
  *             ReportFeed                                  (full-width)
  *
  * Removed by this PR:
- *   - DashboardHero (T9 unmounts; T10 deletes the file + its test)
+ *   - DashboardHero (deprecated by PR #32 amendment; T9 unmounted +
+ *     T10 deleted the file + its test)
  *   - AlertsDrawer (T7 deleted — replaced by AlertsRailSection inside
  *     DashboardRightRail)
  *
  * Per-cache-slot subscriber count (preserved):
  *   - KPIStrip / MotivationDonut / YearBar / GroupsMiniList /
  *     SectorBreakdown / ContributorsList all share
- *     `/dashboard/summary` via `useDashboardSummary()` (6 subscribers
- *     after hero unmount; summarySharedCache.test.tsx file count drops
- *     7 → 6 in T10 when the file is deleted).
+ *     `/dashboard/summary` via `useDashboardSummary()` — 6 subscribers,
+ *     ONE fetch (summarySharedCache.test.tsx pins this).
  *   - WorldMap + LocationsRanked share `useGeo()`.
  *   - AttackHeatmap consumes `useAttackMatrix()`.
  *   - TrendChart consumes `useTrend()`.
