@@ -214,8 +214,9 @@ describe('DashboardPage — §4.2 area [B]-[F] wiring (PR #13 Group I)', () => {
       screen.queryByTestId('similar-reports-loading'),
     ).not.toBeInTheDocument()
 
-    // [F] AlertsDrawer trigger
-    expect(screen.getByTestId('alerts-drawer-trigger')).toBeInTheDocument()
+    // [F] AlertsRailSection — static Phase 4 right-rail section
+    // (in-place rewrite of the former AlertsDrawer per PR 2 T7.4).
+    expect(screen.getByTestId('alerts-rail-section')).toBeInTheDocument()
   })
 
   it('summary-backed panels share ONE /dashboard/summary fetch (D9 invariant)', async () => {

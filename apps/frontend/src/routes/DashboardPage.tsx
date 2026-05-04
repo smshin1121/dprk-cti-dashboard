@@ -14,7 +14,7 @@
  *   [E] TrendChart + GroupsMiniList             (time series — row 1)
  *       MotivationStackedArea + SectorStackedArea (time series — row 2, PR #23 §6.C C7+C8)
  *       ReportFeed                              (full-width)
- *   [F] AlertsDrawer                            (trigger floats above grid)
+ *   [F] AlertsRailSection                        (static Phase 4 right-rail section; transitionally top-of-page until T9 moves it inside DashboardRightRail)
  *
  * Every panel is self-contained and renders its own loading /
  * error / empty / populated states (plan D11). A fetch failure in
@@ -33,7 +33,7 @@
  *     `useIncidentsTrend({groupBy})` (incidents fact table) on
  *     separate cache slots per axis (PR #23 §6.A C1).
  *   - ReportFeed consumes `useReportsList()` (PR #12 hook).
- *   - AlertsDrawer is a Phase 4 static shell (no data plumbing).
+ *   - AlertsRailSection is a Phase 4 static shell (no data plumbing).
  *
  * Similar-reports surface: lives on `ReportDetailPage`, not here.
  * The dashboard has no "selected report" context, so "similar to
@@ -41,7 +41,7 @@
  * detail route's path-param id instead.
  */
 
-import { AlertsDrawer } from '../features/dashboard/AlertsDrawer'
+import { AlertsRailSection } from '../features/dashboard/AlertsRailSection'
 import { AttackHeatmap } from '../features/dashboard/AttackHeatmap'
 import { ContributorsList } from '../features/dashboard/ContributorsList'
 import { DashboardHero } from '../features/dashboard/DashboardHero'
@@ -79,11 +79,10 @@ export function DashboardPage(): JSX.Element {
       {/* [B] KPI strip — full width */}
       <KPIStrip />
 
-      {/* [F] alerts drawer — trigger sits above the main grid;
-          the panel itself slides in fixed-positioned */}
-      <div className="flex justify-end">
-        <AlertsDrawer />
-      </div>
+      {/* [F] alerts rail section — static Phase 4 shell. Transitionally
+          mounted at the top of the page during T7-T8; T9 relayout
+          moves it inside DashboardRightRail. */}
+      <AlertsRailSection />
 
       {/* [C] + [D] top grid — world map left, ATT&CK right */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
