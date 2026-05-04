@@ -317,13 +317,57 @@ Every page in the product belongs to exactly one of **five** classes. The class 
 
 | Class | Examples | Density (per PT-4) | Chrome | Accent | Hero |
 |---|---|---|---|---|---|
-| **editorial-page** | dashboard, marketing, brand-spec | Editorial column | full-bleed photographic, no card stack, no PT-1 chrome | scarce — `button-primary` only | required |
+| **editorial-page** | marketing, brand-spec (no currently-mapped routes — reserved for future surfaces) | Editorial column | full-bleed photographic, no card stack, no PT-1 chrome | scarce — `button-primary` only | required |
 | **auth-page** | login, password reset, sign-up | Auth column | single auth card on `{colors.canvas}`, no PT-1 chrome, no hero | scarce — single `button-primary` per card | none |
-| **analyst-workspace** | correlation, reports, actors, incidents | Analyst-workspace column | PT-1 three-pane + PT-3 detail cards | scarce + PT-5 stripe on active rows | none |
+| **analyst-workspace** | dashboard, correlation, reports, actors, incidents | Analyst-workspace column | PT-1 three-pane + PT-3 detail cards (`/dashboard` uses Dashboard Workspace Pattern variant — see below) | scarce + PT-5 stripe on active rows | none |
 | **admin-workspace** | admin actions, settings, user management | Analyst-workspace column (shared with analyst-workspace) | PT-1 three-pane + PT-3 detail cards | scarce + PT-5 stripe + occasional `{colors.semantic-warning}` for destructive actions | none |
 | **system-page** | NotFound (404), unrecoverable error fallback, maintenance / banner views | Auth column (shared with auth-page) | inline minimal-utility `<section>` on `{colors.canvas}`, no PT-1 chrome, no hero, no PT-3 detail cards | scarce — text-only or at most one tertiary `button-tertiary-text` "Back to dashboard" link, never more | none |
 
 The taxonomy is **documentation-level** in this section. Runtime declaration (a `data-page-class="..."` attribute on the route container, plus a typed manifest at `apps/frontend/src/lib/pageClass.ts` and a vitest test asserting per-route consistency) lands in the next FE PR after this contract. Until the runtime work lands, the taxonomy is enforced through code review against the mapping in `## Page Classes` below.
+
+## Dashboard Workspace Pattern
+
+`/dashboard` is the single documented exception to the PT-1 three-pane analyst-workspace composition. The page consumes the analyst-workspace **page class** (density, accent budget, no-hero rule) and inherits PT-5 active-row stripes + PT-6 inline-element rounding, but its three-pane structure differs from PT-1 in two material ways:
+
+1. **Left rail content** — section anchors (in-page scroll targets), pinned-actor shortcuts, and quick filters. NOT a record list (PT-1 left rail is a list of selectable records; `/dashboard` has no "selected record" semantics).
+2. **Right rail content** — `alerts-rail-section` + `recent-activity-list` + `drilldown-empty-state`. NOT a detail rail (PT-3 detail-rail card section is a deep-read of a selected record; `/dashboard` carries persistent monitoring shell instead).
+
+The center pane preserves the existing 14-widget grid topology (KPIStrip → WorldMap+AttackHeatmap → Actor Network slot (reserved) → LocationsRanked → MotivationDonut+YearBar → SectorBreakdown+ContributorsList → TrendChart+GroupsMiniList → MotivationStackedArea+SectorStackedArea → ReportFeed). Each widget is self-contained and renders its own loading / error / empty / populated states (per plan D11 from PR #13).
+
+### Pane Geometry
+
+- **Left rail**: target width 240px on desktop / wide. Right hairline border `{colors.hairline}` separates it from the center pane.
+- **Center pane**: flex. Internal padding `{spacing.md}` × `{spacing.lg}`.
+- **Right rail**: target width 320px on desktop / wide. Left hairline border `{colors.hairline}` separates it from the center pane.
+- Below the breakpoints in `## Responsive Behavior`, both rails collapse such that left-rail anchor access and right-rail monitoring access are preserved. Exact mechanics (slide-in drawer, top strip, bottom sheet, etc.) land in implementation; this contract reserves the slot and the access guarantee only.
+
+### Heading Row (analyst-workspace pattern, used by `/dashboard` first)
+
+Above the center-pane widget grid, a single heading row carries the page `<h1>` + a `period-readout`. The row sits at the top of the center pane, no card chrome, no hairline divider.
+
+**`period-readout`** — Read-only display of the active date range from the global FilterBar. Right-aligned in the heading row. Type `{typography.caption-uppercase}` for the "Period" label, body text for the date pair, `{colors.muted}` for the "change in filter bar" hint glyph. **Read-only only — never an input.** The global FilterBar (above the page outlet) remains the single editable source of truth for the date-range URL state. Reusable across analyst-workspace pages where the heading-time-window association is useful.
+
+### Center-Pane Widget Surfaces
+
+`/dashboard` introduces two new component vocabulary entries used in the center pane: `ranked-row-with-share-bar` (reusable across analyst-workspace pages) and `actor-network-graph` (reserved/future slot, dashboard-specific for now).
+
+**`ranked-row-with-share-bar`** — Row variant for ranked list-cards. Anatomy: 32×32 square avatar (`{colors.canvas}` background, `{colors.body}` initials, 1px `{colors.hairline}` border, `{rounded.none}` corners) + name (body) + sub (caption, `{colors.muted-soft}`) + horizontal share-bar (4px height, `{colors.body}` fill at 100% opacity for top item in the panel, scaled to relative share for lower-ranked rows, fill never uses `{colors.primary}` or any chart palette) + value (tabular-nums) + percentage (caption, `{colors.muted-soft}`). Background `{colors.canvas-elevated}`, hairline divider between rows, no row hover background. Used by `LocationsRanked`, `SectorBreakdown`, `ContributorsList`, `GroupsMiniList`. Reusable on any future ranked panel that lives inside an analyst-workspace center pane.
+
+**`actor-network-graph`** — Full-width center-pane card slot for a Social Network Analysis (SNA) co-occurrence visualization of actors / tools / sectors. Card chrome: `{colors.canvas-elevated}` background, 1px `{colors.hairline}` border, `{rounded.none}` corners. Title row consumes the standard card-head pattern. **This slot is RESERVED / FUTURE.** The contract registers position (between WorldMap+AttackHeatmap row and LocationsRanked) + title (`Actor network · co-occurrence`) + node-kind vocabulary (actor / tool / sector with stroke-style differentiation, single muted fill, degree-centrality node sizing). The data path — BE endpoint shape, edge semantics, refresh cadence — is intentionally undefined here. Acceptable production states until the data PR ships: (a) hide the card entirely, or (b) render the card with title + the **text-only** empty state `Planned · no data yet`. The card body must be text-only — **do not** render graph marks, axes, nodes, edges, skeleton charts, sparklines, or any visualization-shaped placeholders that suggest real data. **No mock SVG / fabricated nodes / synthetic edges may render in production.** Sketches and design rehearsals (gitignored) may carry mock shapes; the production tree must not.
+
+### Right-Rail Surfaces
+
+**`alerts-rail-section`** — Right-rail Phase 4 static shell. Replaces the floating `AlertsDrawer` trigger on `/dashboard`. Anatomy: `{typography.caption-uppercase}` section title with a `Phase 4` placeholder pill at end-of-line + a single explicit empty-state line `Phase 4 — no live alerts wired yet` in `{colors.muted-soft}`. **No mock alert rows, no fabricated dot+label+timestamp tuples.** The same reserved-slot rule that governs `actor-network-graph` (production must not render synthetic data) applies here. **Live data wiring is OUT OF SCOPE for both PR 2 (workspace retrofit implementation) and PR 3 (SNA data).** A separate Phase 4 PR ships actual alerts; until then the section renders title + Phase-4 pill + the single empty-state line, nothing else.
+
+The right rail also carries a `recent-activity-list` block — same reserved-slot discipline (title + `Phase 4 — no activity wired yet` empty-state line, no mock rows) — and a `drilldown-empty-state` block (`Phase 4 — drilldown not wired yet`) that anticipates the Phase 4 selection-driven detail interaction. The drilldown copy follows the same Phase-4 honesty discipline as `alerts-rail-section` and `recent-activity-list` — it does NOT prompt the user to perform an action that PR 2 has not wired. Both `recent-activity-list` and `drilldown-empty-state` reuse the caption-uppercase title + empty-state line pattern from `alerts-rail-section`; neither is registered as a separate component vocabulary entry to avoid duplicating the rule.
+
+### Cross-References
+
+- **Page-class binding**: `/dashboard` → `analyst-workspace` per `## Page Classes` mapping. Density (PT-4 analyst column), accent budget (PT-5 stripes only), no-hero rule (analyst-workspace row's hero column = `none` per the definitions table above).
+- **PT-1 contrast**: PT-1's record-list left rail and detail-rail right pane do NOT apply here. The Dashboard Workspace Pattern is the dedicated composition for monitoring-and-overview surfaces; PT-1 stays the dedicated composition for record-list workspaces (reports / incidents / actors, plus future correlation once `/analytics/correlation` is mounted).
+- **PT-3 contrast**: PT-3 detail-rail card section is unused on `/dashboard`. The right rail uses `alerts-rail-section` + `recent-activity-list` + `drilldown-empty-state` instead.
+- **PT-5 active state**: section anchors in the left rail use the PT-5 1px Rosso left-edge stripe on the active row, identical to the analyst-workspace stripe rule.
+- **PT-6 inline rounding**: applies on `/dashboard` for any chip-inline / message-bubble-cell that lands here. CTAs / hero / cards stay 0px per the Don't list.
 
 ## Page Classes
 
@@ -331,7 +375,7 @@ Current product mapping. The mapping table itself ships in this design contract;
 
 | Route | Class | Notes |
 |---|---|---|
-| `/dashboard` | editorial-page | Hero + KPI strip + composed layout already shipped. No PT-1 chrome propagation. |
+| `/dashboard` | analyst-workspace | Uses Dashboard Workspace Pattern (new section above). 3-pane composition with section-anchor left rail, KPI + chart-grid center, alerts/recent/drilldown right rail. Editorial dashboard hero is forbidden — see `## Do's and Don'ts > Don't`. The PT-1 three-pane variant for record-list workspaces (reports / incidents / actors, plus future correlation once `/analytics/correlation` is mounted) does NOT apply here; `/dashboard` is the documented exception. |
 | `/` | (redirect) | `<Navigate to="/dashboard" replace />` — index redirect, not a routed page. The page class is determined by the destination after redirect. |
 | `/login` | auth-page | Single-card on canvas, kept minimal-chrome. Hero NOT required (auth-page class). |
 | `/reports`, `/reports/:id` | analyst-workspace | Migrate to PT-1 three-pane in subsequent FE PR (out of design-contract scope). |
@@ -365,6 +409,9 @@ Current product mapping. The mapping table itself ships in this design contract;
 - Don't propagate analyst-workspace card chrome (PT-3 detail rail) onto editorial pages or auth pages. Hero bands, `feature-card-photo` stack, and the auth single-card stay full-bleed / single-card and chrome-light.
 - Don't soften CTA, hero, livery, or main-card corners to 4px because an analyst-workspace chip or input nearby uses 4px. PT-6 is an analyst-workspace inline exception list; CTAs / hero / cards stay 0px in every page class.
 - Don't copy markup, CSS, class names, or assets from any third-party admin template into this codebase. Reference templates inform *information structure only* — every line of code is authored fresh against Ferrari tokens.
+- Don't render an editorial dashboard hero on `/dashboard`. The page is `analyst-workspace`-class (see `## Dashboard Workspace Pattern`); the heading row carries the page `<h1>` + `period-readout` only. The pre-existing `DashboardHero` component is deprecated; the implementation PR removes the file and its test.
+- Don't render mock SVG, fabricated data, or synthetic graph nodes in production for any reserved/future slot (e.g., `actor-network-graph`). Acceptable production states until the data-wiring PR ships: hide the card entirely, OR render the card with its title + a text-only empty state. Sketches and design rehearsals (gitignored, never bundled) may carry mock shapes; the production tree must not.
+- Don't make `period-readout` editable. The global FilterBar at the viewport top is the single editable source for the date-range URL state. The heading-row readout is read-only display only — duplicating the input would create a two-surface contract for one URL slot.
 
 ## Responsive Behavior
 
