@@ -142,7 +142,7 @@ The radius vocabulary is **sharp by default**. Sharp 0px corners are the brand b
 
 **`top-nav-on-light`** — White-canvas variant for editorial light bands.
 
-**`top-nav-active-indicator`** — Active menu-item indicator on horizontal top navigation. **2px `{colors.primary}` (Rosso Corsa) bottom-edge stripe** under the active menu label, full label width, sitting flush at the nav band's lower hairline. The label text itself stays in the variant's normal nav-link color — `{colors.ink}` on `top-nav-on-dark`, `{colors.body-on-light}` on `top-nav-on-light` — only the stripe carries the active signal. No animation, no hover preview (consistent with `## Iteration Guide` line 5). PT-5's left-edge stripe rule does **not** apply on horizontal nav — geometry rotates by 90° to a bottom-edge stripe to match the nav band's flow.
+**`top-nav-active-indicator`** — Active menu-item indicator on horizontal top navigation. **2px `{colors.primary}` (Rosso Corsa) bottom-edge stripe** under the active menu label, full label width, sitting flush at the nav band's lower hairline. The label text itself stays in the variant's normal nav-link color — `{colors.ink}` on `top-nav-on-dark`, `{colors.body-on-light}` on `top-nav-on-light` — only the stripe carries the active signal. No animation, no hover preview (consistent with `## Iteration Guide` item 5). PT-5's left-edge stripe rule does **not** apply on horizontal nav — geometry rotates by 90° to a bottom-edge stripe to match the nav band's flow.
 
 ### Buttons
 
@@ -240,7 +240,7 @@ The vertical list inside the left rail.
 - **Row height:** 64px.
 - **Padding:** 12px vertical × 16px horizontal.
 - **Layout:** optional 32px avatar/icon + primary label (`{typography.title-sm}`) + optional secondary line (`{typography.caption}` in `{colors.muted}`).
-- **Background:** transparent at rest. Hover state is documented as not used (per `## Iteration Guide` line 5: "Hover state never documented"); we keep that contract here too.
+- **Background:** transparent at rest. Hover state is documented as not used (per `## Iteration Guide` item 5: "Hover state never documented"); we keep that contract here too.
 - **Active state:** **1px `{colors.primary}` (Rosso Corsa) vertical stripe on the left edge** plus a `{colors.canvas-elevated}` (#303030) row background. The stripe is the brand-scarce accent — see PT-5. The row background gives spatial feedback without painting the row red.
 - **Divider:** 1px `{colors.hairline}` (#303030) between adjacent rows. Skip the divider after the active row (the stripe already partitions visually).
 - **Corner radius:** 0px on the row itself. Inline child elements (chips, search input above the list) follow PT-6.
@@ -343,7 +343,7 @@ The center pane preserves the existing 14-widget grid topology (KPIStrip → Wor
 
 ### Heading Row (analyst-workspace pattern, used by `/dashboard` first)
 
-Above the center-pane widget grid, a single heading row carries the page `<h1>` + a `period-readout`. The row sits at the top of the center pane, no card chrome, no hairline divider.
+Above the center-pane widget grid, a single heading row carries the page `<h1>` + a `period-readout`. The row sits at the top of the center pane and is `{spacing.md}` tall, no card chrome, no hairline divider.
 
 **`period-readout`** — Read-only display of the active date range from the global FilterBar. Right-aligned in the heading row. Type `{typography.caption-uppercase}` for the "Period" label, body text for the date pair, `{colors.muted}` for the "change in filter bar" hint glyph. **Read-only only — never an input.** The global FilterBar (above the page outlet) remains the single editable source of truth for the date-range URL state. Reusable across analyst-workspace pages where the heading-time-window association is useful.
 
@@ -371,7 +371,7 @@ The right rail also carries a `recent-activity-list` block — same reserved-slo
 
 ## Page Classes
 
-Current product mapping. The mapping table itself ships in this design contract; the actual route-by-route migrations to PT-1 chrome land in separate per-page PRs (correlation FE first, then existing analyst pages reflowed in follow-up PRs). Editorial and auth pages are explicitly **not migrated** — the page-class taxonomy blocks workspace chrome from crossing into the dashboard hero / brand pages, and auth pages stay single-card.
+Current product mapping. The mapping table itself ships in this design contract; the actual route-by-route migrations to PT-1 chrome land in separate per-page PRs (correlation FE first, then existing analyst pages reflowed in follow-up PRs). Editorial and auth pages are explicitly **not migrated** — the page-class taxonomy blocks workspace chrome from crossing into marketing / brand-spec pages, and auth pages stay single-card. (`/dashboard` was previously editorial-page; with this amendment it is `analyst-workspace` and explicitly carries the Dashboard Workspace Pattern, see above.)
 
 | Route | Class | Notes |
 |---|---|---|
@@ -405,12 +405,12 @@ Current product mapping. The mapping table itself ships in this design contract;
 - Don't add drop shadow tiers. Photography + brightness-step elevation carry the depth.
 - Don't extract a CTA color from a third-party widget (cookie consent, OneTrust). The brand's CTA color is what appears on actual product CTAs, not on injected modals.
 - Don't paint a full row, link, or list item in `{colors.primary}` to indicate active state. Active state on lists / vertical nav uses the PT-5 1px Rosso left-edge stripe; horizontal top-nav active state uses the `top-nav-active-indicator` 2px Rosso bottom-edge stripe. Full Rosso fill stays reserved for the `livery-band` editorial accent and the `button-primary` CTA.
-- Don't propagate analyst-workspace density (PT-4 analyst column) onto editorial pages. The dashboard hero, marketing, and brand surfaces stay at editorial pacing.
+- Don't propagate analyst-workspace density (PT-4 analyst column) onto editorial pages. Marketing and brand surfaces stay at editorial pacing.
 - Don't propagate analyst-workspace card chrome (PT-3 detail rail) onto editorial pages or auth pages. Hero bands, `feature-card-photo` stack, and the auth single-card stay full-bleed / single-card and chrome-light.
 - Don't soften CTA, hero, livery, or main-card corners to 4px because an analyst-workspace chip or input nearby uses 4px. PT-6 is an analyst-workspace inline exception list; CTAs / hero / cards stay 0px in every page class.
 - Don't copy markup, CSS, class names, or assets from any third-party admin template into this codebase. Reference templates inform *information structure only* — every line of code is authored fresh against Ferrari tokens.
 - Don't render an editorial dashboard hero on `/dashboard`. The page is `analyst-workspace`-class (see `## Dashboard Workspace Pattern`); the heading row carries the page `<h1>` + `period-readout` only. The pre-existing `DashboardHero` component is deprecated; the implementation PR removes the file and its test.
-- Don't render mock SVG, fabricated data, or synthetic graph nodes in production for any reserved/future slot (e.g., `actor-network-graph`). Acceptable production states until the data-wiring PR ships: hide the card entirely, OR render the card with its title + a text-only empty state. Sketches and design rehearsals (gitignored, never bundled) may carry mock shapes; the production tree must not.
+- Don't render mock SVG, fabricated data, or synthetic graph nodes in production for any reserved/future slot (e.g., `actor-network-graph`). Acceptable production states until the data-wiring PR ships: hide the card entirely, OR render the card with its title + a slot-specific text-only empty state — for `actor-network-graph`, that empty state is exactly `Planned · no data yet`; other reserved/future slots must define their own explicit slot-specific empty-state copy. Sketches and design rehearsals (gitignored, never bundled) may carry mock shapes; the production tree must not.
 - Don't make `period-readout` editable. The global FilterBar at the viewport top is the single editable source for the date-range URL state. The heading-row readout is read-only display only — duplicating the input would create a two-surface contract for one URL slot.
 
 ## Responsive Behavior

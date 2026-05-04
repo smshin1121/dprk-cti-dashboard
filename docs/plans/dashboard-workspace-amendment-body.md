@@ -8,9 +8,9 @@ Amend `DESIGN.md` with a dashboard-specific workspace pattern that brings `/dash
 
 Five edits ship in this PR:
 
-1. **Mapping table (line 334)** — `/dashboard` page-class flips from `editorial-page` to `analyst-workspace`. Notes column rewritten to point at the new section + the new Don't bullet.
-2. **Definitions table (lines 320, 322)** — `editorial-page` row's Examples cell loses `dashboard` and gains a "no currently-mapped routes — reserved for future surfaces" note. `analyst-workspace` row's Examples cell gains `dashboard` with a Chrome footnote pointing at the variant.
-3. **NEW section `## Dashboard Workspace Pattern`** (between PT-7 and `## Page Classes`) — ~120 LoC. Documents the 3-pane composition specific to `/dashboard` (which differs from PT-1 in left-rail content + right-rail composition), the heading-row + period-readout pattern, and 4 new component vocabulary entries.
+1. **Mapping table (`## Page Classes`)** — `/dashboard` page-class flips from `editorial-page` to `analyst-workspace`. Notes column rewritten to point at the new section + the new Don't bullet.
+2. **Definitions table (`### PT-7 — Page-Class Taxonomy`)** — `editorial-page` row's Examples cell loses `dashboard` and gains a "no currently-mapped routes — reserved for future surfaces" note. `analyst-workspace` row's Examples cell gains `dashboard` with a Chrome footnote pointing at the variant.
+3. **NEW section `## Dashboard Workspace Pattern`** (between PT-7 and `## Page Classes`). Documents the 3-pane composition specific to `/dashboard` (which differs from PT-1 in left-rail content + right-rail composition), the heading-row + period-readout pattern, and 4 new component vocabulary entries. Final shape: `DESIGN.md` `+50/-3`; new section is ≈45 source-lines (markdown lines, paragraph-folded).
 4. **4 new component vocabulary entries** (within the new section):
    - `period-readout` — read-only display of the active date range, paired with the page `<h1>` in the heading row. FilterBar at viewport top remains the single editable source.
    - `ranked-row-with-share-bar` — row variant for the four ranked panels (LocationsRanked, SectorBreakdown, ContributorsList, GroupsMiniList). Share-bar fill = `{colors.body}` only; never Rosso, never a chart palette.
