@@ -23,8 +23,13 @@
  * Purity: NO live data fetches at mount. Sections + Pinned + Quick
  * filter are static for T7. Phase 4 wires real data.
  *
- * i18n: T7 hardcodes user-visible labels. T11 swaps to
- * `dashboard.leftRail.*` keys.
+ * i18n: left-rail labels (Sections / Pinned / Quick filter group
+ * titles + 6 anchor labels + 2 pinned actor names + 3 quick-filter
+ * checkbox labels) are intentionally hardcoded English literals and
+ * are out of scope for plan §4 T11. The L11 9-key contract covers
+ * heading row + period readout + alerts/recent/drilldown empty states
+ * + actor-network slot only; broader nav-label i18n is deferred to a
+ * separate follow-up sweep.
  */
 
 import type { ReactNode } from 'react'
