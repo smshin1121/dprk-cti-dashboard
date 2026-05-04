@@ -36,7 +36,7 @@ export function DashboardRightRail(): JSX.Element {
   return (
     <aside
       data-testid="dashboard-right-rail"
-      className="flex w-72 shrink-0 flex-col border-l border-border-card bg-surface text-sm"
+      className="flex w-80 shrink-0 flex-col border-l border-border-card bg-surface text-sm"
     >
       <AlertsRailSection />
 
