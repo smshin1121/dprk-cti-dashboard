@@ -28,6 +28,22 @@ Implements the Dashboard Workspace Pattern locked by [PR #32](https://github.com
 - `DashboardLeftRail` labels (Sections / Pinned / Quick filter group titles + 6 anchor labels + 2 pinned actors + 3 quick-filter checkboxes) — intentional T11 deferral; broader nav-label i18n is a follow-up.
 - "All time" empty-date-range fallback in `PeriodReadout` + "Recent activity" title in `DashboardRightRail` — not in L11 9-key list; deferred to a follow-up sweep.
 
+## T13 manual smoke result
+
+Performed via Keycloak `analyst@dev.local` against the local dev triad on 2026-05-06. Structural correctness of the 3-pane retrofit confirmed:
+
+- `/dashboard` — 3-pane composition renders; `DashboardHero` absent; `PeriodReadout` mirrors `FilterBar` date-range; `actor-network-graph-slot` renders title + literal `Planned · no data yet` empty state (no svg / canvas / sparkline); `AlertsRailSection` sits inside `DashboardRightRail` (no floating drawer trigger); left-rail Sections / Pinned (APT37 + Lazarus) / Quick filter all present.
+- `/reports`, `/incidents`, `/actors` — no rails, no structural break (L1 sanity).
+- KO ↔ EN locale toggle — 9 new keys all switch; intentional hardcoded English on left-rail labels and `PeriodReadout` "All time" / `DashboardRightRail` "Recent activity" titles preserved per Out-of-scope deferrals above.
+
+## Known follow-up — compact KPI / density redesign (PR 2.5 candidate)
+
+The KPI strip's 80px hero typography on `/dashboard` is intentional — it follows the Ferrari L3 spec-cell pattern locked by PR #31 (DESIGN.md `## Spec & Race Surfaces`). PR 2 preserves the existing KPI rendering by design; the visual loudness is a property of the locked spec-cell vocabulary, not a PR 2 regression.
+
+A reviewer-flagged direction (sketch v3 + DashLite-style reference) suggests a compact KPI layout — smaller numbers, delta indicators, optional sparklines, denser card grid — would suit dashboard density better than the spec-cell hero. This requires a DESIGN.md amendment (KPI compact variant scoped to dashboard) + `KPICard` restructure + (optionally) a BE delta/series field. **Out of scope for PR 2's "workspace retrofit" contract.**
+
+Tracked as follow-up — PR 2.5: "Dashboard KPI compact + density redesign". Scope: layout density + delta/sparkline affordance only; dark canvas + Ferrari Rosso scarcity + 0px corners preserved (no light theme).
+
 ## §0.1 amendments (plan-vs-impl deviations recorded in commit bodies)
 
 - **AC #5 strict-grep clause** — Plan AC #5's literal "grep DashboardHero across `apps/frontend/src/` returns zero matches" is unachievable: T6 RED test itself asserts hero ABSENCE via `queryByTestId('dashboard-hero')` and names the deprecated component in its test description + docstring. Remaining 5 src/ matches are all regression-guard / historical-comment kind (zero production importer / mount / call). Recorded in T10 commit body.
