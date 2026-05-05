@@ -98,8 +98,10 @@ All 15 plan §7 acceptance criteria green (with §0.1 amendment to AC #5 noted a
 | T11 r1 | i18n keys + wire-up | PROCEED-WITH-AMENDMENT | F1 LOW (phase4Pill parity invariant) + F2 LOW (stale left-rail comment) |
 | T11 r2 | r1 fold verify | PROCEED | none |
 | PR #33 r1 | full PR diff (post-push DRAFT) | PROCEED-WITH-AMENDMENT | F1 MEDIUM (heading row + center pane spacing drift from DESIGN.md `## Dashboard Workspace Pattern > Pane Geometry`: `p-6` → `px-lg py-md`, `h-12` → `h-md`; test tightened) + F2 LOW (drilldown caption title parity per DESIGN.md line 362) + F3 LOW (sector avatar overflow guard via `sectorAvatarText` helper, parity with sibling panels) |
+| PR #33 r2 | r1 fold verify + re-scan | PROCEED-WITH-AMENDMENT | F1' LOW (stale `h-12`/48px prose in DashboardPage.tsx topology comment + body draft Scope bullet — code was folded but documentation strings still advertised the old geometry) |
+| PR #33 r3 | r2 fold verify + re-scan | PROCEED-WITH-AMENDMENT | F1'' LOW (router.test.tsx asserts translated EN heading `Threat Overview` but did not bootstrap or pin i18n; passed by happy-dom navigator.language defaulting to en-US + transitive i18n module cache. Folded by adding side-effect import + explicit `i18n.changeLanguage('en')` in beforeEach.) |
 
-9 Codex rounds total (8 per-step + 1 PR-level). Transcripts under `.codex-review/dashboard-workspace-retrofit-*.transcript.log` (gitignored).
+11 Codex rounds total (8 per-step + 3 PR-level). Transcripts under `.codex-review/dashboard-workspace-retrofit-*.transcript.log` (gitignored).
 
 ## Plan reference
 
