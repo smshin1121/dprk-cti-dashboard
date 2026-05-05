@@ -11,7 +11,7 @@ Implements the Dashboard Workspace Pattern locked by [PR #32](https://github.com
 - **Actor Network slot** (RESERVED / FUTURE) inserted between WorldMap+AttackHeatmap row and LocationsRanked. Card chrome + title + literal `Planned · no data yet` empty state. NO svg / canvas / synthetic nodes-edges / skeleton chart / sparkline (DESIGN.md G5 #2 + actor-network-graph vocabulary entry — production text-only constraint enforced by 7 negative assertions in T6 RED).
 - **DashboardLeftRail**: Sections (Overview / Geo / Motivation / Sectors / Trends / Reports — wired to `id="..."` scroll targets on the matching center bands) + Pinned actors (APT37 / Lazarus, static) + Quick filter (3 unchecked checkboxes, static).
 - **DashboardRightRail**: alerts-rail-section + recent-activity-list + drilldown-empty-state. All three reserved-slot text-only (no mock rows).
-- **AlertsRailSection** — in-place rewrite of the former AlertsDrawer (T0 inventory confirmed 0 non-dashboard production consumers). Floating drawer pattern removed. Static title + Phase 4 pill + single empty-state line; `data-phase-status="static-shell"` preserved.
+- **AlertsRailSection** — new file `AlertsRailSection.tsx` replaces the former `AlertsDrawer.tsx` (DELETE + ADD in the diff after T0 inventory confirmed 0 non-dashboard production consumers). Floating drawer pattern removed; the new filename matches its new role inside the right rail. Static title + Phase 4 pill + single empty-state line; `data-phase-status="static-shell"` preserved.
 - **4 ranked panels migrated** to `RankedRowWithShareBar`: LocationsRanked / SectorBreakdown / ContributorsList / GroupsMiniList. Per-panel testid prefix preserved on the `<li>` wrapper; bar-fill testid passed via the new `barFillTestId` prop (backward-compat — T2 isolated component test continues to assert against the default `ranked-row-bar-fill`). ContributorsList + GroupsMiniList gain a share-bar (DESIGN.md mandates it for all 4 panels). GroupsMiniList preserves its `<Link to="/actors/:id">` wrap.
 - **DashboardHero deleted** + summarySharedCache subscriber count 7 → 6.
 - **9 i18n keys** added to both `en.json` and `ko.json` per L11; init-test extended with presence + cross-locale parity assertions (catches both presence regressions AND copy-paste bugs).
@@ -55,7 +55,7 @@ Tracked as follow-up — PR 2.5: "Dashboard KPI compact + density redesign". Sco
 Per plan §8 default policy (no input by depending task → default applies):
 - **Q1** Actor Network slot rendering → text-only `Planned · no data yet` empty state (no feature-flag infrastructure needed).
 - **Q3** Drilldown empty state → inline JSX inside DashboardRightRail.
-- **Q4** AlertsDrawer rename → in-place rewrite (T0 confirmed 0 non-dashboard consumers).
+- **Q4** AlertsDrawer disposition → DELETE + ADD as `AlertsRailSection.tsx` (T0 confirmed 0 non-dashboard consumers; new filename matches new role).
 - **Q5** Mobile collapse mechanism → `flex-col lg:flex-row` stack-collapse (cheapest, satisfies L6).
 - **Q6** i18n init-test → existing init.test.ts extended with the 9-key presence + parity block.
 
@@ -102,8 +102,9 @@ All 15 plan §7 acceptance criteria green (with §0.1 amendment to AC #5 noted a
 | PR #33 r3 | r2 fold verify + re-scan | PROCEED-WITH-AMENDMENT | F1'' LOW (router.test.tsx asserts translated EN heading `Threat Overview` but did not bootstrap or pin i18n; passed by happy-dom navigator.language defaulting to en-US + transitive i18n module cache. Folded by adding side-effect import + explicit `i18n.changeLanguage('en')` in beforeEach.) |
 | PR #33 r4 | r3 fold verify + re-scan | PROCEED-WITH-AMENDMENT | F1''' LOW (same i18n pin gap as r3 in 2 sibling suites — DashboardPage.workspace.test.tsx + DashboardRightRail.test.tsx. Folded with the same pattern.) |
 | PR #33 r5 | r4 fold verify + re-scan | PROCEED-WITH-AMENDMENT | F1'''' LOW (same i18n pin gap in PeriodReadout.test.tsx — `/period/i` asserts EN translation of `dashboard.period.label`. Folded with the same pattern.) |
+| PR #33 r6 | r5 fold verify + re-scan | PROCEED-WITH-AMENDMENT | F2 LOW (prose drift on AlertsDrawer disposition: body and DashboardRightRail.test.tsx docstring described it as `in-place rewrite`, but the diff DELETES `AlertsDrawer.tsx` and ADDS `AlertsRailSection.tsx`. Wording corrected to accurately describe the rename/replace.) |
 
-13 Codex rounds total (8 per-step + 5 PR-level). Transcripts under `.codex-review/dashboard-workspace-retrofit-*.transcript.log` (gitignored).
+14 Codex rounds total (8 per-step + 6 PR-level). Transcripts under `.codex-review/dashboard-workspace-retrofit-*.transcript.log` (gitignored).
 
 ## Plan reference
 

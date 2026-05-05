@@ -10,10 +10,12 @@
  *   tuples. Title + Phase-4 pill + single empty-state line each.
  *   drilldown copy = exactly "Phase 4 — drilldown not wired yet".
  *
- * The right rail consumes a converted AlertsRailSection (T7 — converted
- * from AlertsDrawer in-place per Codex F7 fold; no extracted file
- * because AlertsDrawer has 0 non-dashboard production consumers per
- * Codex Q7).
+ * The right rail consumes AlertsRailSection. T7 replaced the former
+ * `AlertsDrawer.tsx` with a new `AlertsRailSection.tsx` file (DELETE
+ * + ADD in the diff, not an edit-in-place) after T0 inventory
+ * confirmed AlertsDrawer had 0 non-dashboard production consumers
+ * (Codex Q7). No shared module remained worth preserving in-place;
+ * the new filename matches its new role inside the right rail.
  *
  * RED phase: DashboardRightRail.tsx does not exist yet. T7 GREEN.
  */
