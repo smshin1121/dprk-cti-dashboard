@@ -11,7 +11,7 @@
  *   - DashboardRightRail  (320px) — alerts-rail + recent-activity + drilldown
  *
  * Center widget topology preserved (one new card slot added):
- *   [HEADING] dashboard-heading-row + PeriodReadout right-aligned (h-12)
+ *   [HEADING] dashboard-heading-row + PeriodReadout right-aligned (h-md, {spacing.md} = 32px per DESIGN.md ## Dashboard Workspace Pattern > Pane Geometry)
  *   [B]       KPIStrip                                    (full width)
  *   [C]       WorldMap + AttackHeatmap                    (split row)
  *   [SLOT]    actor-network-graph (RESERVED / FUTURE)     (full-width text-only empty state)
