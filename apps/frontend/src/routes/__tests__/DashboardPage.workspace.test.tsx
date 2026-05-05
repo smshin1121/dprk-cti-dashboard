@@ -25,6 +25,7 @@
 
 import { QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor, within } from '@testing-library/react'
+import i18n from 'i18next'
 import type { ReactNode } from 'react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -163,13 +164,20 @@ function makeWrapper() {
   return { Wrapper, client }
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   useFilterStore.setState({
     dateFrom: null,
     dateTo: null,
     groupIds: [],
     tlpLevels: [],
   })
+  // Pin locale to EN so regexes that assert translated copy
+  // (e.g. /planned.*no data yet/i for the actor-network slot) resolve
+  // deterministically. DEFAULT_LOCALE is 'ko'; without an explicit
+  // pin, behavior depends on happy-dom's navigator.language default
+  // and stale state from a prior test in the same vitest run.
+  // Codex PR #33 r4 fold (companion to r3 router.test.tsx fix).
+  await i18n.changeLanguage('en')
 })
 
 afterEach(() => vi.restoreAllMocks())

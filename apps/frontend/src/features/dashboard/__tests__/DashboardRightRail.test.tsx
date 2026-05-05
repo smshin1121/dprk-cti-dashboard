@@ -19,7 +19,8 @@
  */
 
 import { render, screen, within } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import i18n from 'i18next'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 // Side-effect import: AlertsRailSection (mounted via DashboardRightRail)
 // reuses the existing `dashboard.alerts.title` key via useTranslation,
@@ -31,6 +32,17 @@ import '../../../i18n'
 import { DashboardRightRail } from '../DashboardRightRail'
 
 describe('DashboardRightRail', () => {
+  beforeEach(async () => {
+    // Pin locale to EN so the regexes below that assert translated
+    // copy (`no live alerts wired yet`, `no activity wired yet`,
+    // `drilldown.*not wired yet`) resolve deterministically.
+    // DEFAULT_LOCALE is 'ko'; without this explicit pin, the suite
+    // relies on happy-dom's navigator.language default + transitive
+    // i18n module state, which is fragile across vitest orderings.
+    // Codex PR #33 r4 fold (companion to r3 router.test.tsx fix).
+    await i18n.changeLanguage('en')
+  })
+
   it('renders the rail container with testid', () => {
     render(<DashboardRightRail />)
     expect(screen.getByTestId('dashboard-right-rail')).toBeInTheDocument()
