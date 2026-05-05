@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createQueryClient } from '../../../lib/queryClient'
 import { useFilterStore } from '../../../stores/filters'
-import { SectorBreakdown } from '../SectorBreakdown'
+import { SectorBreakdown, sectorAvatarText } from '../SectorBreakdown'
 
 const SUMMARY_BODY = {
   total_reports: 10,
@@ -115,6 +115,20 @@ describe('SectorBreakdown — 4 render states', () => {
     expect(govBar).toHaveStyle({ width: '100%' })
     expect(finBar.style.width).toMatch(/^73\./)
     expect(eneBar.style.width).toMatch(/^28\./)
+  })
+})
+
+describe('sectorAvatarText — Codex PR #33 r1 F3 overflow guard', () => {
+  it('truncates long sector codes to 2 uppercase chars (BE column allows up to 32)', () => {
+    // Realistic short codes pass through (lowercased BE → uppercased).
+    expect(sectorAvatarText('GOV')).toBe('GO')
+    expect(sectorAvatarText('FIN')).toBe('FI')
+    // Long BE values (e.g. raw sector names, mistaken full codes) get
+    // bounded so the 32×32 avatar box does not overflow.
+    expect(sectorAvatarText('finance')).toBe('FI')
+    expect(sectorAvatarText('healthcare-pharmaceutical')).toBe('HE')
+    // Edge: empty input does not throw.
+    expect(sectorAvatarText('')).toBe('')
   })
 })
 

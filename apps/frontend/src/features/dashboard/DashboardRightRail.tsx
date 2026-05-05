@@ -28,8 +28,16 @@
  * i18n: AlertsRailSection owns its own keys; the local recent +
  * drilldown empty-state lines wire `dashboard.recent.emptyState` /
  * `dashboard.drilldown.emptyState` per L11 (T11). The "Recent
- * activity" title is rendered as an English literal — it is not in
- * the locked L11 9-key list and gets a key in a follow-up sweep.
+ * activity" + "Drilldown" titles are rendered as English literals —
+ * they are not in the locked L11 9-key list and get keys in a
+ * follow-up sweep.
+ *
+ * Caption-title parity (Codex PR #33 r1 F2): per DESIGN.md
+ * `## Dashboard Workspace Pattern` — `Both recent-activity-list and
+ * drilldown-empty-state reuse the caption-uppercase title +
+ * empty-state line pattern from alerts-rail-section`. Drilldown
+ * mounts a `<h3>` caption + aria-labelledby wiring on the section so
+ * all three right-rail blocks share anatomy.
  */
 
 import { useTranslation } from 'react-i18next'
@@ -67,8 +75,16 @@ export function DashboardRightRail(): JSX.Element {
 
       <section
         data-testid="drilldown-empty-state"
+        aria-labelledby="drilldown-heading"
         className="flex flex-col gap-2 px-4 py-3"
       >
+        <h3
+          id="drilldown-heading"
+          data-testid="drilldown-title"
+          className="text-[10px] font-cta uppercase tracking-caption text-ink-subtle"
+        >
+          Drilldown
+        </h3>
         <p className="text-xs text-ink-muted">
           {t('dashboard.drilldown.emptyState')}
         </p>

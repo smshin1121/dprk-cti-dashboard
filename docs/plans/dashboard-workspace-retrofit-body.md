@@ -75,7 +75,9 @@ Per plan §8 default policy (no input by depending task → default applies):
 | `GroupsMiniList.test.tsx` (post-migration) | 6 | ✓ |
 | `summarySharedCache.test.tsx` (7→6) | 1 | ✓ |
 | `i18n/init.test.ts` (9-key contract + parity) | 6 | ✓ |
-| **Full FE suite** | **672** | **✓ all GREEN** |
+| `DashboardRightRail.test.tsx` drilldown caption (PR #33 r1 F2) | +1 | ✓ |
+| `SectorBreakdown.test.tsx` avatar overflow guard (PR #33 r1 F3) | +1 | ✓ |
+| **Full FE suite** | **674** | **✓ all GREEN** |
 
 `pnpm --filter @dprk-cti/frontend run build` exits 0.
 
@@ -95,8 +97,9 @@ All 15 plan §7 acceptance criteria green (with §0.1 amendment to AC #5 noted a
 | T10 r1 | hero deletion + summarySharedCache 7→6 | PROCEED | LOW: orphaned hero i18n keys (carried to T11) |
 | T11 r1 | i18n keys + wire-up | PROCEED-WITH-AMENDMENT | F1 LOW (phase4Pill parity invariant) + F2 LOW (stale left-rail comment) |
 | T11 r2 | r1 fold verify | PROCEED | none |
+| PR #33 r1 | full PR diff (post-push DRAFT) | PROCEED-WITH-AMENDMENT | F1 MEDIUM (heading row + center pane spacing drift from DESIGN.md `## Dashboard Workspace Pattern > Pane Geometry`: `p-6` → `px-lg py-md`, `h-12` → `h-md`; test tightened) + F2 LOW (drilldown caption title parity per DESIGN.md line 362) + F3 LOW (sector avatar overflow guard via `sectorAvatarText` helper, parity with sibling panels) |
 
-8 Codex rounds total. Transcripts under `.codex-review/dashboard-workspace-retrofit-*.transcript.log` (gitignored).
+9 Codex rounds total (8 per-step + 1 PR-level). Transcripts under `.codex-review/dashboard-workspace-retrofit-*.transcript.log` (gitignored).
 
 ## Plan reference
 

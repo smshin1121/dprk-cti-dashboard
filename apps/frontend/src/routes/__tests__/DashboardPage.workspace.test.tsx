@@ -189,7 +189,7 @@ describe('DashboardPage workspace retrofit (PR 2)', () => {
     expect(within(headingRow).getByTestId('period-readout')).toBeInTheDocument()
   })
 
-  it('heading row asserts {spacing.md} height contract via Tailwind utility (h-md or h-12 per spacing scale)', async () => {
+  it('heading row asserts {spacing.md} height contract per DESIGN.md ## Dashboard Workspace Pattern > Pane Geometry', async () => {
     mockAllEndpoints()
     const { Wrapper } = makeWrapper()
     render(<DashboardPage />, { wrapper: Wrapper })
@@ -197,13 +197,13 @@ describe('DashboardPage workspace retrofit (PR 2)', () => {
     const headingRow = await waitFor(() =>
       screen.getByTestId('dashboard-heading-row'),
     )
-    // {spacing.md} = 16-24px in the project's scale; the heading row
-    // composes spacing.md as its row-gap or min-height target.
-    // Acceptable utility patterns: h-md / py-md / min-h-md / h-12
-    // (3rem ≈ 48px is the dashboard heading-row target).
-    expect(headingRow.className).toMatch(
-      /\bh-(md|12|14)\b|\bmin-h-(md|12|14)\b|\bpy-md\b/,
-    )
+    // DESIGN.md line 346 locks the heading row at `{spacing.md}` tall.
+    // Tailwind config: spacing.md = 32px (apps/frontend/tailwind.config.*).
+    // Canonical utility is `h-md`. The previous regex permitted `h-12`
+    // (48px) which silently allowed the row to drift to 1.5x the
+    // contracted height — Codex PR #33 r1 F1 caught the drift.
+    expect(headingRow.className).toMatch(/\bh-md\b/)
+    expect(headingRow.className).not.toMatch(/\bh-(12|14)\b/)
   })
 
   it('DashboardHero is ABSENT — deprecated by PR #32 contract', async () => {

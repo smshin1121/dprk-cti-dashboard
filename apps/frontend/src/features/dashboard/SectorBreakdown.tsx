@@ -30,6 +30,20 @@ import { RankedRowWithShareBar } from '../../layout/RankedRowWithShareBar'
 import { cn } from '../../lib/utils'
 import { useDashboardSummary } from './useDashboardSummary'
 
+/**
+ * Bound the avatar copy so longer sector codes (BE column allows up
+ * to 32 chars per `services/api/src/api/tables.py:296`) cannot
+ * overflow the 32×32 avatar box. Codex PR #33 r1 F3.
+ *
+ * RankedRowWithShareBar's contract documents "Two characters works
+ * best"; sibling panels (LocationsRanked / ContributorsList /
+ * GroupsMiniList) all derive 2-char avatar copy. This helper brings
+ * SectorBreakdown into parity.
+ */
+export function sectorAvatarText(code: string): string {
+  return code.slice(0, 2).toUpperCase()
+}
+
 export function SectorBreakdown(): JSX.Element {
   const { t } = useTranslation()
   const { data, isLoading, isError, refetch } = useDashboardSummary()
@@ -115,7 +129,7 @@ export function SectorBreakdown(): JSX.Element {
               data-count={sector.count}
             >
               <RankedRowWithShareBar
-                avatarText={sector.sector_code}
+                avatarText={sectorAvatarText(sector.sector_code)}
                 name={sector.sector_code}
                 value={String(sector.count)}
                 shareBarPct={ratio}

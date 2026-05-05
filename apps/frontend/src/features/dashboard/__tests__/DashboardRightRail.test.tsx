@@ -82,6 +82,23 @@ describe('DashboardRightRail', () => {
     expect(drilldown).not.toHaveTextContent(/select an item/i)
   })
 
+  it('drilldown-empty-state mounts a caption-uppercase title (DESIGN.md ## Dashboard Workspace Pattern parity with recent-activity)', () => {
+    render(<DashboardRightRail />)
+    const drilldown = screen.getByTestId('drilldown-empty-state')
+    // Codex PR #33 r1 F2: drilldown must reuse the caption-uppercase
+    // title + empty-state line pattern from alerts-rail-section, same
+    // as recent-activity-list. The section labels itself via aria-
+    // labelledby so screen readers announce the block heading.
+    expect(drilldown).toHaveAttribute('aria-labelledby', 'drilldown-heading')
+    const title = within(drilldown).getByTestId('drilldown-title')
+    expect(title).toHaveAttribute('id', 'drilldown-heading')
+    expect(title.tagName).toBe('H3')
+    expect(title).toHaveTextContent(/drilldown/i)
+    // caption-uppercase typography token: tracking-caption + uppercase.
+    expect(title.className).toMatch(/uppercase/)
+    expect(title.className).toMatch(/tracking-caption/)
+  })
+
   it('does NOT fire any /api/* fetches at mount (right rail is purely presentational)', () => {
     const fetchSpy = vi.spyOn(global, 'fetch').mockImplementation(
       () => Promise.resolve(new Response('{}', { status: 200 })),

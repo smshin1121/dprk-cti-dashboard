@@ -80,10 +80,10 @@ export function DashboardPage(): JSX.Element {
     >
       <DashboardLeftRail />
 
-      <div className="flex flex-1 flex-col gap-6 p-6">
+      <div className="flex flex-1 flex-col gap-6 px-lg py-md">
         <header
           data-testid="dashboard-heading-row"
-          className="flex h-12 items-center justify-between gap-4"
+          className="flex h-md items-center justify-between gap-4"
         >
           <h1
             id="dashboard-heading"
