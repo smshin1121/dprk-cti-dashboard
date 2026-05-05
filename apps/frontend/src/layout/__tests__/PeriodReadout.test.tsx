@@ -17,8 +17,16 @@
  */
 
 import { render, screen } from '@testing-library/react'
+import i18n from 'i18next'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+// Side-effect bootstrap (Codex PR #33 r5 F1): PeriodReadout consumes
+// `dashboard.period.label` via useTranslation. Without an explicit
+// i18n init + language pin the /period/i assertion below could match
+// the raw key (no init), pass via happy-dom's en-US default
+// (transitive cache from another suite), or fail when KO leaks in
+// from a prior test. Mirror the r3/r4 fix.
+import '../../i18n'
 import { useFilterStore } from '../../stores/filters'
 import { PeriodReadout } from '../PeriodReadout'
 
@@ -32,7 +40,10 @@ function resetStore(): void {
 }
 
 describe('PeriodReadout', () => {
-  beforeEach(resetStore)
+  beforeEach(async () => {
+    resetStore()
+    await i18n.changeLanguage('en')
+  })
 
   it('renders the period testid and label', () => {
     render(<PeriodReadout />)
