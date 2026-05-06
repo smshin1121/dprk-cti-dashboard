@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor } from '@testing-library/react'
+import i18n from 'i18next'
 import type { ReactNode } from 'react'
 import {
   RouterProvider,
@@ -7,6 +8,13 @@ import {
 } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+// Side-effect bootstrap (Codex PR #33 r3 F1''): the /dashboard route
+// assertion below uses the translated `Threat Overview` heading, so
+// i18n must be initialized in this isolated test file. Without this
+// import, behavior depends on whether another module previously
+// pulled i18n into the cache (transitive) and on happy-dom's
+// navigator.language default — fragile across test orderings.
+import '../../i18n'
 import { createQueryClient } from '../../lib/queryClient'
 import { useAuthStore } from '../../stores/auth'
 import { buildRouter } from '../router'
@@ -58,12 +66,20 @@ function mockAuthed() {
 }
 
 describe('Router tree — protected route mounts', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     useAuthStore.setState({ postLoginRedirect: null })
+    // Pin locale to EN so the /dashboard heading regex below resolves
+    // deterministically regardless of test order or environment-
+    // detected navigator.language. Codex PR #33 r3 F1'' fold.
+    await i18n.changeLanguage('en')
   })
 
   it.each([
-    ['/dashboard', 'dashboard-page', /Dashboard/],
+    // PR 2 T9 relayout: dashboard-heading-row's <h1> reads "Threat
+    // Overview" in EN locale (per plan L11 / DESIGN.md ## Dashboard
+    // Workspace Pattern). The old sr-only "Dashboard" heading was
+    // removed. Locale pinned to EN in beforeEach above.
+    ['/dashboard', 'dashboard-page', /Threat Overview/i],
     ['/actors', 'actors-page', /Actors/],
     ['/reports', 'reports-page', /Reports/],
     ['/incidents', 'incidents-page', /Incidents/],

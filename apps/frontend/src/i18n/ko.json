@@ -98,19 +98,26 @@
       "empty": "현재 필터에 해당하는 보고서가 없습니다."
     },
     "alerts": {
-      "trigger": "알림",
       "title": "알림",
-      "empty": "현재 알림이 없습니다.",
-      "phaseNote": "Phase 4 예정 — 실시간 알림 연동 후 제공됩니다.",
-      "close": "닫기"
+      "phase4Pill": "Phase 4",
+      "emptyState": "Phase 4 — 실시간 알림 미연동"
     },
-    "hero": {
-      "label": "현재 위협 노출",
-      "subheading": "DPRK CTI — 현재 위협 표면",
-      "ctaPrimary": "사건 둘러보기",
-      "ctaOutline": "보고서 둘러보기",
-      "loading": "사건 수 불러오는 중",
-      "populatedAria": "총 사건 수 {{count}}건"
+    "heading": {
+      "threatOverview": "위협 개요"
+    },
+    "period": {
+      "label": "기간",
+      "hint": "필터 바에서 변경"
+    },
+    "recent": {
+      "emptyState": "Phase 4 — 최근 활동 미연동"
+    },
+    "drilldown": {
+      "emptyState": "Phase 4 — 상세보기 미연동"
+    },
+    "actorNetwork": {
+      "title": "행위자 네트워크 · 공동 발생",
+      "plannedEmptyState": "예정 · 데이터 없음"
     }
   }
 }

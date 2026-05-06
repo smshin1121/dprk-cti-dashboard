@@ -11,8 +11,10 @@
  * PR #23 §6.C C9 + C6 add: SectorBreakdown + ContributorsList (5th
  * + 6th panels — both consume the new top_sectors / top_sources
  * fields shipped in §6.A C2).
- * PR #27 Ferrari L4 (commit 8) adds: DashboardHero (7th panel — reads
- * total_incidents for the hero number-display callout).
+ * PR 2 T10 removes: DashboardHero (was 7th panel pre-PR #32; the
+ * dashboard workspace amendment deprecated the editorial hero
+ * pattern, so the component + this test entry are gone). Subscriber
+ * count is back to 6.
  *
  * If a future edit switches any of these components to a bespoke
  * hook (or forgets to route through `useDashboardSummary`), this
@@ -29,7 +31,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createQueryClient } from '../../../lib/queryClient'
 import { useFilterStore } from '../../../stores/filters'
 import { ContributorsList } from '../ContributorsList'
-import { DashboardHero } from '../DashboardHero'
 import { GroupsMiniList } from '../GroupsMiniList'
 import { KPIStrip } from '../KPIStrip'
 import { MotivationDonut } from '../MotivationDonut'
@@ -76,7 +77,7 @@ afterEach(() => {
 })
 
 describe('dashboard summary shared cache', () => {
-  it('mounting all seven summary subscribers fires ONE /dashboard/summary request', async () => {
+  it('mounting all six summary subscribers fires ONE /dashboard/summary request', async () => {
     const spy = vi.spyOn(global, 'fetch').mockImplementation(
       () => Promise.resolve(new Response(JSON.stringify(SUMMARY_BODY), { status: 200 })),
     )
@@ -84,7 +85,6 @@ describe('dashboard summary shared cache', () => {
 
     render(
       <>
-        <DashboardHero />
         <KPIStrip />
         <MotivationDonut />
         <YearBar />
@@ -99,7 +99,7 @@ describe('dashboard summary shared cache', () => {
     const summaryCalls = spy.mock.calls.filter(([url]) =>
       String(url).includes('/api/v1/dashboard/summary'),
     )
-    // Seven subscribers, one shared cache key → ONE fetch. If this
+    // Six subscribers, one shared cache key → ONE fetch. If this
     // climbs to 2+, one of the components bypassed
     // useDashboardSummary.
     expect(summaryCalls).toHaveLength(1)

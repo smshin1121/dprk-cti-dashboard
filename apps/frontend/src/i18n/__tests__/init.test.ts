@@ -50,4 +50,52 @@ describe('i18n bootstrap', () => {
       expect(ko).not.toBe(en)
     }
   })
+
+  it('translates every PR 2 dashboard workspace key in both locales (L11 9-key contract)', () => {
+    // Per `docs/plans/dashboard-workspace-retrofit.md` L11 + Codex F5
+    // (round-1) — eslint-plugin-i18next is NOT configured in this
+    // repo, so this presence assertion is the contract that catches a
+    // future refactor accidentally dropping or renaming any of the 9
+    // keys the new PR 2 dashboard workspace uses.
+    //
+    // Cross-locale parity: most keys MUST resolve to visually distinct
+    // copy in ko vs en (a copy-paste bug that ships ko = en text would
+    // silently regress Korean readers). The single exception is
+    // `dashboard.alerts.phase4Pill` — "Phase 4" is a project version
+    // identifier (the empty-state lines also keep the literal "Phase 4"
+    // prefix untranslated, e.g. "Phase 4 — 실시간 알림 미연동"), so
+    // the pill is intentionally identical in both locales.
+    const PHASE_INVARIANT_KEYS = new Set([
+      'dashboard.alerts.phase4Pill',
+    ])
+    const keys = [
+      'dashboard.heading.threatOverview',
+      'dashboard.period.label',
+      'dashboard.period.hint',
+      'dashboard.alerts.phase4Pill',
+      'dashboard.alerts.emptyState',
+      'dashboard.recent.emptyState',
+      'dashboard.drilldown.emptyState',
+      'dashboard.actorNetwork.title',
+      'dashboard.actorNetwork.plannedEmptyState',
+    ] as const
+    for (const key of keys) {
+      const ko = i18n.getResource('ko', 'translation', key)
+      const en = i18n.getResource('en', 'translation', key)
+      expect(typeof ko, `ko missing ${key}`).toBe('string')
+      expect(ko.length, `ko empty ${key}`).toBeGreaterThan(0)
+      expect(typeof en, `en missing ${key}`).toBe('string')
+      expect(en.length, `en empty ${key}`).toBeGreaterThan(0)
+      if (PHASE_INVARIANT_KEYS.has(key)) {
+        // The invariant: pill copy is "Phase 4" in BOTH locales.
+        expect(ko, `${key} should be "Phase 4" invariant in ko`).toBe('Phase 4')
+        expect(en, `${key} should be "Phase 4" invariant in en`).toBe('Phase 4')
+      } else {
+        expect(
+          ko,
+          `${key} should differ between ko and en (copy-paste guard)`,
+        ).not.toBe(en)
+      }
+    }
+  })
 })

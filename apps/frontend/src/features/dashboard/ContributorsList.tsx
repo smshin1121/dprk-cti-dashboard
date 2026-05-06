@@ -25,8 +25,19 @@
 
 import { useTranslation } from 'react-i18next'
 
+import { RankedRowWithShareBar } from '../../layout/RankedRowWithShareBar'
 import { cn } from '../../lib/utils'
 import { useDashboardSummary } from './useDashboardSummary'
+
+function avatarInitials(name: string): string {
+  // Two-char initials from a contributor / source name. Falls back to
+  // first 2 chars when the name has only one word.
+  const parts = name.trim().split(/\s+/)
+  if (parts.length >= 2) {
+    return (parts[0][0] + parts[1][0]).toUpperCase()
+  }
+  return name.slice(0, 2).toUpperCase()
+}
 
 export function ContributorsList(): JSX.Element {
   const { t } = useTranslation()
@@ -67,6 +78,11 @@ export function ContributorsList(): JSX.Element {
   }
 
   const sources = data?.top_sources ?? []
+  // Head row's report_count is the max (BE sorts top_sources by
+  // report_count DESC); coerce to 1 if the head somehow reports 0
+  // to avoid a divide-by-zero.
+  const maxReportCount =
+    sources.length > 0 ? Math.max(sources[0].report_count, 1) : 1
 
   if (sources.length === 0) {
     return (
@@ -96,43 +112,35 @@ export function ContributorsList(): JSX.Element {
       >
         {t('dashboard.contributorsList.title')}
       </h3>
-      <ol
-        data-testid="contributors-list-items"
-        className="divide-y divide-border-card"
-      >
-        {sources.map((source) => (
-          <li
-            key={source.source_id}
-            data-testid={`contributors-list-item-${source.source_id}`}
-            data-source-id={source.source_id}
-            data-source-name={source.source_name}
-            data-report-count={source.report_count}
-            className="flex items-center justify-between gap-3 px-1 py-2 text-sm"
-          >
-            {/* TODO(C13): wrap in <Link to="/reports"> after C12
-                adds `sources` to filterStore + the row-click handler
-                pre-fills the source filter. Plain text for now keeps
-                the parity-visible widget shippable without coupling
-                to FilterBar work. */}
-            <div className="min-w-0 flex-1">
-              <span className="block truncate font-medium text-ink">
-                {source.source_name}
-              </span>
-              {source.latest_report_date != null && (
-                <span className="text-xs text-ink-muted">
-                  {t('dashboard.contributorsList.latestPrefix')}{' '}
-                  {source.latest_report_date}
-                </span>
-              )}
-            </div>
-            <span className="shrink-0 rounded-none bg-app px-2 py-0.5 text-xs font-mono text-ink-muted">
-              {source.report_count}{' '}
-              <span className="text-ink-subtle">
-                {t('dashboard.contributorsList.reportsSuffix')}
-              </span>
-            </span>
-          </li>
-        ))}
+      <ol data-testid="contributors-list-items" className="flex flex-col">
+        {sources.map((source) => {
+          const ratio = (source.report_count / maxReportCount) * 100
+          return (
+            <li
+              key={source.source_id}
+              data-testid={`contributors-list-item-${source.source_id}`}
+              data-source-id={source.source_id}
+              data-source-name={source.source_name}
+              data-report-count={source.report_count}
+            >
+              {/* TODO(C13): wrap in <Link to="/reports"> after C12
+                  adds `sources` to filterStore + the row-click handler
+                  pre-fills the source filter. */}
+              <RankedRowWithShareBar
+                avatarText={avatarInitials(source.source_name)}
+                name={source.source_name}
+                sub={
+                  source.latest_report_date != null
+                    ? `${t('dashboard.contributorsList.latestPrefix')} ${source.latest_report_date}`
+                    : undefined
+                }
+                value={`${source.report_count} ${t('dashboard.contributorsList.reportsSuffix')}`}
+                shareBarPct={ratio}
+                barFillTestId={`contributors-list-bar-${source.source_id}`}
+              />
+            </li>
+          )
+        })}
       </ol>
     </section>
   )

@@ -26,9 +26,23 @@
 
 import { useTranslation } from 'react-i18next'
 
+import { RankedRowWithShareBar } from '../../layout/RankedRowWithShareBar'
 import { cn } from '../../lib/utils'
 import { useDashboardSummary } from './useDashboardSummary'
-import { chartSeriesColor } from './_palette'
+
+/**
+ * Bound the avatar copy so longer sector codes (BE column allows up
+ * to 32 chars per `services/api/src/api/tables.py:296`) cannot
+ * overflow the 32×32 avatar box. Codex PR #33 r1 F3.
+ *
+ * RankedRowWithShareBar's contract documents "Two characters works
+ * best"; sibling panels (LocationsRanked / ContributorsList /
+ * GroupsMiniList) all derive 2-char avatar copy. This helper brings
+ * SectorBreakdown into parity.
+ */
+export function sectorAvatarText(code: string): string {
+  return code.slice(0, 2).toUpperCase()
+}
 
 export function SectorBreakdown(): JSX.Element {
   const { t } = useTranslation()
@@ -104,10 +118,7 @@ export function SectorBreakdown(): JSX.Element {
       >
         {t('dashboard.sectorBreakdown.title')}
       </h3>
-      <ol
-        data-testid="sector-breakdown-items"
-        className="flex flex-col gap-2"
-      >
+      <ol data-testid="sector-breakdown-items" className="flex flex-col">
         {sectors.map((sector) => {
           const ratio = (sector.count / maxCount) * 100
           return (
@@ -116,28 +127,14 @@ export function SectorBreakdown(): JSX.Element {
               data-testid={`sector-breakdown-item-${sector.sector_code}`}
               data-sector-code={sector.sector_code}
               data-count={sector.count}
-              className="text-sm"
             >
-              <div className="flex items-center justify-between gap-3">
-                <span className="font-medium text-ink">
-                  {sector.sector_code}
-                </span>
-                <span className="font-mono text-xs text-ink-muted">
-                  {sector.count}
-                </span>
-              </div>
-              <div className="mt-1 h-1.5 w-full overflow-hidden rounded-none bg-app">
-                <div
-                  data-testid={`sector-breakdown-bar-${sector.sector_code}`}
-                  role="presentation"
-                  aria-hidden="true"
-                  className="h-full"
-                  style={{
-                    width: `${ratio}%`,
-                    backgroundColor: chartSeriesColor(0),
-                  }}
-                />
-              </div>
+              <RankedRowWithShareBar
+                avatarText={sectorAvatarText(sector.sector_code)}
+                name={sector.sector_code}
+                value={String(sector.count)}
+                shareBarPct={ratio}
+                barFillTestId={`sector-breakdown-bar-${sector.sector_code}`}
+              />
             </li>
           )
         })}
