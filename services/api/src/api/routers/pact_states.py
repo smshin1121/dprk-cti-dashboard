@@ -692,8 +692,13 @@ async def _ensure_actor_network_fixture(session: AsyncSession) -> None:
         canonical ``pact-fixture-source`` row so the actor-network
         state cannot cross-contaminate dashboard's ``top_sources``).
       - 3 groups: ``actor-network-fixture-G1/2/3`` (mitre
-        ``G9001/G9002/G9003`` — the ``G9xxx`` MITRE range is unused in
-        real ATT&CK, eliminating production-data collisions).
+        ``G9101/G9102/G9103`` — the ``G9xxx`` MITRE range is unused in
+        real ATT&CK, eliminating production-data collisions; the
+        ``G9101+`` sub-range avoids reusing ``G9003`` which is
+        already taken by ``_ensure_actor_detail_fixture``. Note:
+        ``groups.mitre_intrusion_set_id`` is NOT a unique column, so
+        a sibling reusing the same value would not throw a DB error,
+        but distinct values keep the fixture self-describing).
       - 3 codenames: ``actor-network-fixture-CN1/2/3`` (1:1 with
         ``G1/2/3``).
       - 3 techniques: ``T9001/T9002/T9003`` (``T9xxx`` is unused in
@@ -739,14 +744,16 @@ async def _ensure_actor_network_fixture(session: AsyncSession) -> None:
     )
 
     # 2. Three groups (parents for codenames). Distinct mitre IDs in
-    #    the unused G9xxx range so sibling fixtures' G0032 (Lazarus)
-    #    and G9000+ filler IDs (_ensure_min_actors) cannot collide.
+    #    the unused G9xxx range. The G9101+ sub-range avoids reusing
+    #    G9003 from _ensure_actor_detail_fixture (mitre_intrusion_set_id
+    #    is not unique, so the collision would not raise a DB error,
+    #    but a distinct value keeps the fixture self-describing).
     group_ids: list[int] = []
     for idx in (1, 2, 3):
         gid = await _ensure_full_group(
             session,
             name=f"actor-network-fixture-G{idx}",
-            mitre_id=f"G9{idx:03d}",
+            mitre_id=f"G9{100 + idx:03d}",
             aka=[f"actor-network-aka-{idx}"],
             description=(
                 f"Pact fixture group {idx} for /analytics/actor_network"

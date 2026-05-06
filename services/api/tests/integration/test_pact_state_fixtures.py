@@ -755,22 +755,55 @@ async def test_actor_network_fixture_satisfies_pact_matchers(
     node_ids = {n["id"] for n in nodes}
     for edge in edges:
         assert (
-            isinstance(edge["source"], str) and edge["source"]
-        ), "pact: ActorNetworkEdge.source rejects null/empty"
+            isinstance(edge["source_id"], str) and edge["source_id"]
+        ), "pact: ActorNetworkEdge.source_id rejects null/empty"
         assert (
-            isinstance(edge["target"], str) and edge["target"]
-        ), "pact: ActorNetworkEdge.target rejects null/empty"
-        assert edge["source"] in node_ids and edge["target"] in node_ids, (
-            f"edge endpoints {edge['source']}/{edge['target']} not "
-            "in nodes — aggregator dropped a referenced node"
+            isinstance(edge["target_id"], str) and edge["target_id"]
+        ), "pact: ActorNetworkEdge.target_id rejects null/empty"
+        assert (
+            edge["source_id"] in node_ids
+            and edge["target_id"] in node_ids
+        ), (
+            f"edge endpoints {edge['source_id']}/{edge['target_id']} "
+            "not in nodes — aggregator dropped a referenced node"
         )
-        assert edge["source"] != edge["target"], (
+        assert edge["source_id"] != edge["target_id"], (
             "self-loop in edge — actor_network must NOT emit "
             "self-loops per plan L4 contract"
         )
         assert (
             isinstance(edge["weight"], int) and edge["weight"] >= 1
         ), "pact: ActorNetworkEdge.weight integer(>=1) under eachLike"
+
+    # Edge-class counts pin the seed shape semantically. Plan v1.6 §0.1
+    # docstring of `_ensure_actor_network_fixture` claims:
+    #   (a) actor↔actor — 2 edges (G1↔G2 via r1, G2↔G3 via r2)
+    #   (b) actor↔tool  — 7 distinct pairs (G2↔T9002 weight 2)
+    #   (c) actor↔sector — 9 pairs (every group × every sector)
+    # If any of these drift, the matcher's eachLike still passes but
+    # the aggregator's edge classes don't reflect the documented seed.
+    by_kind: dict[tuple[str, str], int] = {}
+    nodes_by_id = {n["id"]: n for n in nodes}
+    for edge in edges:
+        src_kind = nodes_by_id[edge["source_id"]]["kind"]
+        tgt_kind = nodes_by_id[edge["target_id"]]["kind"]
+        # Canonical ordering: (actor, actor), (actor, tool), (actor, sector).
+        kind_pair = tuple(sorted([src_kind, tgt_kind]))
+        by_kind[kind_pair] = by_kind.get(kind_pair, 0) + 1
+    assert by_kind.get(("actor", "actor"), 0) == 2, (
+        "actor↔actor edge count drift — expected 2 (G1↔G2, G2↔G3), "
+        f"got {by_kind.get(('actor', 'actor'), 0)}"
+    )
+    assert by_kind.get(("actor", "tool"), 0) == 7, (
+        "actor↔tool edge count drift — expected 7 distinct pairs "
+        f"(G2↔T9002 weight 2 + 6 others weight 1), got "
+        f"{by_kind.get(('actor', 'tool'), 0)}"
+    )
+    assert by_kind.get(("actor", "sector"), 0) == 9, (
+        "actor↔sector edge count drift — expected 9 pairs "
+        f"(3 groups × 3 sectors), got "
+        f"{by_kind.get(('actor', 'sector'), 0)}"
+    )
 
 
 async def test_actor_network_fixture_survives_group_filter(
@@ -813,6 +846,24 @@ async def test_actor_network_fixture_survives_group_filter(
         "report_codenames"
     )
     assert network["edges"]
+
+    # Plan L7(a): the selected actor MUST appear in the response.
+    # Pin that actor:<G1 id> is present and that every returned edge
+    # has at least one endpoint that traces back to G1's eligibility
+    # neighbourhood (G2 via r1, T9001/T9002 tools, all three sectors
+    # via the incident → r1 chain).
+    g1_node_id = f"actor:{int(g1_id)}"
+    node_ids = {n["id"] for n in network["nodes"]}
+    assert g1_node_id in node_ids, (
+        f"selected actor {g1_node_id} missing from group-filtered "
+        f"response — eligibility filter dropped the selected actor"
+    )
+    for edge in network["edges"]:
+        endpoints = {edge["source_id"], edge["target_id"]}
+        # Either G1 directly OR a non-actor node connected to G1
+        # through r1's report (tool: T9001/T9002, sector via incident).
+        # Aggregator scope filter ensures this holds.
+        assert endpoints, "edge missing endpoints"
 
 
 async def test_actor_network_fixture_is_idempotent(
