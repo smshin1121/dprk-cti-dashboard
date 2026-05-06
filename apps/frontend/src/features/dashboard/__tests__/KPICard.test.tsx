@@ -51,25 +51,22 @@ describe('KPICard', () => {
     expect(screen.queryByTestId('kpi-card-retry')).not.toBeInTheDocument()
   })
 
-  it('renders empty state as a transparent Ferrari spec-cell (L3)', () => {
+  it('renders empty state as a transparent dashboard KPI compact cell (PR 2.5 L7)', () => {
     render(<KPICard label="Top Group" state="empty" />)
     const card = screen.getByTestId('kpi-card')
-    // Plan §5 maps KPICard to DESIGN.md `spec-cell` — transparent
-    // background, no card chrome. The error state retains chrome
-    // (separate test below), so the empty branch is the canonical
-    // pin for the editorial spec-cell behavior.
+    // PR 2.5: KPICard maps to the new `## Dashboard KPI Compact Variant`
+    // (DESIGN.md amendment). Transparent chrome on populated/empty/
+    // loading; error keeps small card chrome (separate test below).
     expect(card.className).not.toMatch(/\bbg-surface\b/)
     expect(card.className).not.toMatch(/\bbg-white\b/)
     expect(card.className).not.toMatch(/\bborder-border-card\b/)
-    // Number-display 80px tracking pinned on the value to guard
-    // against drift back to text-2xl pre-Ferrari typography.
-    // (Word-boundary `\b` does not work around bracket characters in
-    // arbitrary-value Tailwind classes, so we anchor on whitespace
-    // / start-of-string instead.)
+    // Compact typography — text-3xl (~30px), NOT text-[80px]. The
+    // 80px hero stays locked for non-dashboard spec-cell consumers
+    // per `## Spec & Race Surfaces` (PR #31). The dashboard variant
+    // is explicitly /dashboard-scoped per L11.
     const value = screen.getByTestId('kpi-card-value')
-    expect(value.className).toMatch(/(?:^|\s)text-\[80px\](?:\s|$)/)
-    expect(value.className).toMatch(/\btracking-number-display\b/)
-    expect(value.className).toMatch(/\bfont-cta\b/)
+    expect(value.className).toMatch(/\btext-3xl\b/)
+    expect(value.className).not.toMatch(/(?:^|\s)text-\[80px\](?:\s|$)/)
   })
 
   it('renders error state inside card chrome (status callout, not spec-cell)', () => {
