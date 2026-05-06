@@ -36,8 +36,10 @@ describe('KPICard — compact variant typography (PR 2.5 L2)', () => {
     expect(value.className).not.toMatch(/\btext-\[80px\]\b/)
   })
 
-  it('aggregate card string value (Top Group / Top Motivation) renders compact, NOT text-[80px]', () => {
-    // Aggregate card with subtext = "583 reports"
+  it('aggregate categorical string (Top Group / Top Motivation) renders at text-lg, NOT scalar text-3xl', () => {
+    // Codex PR #34 r1 F3 fold: tighten the assertion. A regression
+    // where "Kimsuky" fell back to text-3xl scalar treatment would
+    // have passed under the previous permissive regex.
     render(
       <KPICard
         label="Top Group"
@@ -48,9 +50,25 @@ describe('KPICard — compact variant typography (PR 2.5 L2)', () => {
     )
     const value = screen.getByTestId('kpi-card-value')
     expect(value.className).not.toMatch(/\btext-\[80px\]\b/)
-    // Aggregate string SHOULD be at compact body / display size
-    // (text-base or text-lg or text-xl), NOT a hero number-display.
-    expect(value.className).toMatch(/\btext-(base|lg|xl|2xl|3xl)\b/)
+    expect(value.className).toMatch(/\btext-lg\b/)
+    expect(value.className).not.toMatch(/\btext-3xl\b/)
+  })
+
+  it('Top Year (numeric-shaped string "2024") stays at scalar text-3xl, NOT text-lg (PR 2.5 numeric exception)', () => {
+    // Top Year arrives as a string from KPIStrip (`String(topYear.year)`)
+    // but reads as a numeric callout. isAggregateString returns false
+    // for digits-only strings, so the scalar text-3xl applies.
+    render(
+      <KPICard
+        label="Top Year"
+        value="2024"
+        subtext="318 reports"
+        state="populated"
+      />,
+    )
+    const value = screen.getByTestId('kpi-card-value')
+    expect(value.className).toMatch(/\btext-3xl\b/)
+    expect(value.className).not.toMatch(/\btext-lg\b/)
   })
 
   it('empty state placeholder dash uses the same compact size as populated value', () => {
@@ -121,6 +139,23 @@ describe('KPICard — delta indicator slot (PR 2.5 L4)', () => {
     const delta = screen.getByTestId('kpi-card-delta')
     expect(delta).toHaveTextContent(/\+?12\.5%/)
     expect(delta.className).toMatch(/status-ok|text-status-ok|text-green|signal/)
+  })
+
+  it('omits delta slot when delta value is exactly 0 (DESIGN.md zero/null collapses slot)', () => {
+    // Codex PR #34 r1 F1 fold: zero delta should be treated like
+    // null per DESIGN.md `## Dashboard KPI Compact Variant >
+    // kpi-cell-delta` — `zero / null omits the slot entirely`. The
+    // previous gate (`delta ? ...`) rendered { value: 0 } as
+    // "0.0%" which conflicts with the contract.
+    render(
+      <KPICard
+        label="Total Reports"
+        value={3458}
+        state="populated"
+        delta={{ value: 0 }}
+      />,
+    )
+    expect(screen.queryByTestId('kpi-card-delta')).toBeNull()
   })
 })
 

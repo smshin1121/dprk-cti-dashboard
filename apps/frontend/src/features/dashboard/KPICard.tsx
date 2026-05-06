@@ -20,18 +20,27 @@
  *
  * Compact variant additions (PR 2.5 L4 + L5):
  *   - `delta?: KpiDelta | null` — direction-derived sign + color.
- *     Positive → status-ok; negative → status-warn; null → slot
- *     omitted entirely. Same reserved-slot text-only discipline that
- *     governs `actor-network-graph` and `alerts-rail-section`.
+ *     Positive → status-ok; negative → status-warn. Both `null` AND
+ *     a `{ value: 0 }` delta omit the slot entirely (DESIGN.md
+ *     `## Dashboard KPI Compact Variant > kpi-cell-delta` — `zero /
+ *     null omits the slot entirely`). Same reserved-slot text-only
+ *     discipline that governs `actor-network-graph` and
+ *     `alerts-rail-section`. (Codex PR #34 r1 F1 fold: render gate
+ *     is `delta && delta.value !== 0`.)
  *   - `sparkline?: readonly number[] | null` — inline SVG path,
  *     ~60×24, single 1px stroke at `colors.muted-soft`. Series < 2
  *     points → slot omitted.
  *
  * Aggregate-card treatment (PR 2.5 L3):
- *   - When `value` is a string (Top Group / Top Motivation / Top
- *     Year primary label), use `text-lg` instead of `text-3xl`.
- *     Short categorical strings at 80px would have been typography
- *     misuse even within the locked spec-cell pattern.
+ *   - Categorical string values (Top Group / Top Motivation primary
+ *     label like `Kimsuky`, `DataBreach`) render at `text-lg` body
+ *     size. NEVER 80px — short categorical strings at 80px would
+ *     have been typography misuse even within the locked
+ *     spec-cell pattern.
+ *   - **Top Year is the numeric-shaped exception**: the year value
+ *     (`2024`) reads as a numeric callout, not a categorical string,
+ *     so it stays at the scalar `text-3xl`. The `isAggregateString`
+ *     helper distinguishes by whether the string is digits-only.
  */
 
 import { AlertTriangle, RotateCcw } from 'lucide-react'
@@ -221,7 +230,7 @@ function PopulatedBody({
       {subtext ? (
         <span className="text-xs text-ink-subtle">{subtext}</span>
       ) : null}
-      {delta ? <KpiDeltaBadge delta={delta} /> : null}
+      {delta && delta.value !== 0 ? <KpiDeltaBadge delta={delta} /> : null}
     </>
   )
 }

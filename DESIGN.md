@@ -381,7 +381,8 @@ This section is **additive** over `## Spec & Race Surfaces`. It introduces a `/d
 - **Cell chrome**: transparent (no border-card, no bg-surface) for populated / empty / loading states — preserves the spec-cell editorial-floating-cell intent. Error state KEEPS small card chrome (`border border-border-card bg-surface p-4`) to read as a status callout against the dark canvas.
 - **Cell label**: `{typography.caption-uppercase}` (10-11px, 600 weight, 1.1px tracking, uppercase, `{colors.muted-soft}`). Same as the 80px spec-cell pattern.
 - **Cell value (scalar number)**: `text-3xl` (~30px) at 700 weight (`font-cta`), tight leading (`leading-none` or `leading-tight`). Drops `text-[80px]` and `tracking-number-display` from the spec-cell pattern — the compact variant is NOT a hero callout.
-- **Cell value (aggregate string — Top Group, Top Motivation, Top Year)**: `text-base` or `text-lg` body weight on the primary string, optional `text-xs text-ink-subtle` subtext beneath. NEVER 80px. Aggregate strings are categorical labels, not numeric callouts.
+- **Cell value (aggregate string — Top Group, Top Motivation)**: `text-base` or `text-lg` body weight on the primary string, optional `text-xs text-ink-subtle` subtext beneath. NEVER 80px. Aggregate strings are categorical labels, not numeric callouts.
+- **Cell value (Top Year — numeric-shaped exception)**: even though Top Year arrives as a string in the BE summary, it reads as a numeric callout (`2024`) and uses the same `text-3xl` scalar treatment, NOT the categorical-string `text-lg`. The `isAggregateString` helper distinguishes by whether the string is digits-only.
 - **Empty placeholder**: dash (`—`) at the same `text-3xl` geometry as the populated value (so the cell footprint stays stable when data lands).
 - **Loading skeleton**: `text-3xl`-sized pulsing block; NOT the 80px footprint.
 

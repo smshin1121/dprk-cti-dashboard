@@ -245,14 +245,43 @@ describe('KPIStrip', () => {
       new Response(JSON.stringify(SHALLOW_BODY), { status: 200 }),
     )
     render(<KPIStrip />, { wrapper: Wrapper })
-    const card = await waitFor(() =>
-      screen.getByTestId('kpi-card-total-reports'),
+    // Codex PR #34 r1 F2 fold: wait for the POPULATED state via the
+    // formatted total_reports value before asserting absence — the
+    // testid alone exists during loading and the previous version
+    // would have passed even if the populated render then mounted
+    // the slots.
+    await waitFor(() =>
+      expect(screen.getByTestId('kpi-card-total-reports')).toHaveTextContent('1,204'),
     )
+    const card = screen.getByTestId('kpi-card-total-reports')
     expect(
       card.querySelector('[data-testid="kpi-card-delta"]'),
     ).toBeNull()
     expect(
       card.querySelector('[data-testid="kpi-card-sparkline"]'),
     ).toBeNull()
+  })
+
+  // PR 2.5 r1 F1 — equal-count years collapse the delta slot
+  // (DESIGN.md kpi-cell-delta: zero/null omits the slot entirely).
+  it('omits delta slot on Total Reports when consecutive years have equal counts (zero delta)', async () => {
+    const FLAT_BODY = {
+      ...POPULATED_BODY,
+      reports_by_year: [
+        { year: 2023, count: 287 },
+        { year: 2024, count: 287 },
+      ],
+    }
+    vi.spyOn(global, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify(FLAT_BODY), { status: 200 }),
+    )
+    render(<KPIStrip />, { wrapper: Wrapper })
+    await waitFor(() =>
+      expect(screen.getByTestId('kpi-card-total-reports')).toHaveTextContent('1,204'),
+    )
+    const card = screen.getByTestId('kpi-card-total-reports')
+    expect(card.querySelector('[data-testid="kpi-card-delta"]')).toBeNull()
+    // Sparkline still renders (≥ 2 points), just flat.
+    expect(card.querySelector('[data-testid="kpi-card-sparkline"]')).not.toBeNull()
   })
 })

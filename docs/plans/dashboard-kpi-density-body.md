@@ -38,14 +38,20 @@ None expected at this commit. Any plan-vs-impl deviation surfaced during Codex r
 
 | Test file | Tests | Status |
 |:---|:---:|:---:|
-| `KPICard.compact.test.tsx` (T1, NEW) | 12 | ✓ |
-| `KPIStrip.test.tsx` (T2, +4 tests) | 10 | ✓ |
-| `kpiDeltaUtils.test.ts` (T3, NEW) | 11 | ✓ |
+| `KPICard.compact.test.tsx` (T1, NEW + r1 F1/F3 folds) | 14 | ✓ |
+| `KPIStrip.test.tsx` (T2 + r1 F1/F2 folds) | 11 | ✓ |
+| `kpiDeltaUtils.test.ts` (T3, NEW + r1 F4 folds) | 15 | ✓ |
 | `KPICard.test.tsx` (T4, 1 update) | 8 | ✓ |
 | `dashboardKpiAmendment.spec.test.ts` (T5, NEW) | 5 | ✓ |
-| **Full FE suite** | **706** | **✓ all GREEN** |
+| **Full FE suite** | **713** | **✓ all GREEN** |
 
-Was 674 (PR #33 baseline) → +32 tests / +3 test files. `pnpm --filter @dprk-cti/frontend run build` exits 0.
+Was 674 (PR #33 baseline) → +39 tests / +3 test files. `pnpm --filter @dprk-cti/frontend run build` exits 0.
+
+## Cross-AI review trail
+
+| Round | Verdict | Folds |
+|:---:|:---|:---|
+| PR #34 r1 | PROCEED-WITH-AMENDMENT | F1 MEDIUM (zero delta should omit slot per DESIGN.md `kpi-cell-delta` — render gate tightened to `delta && delta.value !== 0`; +1 test in KPICard.compact, +1 test in KPIStrip equal-year-count fixture) + F2 LOW (false-green absence test fixed by waiting on populated text content before asserting absence) + F3 LOW (aggregate typography test tightened: `Kimsuky` MUST be `text-lg` and NOT `text-3xl`; new explicit Top Year `text-3xl` test; DESIGN.md + docstring updated to call Top Year the numeric-shaped exception) + F4 LOW (constant-series sparkline path now midlines instead of bottoms-out; +4 tests covering buildSparklinePath edges) |
 
 ## Acceptance criteria
 

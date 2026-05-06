@@ -21,6 +21,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  buildSparklinePath,
   computeYoyDelta,
   extractSparklineSeries,
 } from '../kpiDeltaUtils'
@@ -116,5 +117,45 @@ describe('extractSparklineSeries — sparkline data extraction (PR 2.5 L5)', () 
       { year: 2023, count: 100 },
     ])
     expect(result).toEqual([0, 100, 100])
+  })
+})
+
+describe('buildSparklinePath — SVG path string (PR 2.5 r1 F4)', () => {
+  it('returns null for empty / single-point series (caller should hide slot)', () => {
+    expect(buildSparklinePath([])).toBeNull()
+    expect(buildSparklinePath([42])).toBeNull()
+  })
+
+  it('returns a path string starting with M for ≥2 points', () => {
+    const path = buildSparklinePath([1, 5, 3, 8])
+    expect(path).not.toBeNull()
+    expect(path!.startsWith('M')).toBe(true)
+    // Each point separated by space + L: M..., L..., L..., L...
+    expect(path!.match(/L/g)).toHaveLength(3)
+  })
+
+  it('constant series renders flat at the midline (NOT collapsed to bottom inset)', () => {
+    // Codex PR #34 r1 F4 fold: previous max-min || 1 fallback
+    // pushed every point to the bottom edge (y=22 for 60×24);
+    // the contract reads as "flat line at midline" so the
+    // special-case midline render is the correct behavior.
+    const path = buildSparklinePath([5, 5, 5], 60, 24)
+    expect(path).not.toBeNull()
+    // Midline = inset + innerHeight / 2 = 2 + (24 - 4)/2 = 12.0
+    // Every point should sit at y = 12.0.
+    const yCoords = path!.match(/\d+\.\d+,(\d+\.\d+)/g)?.map((s) => s.split(',')[1])
+    expect(yCoords).toEqual(['12.00', '12.00', '12.00'])
+    // Anti-assertion: NOT at the bottom inset (y = 22.00 for 60×24).
+    expect(path).not.toContain('22.00')
+  })
+
+  it('non-constant series spans the inset-padded inner viewport', () => {
+    const path = buildSparklinePath([0, 10], 60, 24)
+    expect(path).not.toBeNull()
+    // First point (min=0) sits at the bottom inset boundary
+    // (y = inset + innerHeight = 2 + 20 = 22.00).
+    // Last point (max=10) sits at the top inset (y = 2.00).
+    expect(path).toContain('22.00')
+    expect(path).toContain('2.00')
   })
 })

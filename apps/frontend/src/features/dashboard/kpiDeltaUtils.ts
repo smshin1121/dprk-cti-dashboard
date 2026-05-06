@@ -87,11 +87,23 @@ export function buildSparklinePath(
   if (series.length < 2) return null
   const max = Math.max(...series)
   const min = Math.min(...series)
-  const span = max - min || 1 // constant series → flat line at midline
   const inset = 2
   const innerHeight = height - inset * 2
   const stepX = width / (series.length - 1)
 
+  // Constant series special-case (Codex PR #34 r1 F4 fold): every
+  // point at midline so the sparkline reads as `flat / no change`
+  // rather than collapsing to the bottom edge.
+  if (max === min) {
+    const midY = inset + innerHeight / 2
+    const points = series.map((_v, i) => {
+      const x = i * stepX
+      return `${x.toFixed(2)},${midY.toFixed(2)}`
+    })
+    return `M${points.join(' L')}`
+  }
+
+  const span = max - min
   const points = series.map((v, i) => {
     const x = i * stepX
     const y = inset + innerHeight - ((v - min) / span) * innerHeight
