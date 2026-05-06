@@ -49,6 +49,7 @@ Tracked as follow-up — PR 2.5: "Dashboard KPI compact + density redesign". Sco
 - **AC #5 strict-grep clause** — Plan AC #5's literal "grep DashboardHero across `apps/frontend/src/` returns zero matches" is unachievable: T6 RED test itself asserts hero ABSENCE via `queryByTestId('dashboard-hero')` and names the deprecated component in its test description + docstring. Remaining 5 src/ matches are all regression-guard / historical-comment kind (zero production importer / mount / call). Recorded in T10 commit body.
 - **`RankedRowWithShareBar` API extension** — Plan §3 listed the migration but didn't anticipate the per-panel testid preservation requirement. Added optional `barFillTestId?: string` prop (backward-compat). Recorded in T9 r1 fold commit body.
 - **`dashboard.alerts.phase4Pill` cross-locale invariant** — "Phase 4" is a project version identifier (the empty-state lines also keep "Phase 4" untranslated, e.g. `Phase 4 — 실시간 알림 미연동`); the pill is intentionally identical in both locales. Init-test extended with a `PHASE_INVARIANT_KEYS` allowlist and an explicit equality assertion. Recorded in T11 r1 fold commit body.
+- **AlertsDrawer disposition** — Plan §3 / Q4 default specified `in-place rewrite of AlertsDrawer.tsx if no other consumer`, but the actual T7 implementation went with the alternative path (`extract new file AlertsRailSection.tsx`) for naming clarity — `AlertsDrawer` was a misnomer for a static right-rail section. T0 inventory still applied (0 non-dashboard consumers), so the deletion was safe. Diff: DELETE `apps/frontend/src/features/dashboard/AlertsDrawer.tsx` + ADD `apps/frontend/src/features/dashboard/AlertsRailSection.tsx`. Source docstring + test comment + body draft + Q4 default all reworded to describe the actual delete-and-replace pattern. Plan doc deliberately NOT edited per locked-plan discipline (`pattern_plan_vs_impl_section_0_1_amendments`); this entry is the authoritative trace. Recorded in PR #33 r6+r7 Codex fold commits.
 
 ## Defaults applied (Open Questions resolved)
 
@@ -103,8 +104,9 @@ All 15 plan §7 acceptance criteria green (with §0.1 amendment to AC #5 noted a
 | PR #33 r4 | r3 fold verify + re-scan | PROCEED-WITH-AMENDMENT | F1''' LOW (same i18n pin gap as r3 in 2 sibling suites — DashboardPage.workspace.test.tsx + DashboardRightRail.test.tsx. Folded with the same pattern.) |
 | PR #33 r5 | r4 fold verify + re-scan | PROCEED-WITH-AMENDMENT | F1'''' LOW (same i18n pin gap in PeriodReadout.test.tsx — `/period/i` asserts EN translation of `dashboard.period.label`. Folded with the same pattern.) |
 | PR #33 r6 | r5 fold verify + re-scan | PROCEED-WITH-AMENDMENT | F2 LOW (prose drift on AlertsDrawer disposition: body and DashboardRightRail.test.tsx docstring described it as `in-place rewrite`, but the diff DELETES `AlertsDrawer.tsx` and ADDS `AlertsRailSection.tsx`. Wording corrected to accurately describe the rename/replace.) |
+| PR #33 r7 | r6 fold verify + re-scan | PROCEED-WITH-AMENDMENT | F1 LOW (r6 fold incomplete — same `in-place` prose still in `AlertsRailSection.tsx` docstring + `DashboardPage.test.tsx` comment. Folded by rewriting both to `DELETE + ADD` wording and adding §0.1 amendment 4 to body draft. Plan doc deliberately not edited per locked-plan discipline.) |
 
-14 Codex rounds total (8 per-step + 6 PR-level). Transcripts under `.codex-review/dashboard-workspace-retrofit-*.transcript.log` (gitignored).
+15 Codex rounds total (8 per-step + 7 PR-level). Transcripts under `.codex-review/dashboard-workspace-retrofit-*.transcript.log` (gitignored).
 
 ## Plan reference
 

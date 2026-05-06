@@ -4,10 +4,12 @@
  * `## Dashboard Workspace Pattern > ### Right-Rail Surfaces >
  * alerts-rail-section`.
  *
- * In-place rewrite of the former AlertsDrawer (T0 inventory confirmed
- * zero non-dashboard production consumers, so the floating drawer
- * pattern is removed entirely). Phase 4 will replace the empty state
- * with a hook-driven list; the title + Phase 4 pill scaffolding stays.
+ * Replaces the former `AlertsDrawer.tsx` (DELETE + ADD in the diff —
+ * see body draft §0.1 amendment 4). T0 inventory confirmed zero
+ * non-dashboard production consumers, so the floating drawer pattern
+ * is removed entirely; the new filename matches the new role inside
+ * the right rail. Phase 4 will replace the empty state with a
+ * hook-driven list; the title + Phase 4 pill scaffolding stays.
  *
  * Reserved-slot text-only discipline (DESIGN.md G5 #2 + reserved-slot
  * Don't bullet): NO mock rows, NO synthetic dot+label+timestamp tuples,

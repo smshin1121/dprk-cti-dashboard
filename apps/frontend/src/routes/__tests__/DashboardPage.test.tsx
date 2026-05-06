@@ -214,8 +214,10 @@ describe('DashboardPage — §4.2 area [B]-[F] wiring (PR #13 Group I)', () => {
       screen.queryByTestId('similar-reports-loading'),
     ).not.toBeInTheDocument()
 
-    // [F] AlertsRailSection — static Phase 4 right-rail section
-    // (in-place rewrite of the former AlertsDrawer per PR 2 T7.4).
+    // [F] AlertsRailSection — static Phase 4 right-rail section. New
+    // file `AlertsRailSection.tsx` replaces the deleted `AlertsDrawer.tsx`
+    // (DELETE + ADD in the PR diff — see body draft §0.1 amendment 4
+    // for the deviation from the plan's "in-place" default).
     expect(screen.getByTestId('alerts-rail-section')).toBeInTheDocument()
   })
 
