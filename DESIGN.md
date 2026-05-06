@@ -332,7 +332,7 @@ The taxonomy is **documentation-level** in this section. Runtime declaration (a 
 1. **Left rail content** — section anchors (in-page scroll targets), pinned-actor shortcuts, and quick filters. NOT a record list (PT-1 left rail is a list of selectable records; `/dashboard` has no "selected record" semantics).
 2. **Right rail content** — `alerts-rail-section` + `recent-activity-list` + `drilldown-empty-state`. NOT a detail rail (PT-3 detail-rail card section is a deep-read of a selected record; `/dashboard` carries persistent monitoring shell instead).
 
-The center pane preserves the existing 14-widget grid topology (KPIStrip → WorldMap+AttackHeatmap → Actor Network slot (reserved) → LocationsRanked → MotivationDonut+YearBar → SectorBreakdown+ContributorsList → TrendChart+GroupsMiniList → MotivationStackedArea+SectorStackedArea → ReportFeed). Each widget is self-contained and renders its own loading / error / empty / populated states (per plan D11 from PR #13).
+The center pane preserves the existing 14-widget grid topology (KPIStrip → WorldMap+AttackHeatmap → Actor Network slot (reserved) → LocationsRanked → MotivationDonut+YearBar → SectorBreakdown+ContributorsList → TrendChart+GroupsMiniList → MotivationStackedArea+SectorStackedArea → ReportFeed). Each widget is self-contained and renders its own loading / error / empty / populated states (per plan D11 from PR #13). The `KPIStrip` cell typography + density follow the `## Dashboard KPI Compact Variant` section below — explicitly `/dashboard`-scoped and additive over (NOT replacing) the global `## Spec & Race Surfaces` lock.
 
 ### Pane Geometry
 
@@ -368,6 +368,31 @@ The right rail also carries a `recent-activity-list` block — same reserved-slo
 - **PT-3 contrast**: PT-3 detail-rail card section is unused on `/dashboard`. The right rail uses `alerts-rail-section` + `recent-activity-list` + `drilldown-empty-state` instead.
 - **PT-5 active state**: section anchors in the left rail use the PT-5 1px Rosso left-edge stripe on the active row, identical to the analyst-workspace stripe rule.
 - **PT-6 inline rounding**: applies on `/dashboard` for any chip-inline / message-bubble-cell that lands here. CTAs / hero / cards stay 0px per the Don't list.
+
+## Dashboard KPI Compact Variant
+
+This section is **additive** over `## Spec & Race Surfaces`. It introduces a `/dashboard`-scoped KPI density pattern that runs in parallel with the locked global `spec-cell` + `race-position-cell` 80px hero patterns from PR #31; those patterns are NOT revised by this section. Race-position-cell (F1 driver finish) and non-dashboard spec-cell consumers continue to use the 80px `{typography.number-display}` token. The dashboard KPI strip uses a denser, scannable variant tuned for the analyst-workspace center-pane density target.
+
+**Why the variant exists.** PR #33 (workspace retrofit) shipped the existing 80px hero KPIs without redesign. Manual smoke against the DashLite analyst-dashboard reference + sketch v3 confirmed the 80px hero reads as editorial/spec callout typography rather than analyst-density information typography. Aggregate cards (Top Group / Top Motivation) renderring short STRINGS at 80px also misuses the spec-cell pattern (which is for NUMBERS). The compact variant fixes both.
+
+**`kpi-strip-compact`** — Dashboard-scoped KPI strip. Anatomy:
+
+- **Layout**: 6-cell grid, `grid grid-cols-3 lg:grid-cols-6 gap-4`. Cells wrap to two rows of 3 below the `lg` breakpoint and align to a single 6-cell row at `lg+`. Replaces the previous `flex flex-wrap gap-8 p-6` layout.
+- **Cell chrome**: transparent (no border-card, no bg-surface) for populated / empty / loading states — preserves the spec-cell editorial-floating-cell intent. Error state KEEPS small card chrome (`border border-border-card bg-surface p-4`) to read as a status callout against the dark canvas.
+- **Cell label**: `{typography.caption-uppercase}` (10-11px, 600 weight, 1.1px tracking, uppercase, `{colors.muted-soft}`). Same as the 80px spec-cell pattern.
+- **Cell value (scalar number)**: `text-3xl` (~30px) at 700 weight (`font-cta`), tight leading (`leading-none` or `leading-tight`). Drops `text-[80px]` and `tracking-number-display` from the spec-cell pattern — the compact variant is NOT a hero callout.
+- **Cell value (aggregate string — Top Group, Top Motivation)**: `text-base` or `text-lg` body weight on the primary string, optional `text-xs text-ink-subtle` subtext beneath. NEVER 80px. Aggregate strings are categorical labels, not numeric callouts.
+- **Cell value (Top Year — numeric-shaped exception)**: even though Top Year arrives as a string in the BE summary, it reads as a numeric callout (`2024`) and uses the same `text-3xl` scalar treatment, NOT the categorical-string `text-lg`. The `isAggregateString` helper distinguishes by whether the string is digits-only.
+- **Empty placeholder**: dash (`—`) at the same `text-3xl` geometry as the populated value (so the cell footprint stays stable when data lands).
+- **Loading skeleton**: `text-3xl`-sized pulsing block; NOT the 80px footprint.
+
+**`kpi-cell-delta`** — Optional in-cell delta indicator. Renders as a small caption (`text-xs`, tracking-caption) sized just below the value. Direction-derived color: positive delta uses `{colors.status-ok}` (green), negative uses `{colors.status-warn}` (red), zero / null omits the slot entirely. Sign is explicit (e.g. `+10.8%`, `-8.3%`). The delta is sourced from a real time-series field on the BE summary; if the source series has fewer than 2 points, the slot is omitted (no fake numbers — same reserved-slot text-only discipline that governs `actor-network-graph` and `alerts-rail-section`).
+
+**`kpi-cell-sparkline`** — Optional in-cell sparkline. Inline `<svg viewBox="0 0 60 24">` with a single `<path>` stroked at `{colors.muted-soft}` (1px); no fill, no axes, no labels. Width ~60px, height ~24px. Sits to the right of the value or beneath it depending on cell width. NEVER use Recharts / canvas / animation — the sparkline is structure, not signal. If the data series has fewer than 2 points, the slot is omitted entirely.
+
+**Cross-reference back to `## Spec & Race Surfaces`.** The 80px hero treatment is preserved for non-dashboard spec-cell + race-position-cell consumers. The compact variant is the dashboard exception. If a future surface needs editorial-spec callout typography (e.g. a single-metric standalone hero), it uses the locked 80px pattern; if it needs analyst-density information typography (multiple cells, scannable, possibly with deltas / sparklines), it uses this compact variant. The choice is anchored on which page-class hosts the cell: `analyst-workspace` density → compact variant; `editorial` / standalone → spec-cell.
+
+**Reserved-slot discipline carries over.** Same rule as `actor-network-graph` and `alerts-rail-section`: if a delta or sparkline cannot be honestly computed (BE doesn't expose the series, or the series is too shallow), omit the slot rather than fabricating a number. The `kpi-cell-delta` and `kpi-cell-sparkline` slots are OPTIONAL by design.
 
 ## Page Classes
 
