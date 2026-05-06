@@ -1,32 +1,39 @@
 /**
- * Six-card KPI strip — plan §1 / §4 Group E deliverable. Consumes
- * `useDashboardSummary()` and maps the six slots required by
- * design doc §4.2 area [B]:
+ * Six-card KPI strip — DASHBOARD COMPACT VARIANT (PR 2.5).
  *
- *   1. Total Reports        (scalar)
+ * Layout: 6-cell grid per DESIGN.md `## Dashboard KPI Compact Variant`
+ * (`grid grid-cols-3 lg:grid-cols-6 gap-4`). Replaces the previous
+ * `flex flex-wrap gap-8 p-6` layout that the 80px hero typography
+ * forced into irregular wrapping.
+ *
+ * Compact-variant additions (PR 2.5 L4 + L5):
+ *   - Total Reports card receives a YoY delta computed client-side
+ *     from `summary.reports_by_year` (via `computeYoyDelta`) and a
+ *     sparkline series from the same source (via
+ *     `extractSparklineSeries`).
+ *   - All five other cards (Total Incidents, Total Actors, Top Year,
+ *     Top Motivation, Top Group) render with delta + sparkline slots
+ *     OMITTED — the BE summary doesn't expose a meaningful series for
+ *     those, and inventing one is forbidden by the reserved-slot
+ *     text-only discipline carried over from PR #33.
+ *   - When `summary.reports_by_year` has fewer than 2 entries, even
+ *     the Total Reports card omits delta + sparkline (graceful empty).
+ *
+ * Mapping unchanged (still 6 cards, same data sources):
+ *   1. Total Reports        (scalar, +delta, +sparkline)
  *   2. Total Incidents      (scalar)
  *   3. Total Actors         (scalar)
  *   4. Top Year             (reports_by_year → max by count)
  *   5. Top Motivation       (incidents_by_motivation[0])
  *   6. Top Group            (top_groups[0])
  *
- * State propagation (plan D11):
- *   - Query loading    → every card shows its own skeleton (six
- *                        aria-busy tiles; no global overlay).
- *   - Query errored    → every card shows the inline error message;
- *                        a SINGLE retry button lives on the first
- *                        card so a rage-click can't fire six
- *                        concurrent refetches.
- *   - Query succeeded  → scalar cards always populated (even at 0,
- *                        which is semantically "zero results" not
- *                        "no data"); array-derived cards fall back
- *                        to `empty` state when the corresponding
- *                        BE array is empty.
- *
- * The BE `reports_by_year` is not guaranteed to be sorted, so we
- * pick the top year by `max(count)` locally. `incidents_by_motivation`
- * and `top_groups` are returned sorted by count desc (see
- * `dashboard_aggregator`), so we just take the first entry.
+ * State propagation (plan D11 carryover):
+ *   - Loading → all 6 cards show their own skeleton (six aria-busy).
+ *   - Errored → all 6 cards show inline error; ONE retry button on
+ *               the first card to prevent rage-click refetch storm.
+ *   - Succeeded → scalars always populated (0 is "zero results", not
+ *                 "no data"); aggregates fall back to `empty` when
+ *                 their source array is empty.
  */
 
 import type {
@@ -35,6 +42,11 @@ import type {
   DashboardYearCount,
 } from '../../lib/api/schemas'
 import { KPICard, type KPICardState } from './KPICard'
+import {
+  computeYoyDelta,
+  extractSparklineSeries,
+  type KpiDelta,
+} from './kpiDeltaUtils'
 import { useDashboardSummary } from './useDashboardSummary'
 
 function pickTopYear(
@@ -69,17 +81,25 @@ export function KPIStrip(): JSX.Element {
     ? firstOrNull(data.top_groups)
     : null
 
+  // Total Reports gets the compact-variant delta + sparkline. Every
+  // other card has these omitted; the BE summary doesn't expose a
+  // honest series for them.
+  const reportsDelta: KpiDelta | null = data
+    ? computeYoyDelta(data.reports_by_year)
+    : null
+  const reportsSparkline: readonly number[] | null = data
+    ? extractSparklineSeries(data.reports_by_year)
+    : null
+
   function onRetry(): void {
     void query.refetch()
   }
 
-  // Only the first card carries the retry button when the strip is
-  // errored — see KPIStrip docstring + D11 rationale.
   return (
     <section
       data-testid="kpi-strip"
       aria-labelledby="kpi-strip-heading"
-      className="flex flex-wrap gap-8 p-6"
+      className="grid grid-cols-3 gap-4 lg:grid-cols-6"
     >
       <h2 id="kpi-strip-heading" className="sr-only">
         Key performance indicators
@@ -91,6 +111,8 @@ export function KPIStrip(): JSX.Element {
         value={data?.total_reports}
         state={commonState}
         onRetry={stripState === 'error' ? onRetry : undefined}
+        delta={reportsDelta}
+        sparkline={reportsSparkline}
       />
       <ScalarCard
         testid="kpi-card-total-incidents"
@@ -145,6 +167,8 @@ interface ScalarCardProps {
   value: number | undefined
   state: KPICardState
   onRetry?: () => void
+  delta?: KpiDelta | null
+  sparkline?: readonly number[] | null
 }
 
 function ScalarCard({
@@ -153,9 +177,9 @@ function ScalarCard({
   value,
   state,
   onRetry,
+  delta,
+  sparkline,
 }: ScalarCardProps): JSX.Element {
-  // Wraps a KPICard with a stable inner test hook so the strip can
-  // target "the Total Reports card" without relying on ordering.
   return (
     <div data-testid={testid} className="flex">
       <KPICard
@@ -163,6 +187,8 @@ function ScalarCard({
         value={state === 'populated' ? value : undefined}
         state={state}
         onRetry={onRetry}
+        delta={delta}
+        sparkline={sparkline}
       />
     </div>
   )
@@ -181,9 +207,6 @@ function AggregateCard({
   entry,
   stripState,
 }: AggregateCardProps): JSX.Element {
-  // Aggregate cards never carry a retry button — only the first
-  // scalar card in the strip does, per the strip-wide shared retry
-  // described in the module docstring.
   let state: KPICardState
   let value: string | undefined
   let subtext: string | undefined
