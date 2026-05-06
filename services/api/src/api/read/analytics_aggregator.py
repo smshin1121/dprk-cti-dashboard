@@ -400,7 +400,54 @@ async def compute_incidents_trend(
     }
 
 
+async def compute_actor_network(
+    session: AsyncSession,
+    *,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    group_ids: list[int] | None = None,
+    top_n_actor: int = 25,
+    top_n_tool: int = 25,
+    top_n_sector: int = 25,
+) -> dict[str, object]:
+    """``/api/v1/analytics/actor_network`` SNA co-occurrence aggregator.
+
+    PR 3 T7 (NOT YET IMPLEMENTED) — stub raises ``NotImplementedError`` so
+    the RED batch in ``test_analytics_aggregator.py::TestActorNetwork*``
+    can collect cleanly without a missing-symbol ImportError.
+
+    Wire shape (`docs/plans/actor-network-data.md` L2):
+        {
+            "nodes": [
+                {"id": "<kind>:<id>", "kind": "actor"|"tool"|"sector",
+                 "label": str, "degree": int >= 0},
+                ...
+            ],
+            "edges": [
+                {"source_id": str, "target_id": str, "weight": int >= 1},
+                ...
+            ],
+            "cap_breached": bool,  # default False
+        }
+
+    Algorithm (`docs/plans/actor-network-data.md` L4 Steps A-F):
+        A. Compute eligible edge set (3 edge classes per L3 + filter).
+        B. Actor cut (cap-aware): selected actors always count toward
+           ``top_n_actor``; ``cap_breached`` = ``len(S) > top_n_actor``.
+        C. Tool/sector cuts.
+        D. First-pass edges (both endpoints survive).
+        E. High-weight rescue within eligible set (top 5 edges).
+        F. Final response.
+    """
+
+    raise NotImplementedError(
+        "PR 3 T7: compute_actor_network is not yet implemented. "
+        "See docs/plans/actor-network-data.md L4 Step A-F for the algorithm."
+    )
+
+
 __all__ = [
+    "compute_actor_network",
     "compute_attack_matrix",
     "compute_geo",
     "compute_incidents_trend",
