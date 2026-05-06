@@ -671,7 +671,8 @@ async def _ensure_actor_network_fixture(session: AsyncSession) -> None:
 
         {nodes: eachLike({id: string(...), kind: string(...),
                           label: string(...), degree: integer(>=1)}),
-         edges: eachLike({source: string(...), target: string(...),
+         edges: eachLike({source_id: string(...),
+                          target_id: string(...),
                           weight: integer(>=1)}),
          cap_breached: false}
 

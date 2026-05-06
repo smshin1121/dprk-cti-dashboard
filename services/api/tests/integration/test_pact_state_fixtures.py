@@ -691,8 +691,8 @@ async def test_actor_network_fixture_satisfies_pact_matchers(
 ) -> None:
     """``/analytics/actor_network`` pact will use
     ``{nodes: eachLike({id: string, kind: string, label: string,
-    degree: integer(>=1)}), edges: eachLike({source: string, target:
-    string, weight: integer(>=1)}), cap_breached: false}``.
+    degree: integer(>=1)}), edges: eachLike({source_id: string,
+    target_id: string, weight: integer(>=1)}), cap_breached: false}``.
 
     Both ``eachLike`` arrays must be non-empty under the pact filter
     window (``2026-01-01..2026-04-18``) — string fields reject null,
@@ -860,10 +860,17 @@ async def test_actor_network_fixture_survives_group_filter(
     )
     for edge in network["edges"]:
         endpoints = {edge["source_id"], edge["target_id"]}
-        # Either G1 directly OR a non-actor node connected to G1
-        # through r1's report (tool: T9001/T9002, sector via incident).
-        # Aggregator scope filter ensures this holds.
-        assert endpoints, "edge missing endpoints"
+        # Plan L7(a): every edge in a group-filtered response must be
+        # incident to the selected actor. G1's neighbourhood under the
+        # filter is: G2 (actor↔actor via r1), T9001/T9002 (actor↔tool
+        # via r1), and the 3 sectors (actor↔sector via incident → r1).
+        # If the aggregator's eligibility filter loses scope, an edge
+        # not incident to G1 would surface — this assertion catches it.
+        assert g1_node_id in endpoints, (
+            f"edge {edge['source_id']}↔{edge['target_id']} is not "
+            f"incident to selected actor {g1_node_id} — group-filter "
+            "eligibility scope leaked"
+        )
 
 
 async def test_actor_network_fixture_is_idempotent(
