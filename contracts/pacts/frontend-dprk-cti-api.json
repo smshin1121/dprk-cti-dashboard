@@ -1178,6 +1178,144 @@
       }
     },
     {
+      "description": "a request for the actor-network co-occurrence graph",
+      "providerStates": [
+        {
+          "name": "actor network co-occurrence available"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/analytics/actor_network",
+        "query": {
+          "date_from": [
+            "2026-01-01"
+          ],
+          "date_to": [
+            "2026-04-18"
+          ]
+        }
+      },
+      "response": {
+        "body": {
+          "cap_breached": false,
+          "edges": [
+            {
+              "source_id": "actor:1",
+              "target_id": "actor:2",
+              "weight": 1
+            }
+          ],
+          "nodes": [
+            {
+              "degree": 1,
+              "id": "actor:1",
+              "kind": "actor",
+              "label": "actor-network-fixture-G1"
+            }
+          ]
+        },
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "matchingRules": {
+          "body": {
+            "$": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.cap_breached": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.edges": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type",
+                  "min": 1
+                }
+              ]
+            },
+            "$.edges[*].source_id": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.edges[*].target_id": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.edges[*].weight": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "integer"
+                }
+              ]
+            },
+            "$.nodes": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type",
+                  "min": 1
+                }
+              ]
+            },
+            "$.nodes[*].degree": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "integer"
+                }
+              ]
+            },
+            "$.nodes[*].id": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.nodes[*].kind": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.nodes[*].label": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          }
+        },
+        "status": 200
+      }
+    },
+    {
       "description": "a request for the actors list (first page)",
       "providerStates": [
         {
