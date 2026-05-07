@@ -14,7 +14,7 @@
  *   [HEADING] dashboard-heading-row + PeriodReadout right-aligned (h-md, {spacing.md} = 32px per DESIGN.md ## Dashboard Workspace Pattern > Pane Geometry)
  *   [B]       KPIStrip                                    (full width)
  *   [C]       WorldMap + AttackHeatmap                    (split row)
- *   [SLOT]    actor-network-graph (RESERVED / FUTURE)     (full-width text-only empty state)
+ *   [SLOT]    actor-network-graph (live, PR 3)            (full-width SNA — d3-force layout, empty-state preserved)
  *   [C']      LocationsRanked                             (geo accessibility companion)
  *   [D]       MotivationDonut + YearBar                   (ranked slice — row 1)
  *             SectorBreakdown + ContributorsList          (ranked slice — row 2)
@@ -39,14 +39,19 @@
  *   - MotivationStackedArea + SectorStackedArea consume
  *     `useIncidentsTrend({groupBy})` on separate cache slots per axis.
  *   - ReportFeed consumes `useReportsList()`.
- *   - AlertsRailSection / RecentActivity / Drilldown / ActorNetwork
- *     slot are all Phase 4 static shells (no data plumbing).
+ *   - AlertsRailSection / RecentActivity / Drilldown remain Phase 4
+ *     static shells (no data plumbing).
+ *   - ActorNetworkGraph subscribes to `useActorNetwork()` (its own
+ *     React Query slot — does NOT join `summarySharedCache`; pinned
+ *     by `ActorNetworkGraph.architectural-guard.test.tsx`).
  *
- * Reserved-slot text-only discipline (DESIGN.md G5 #2 + actor-network-
- * graph vocabulary entry): the ActorNetwork slot renders title + the
- * literal `Planned · no data yet` empty state. NO svg / canvas /
- * synthetic nodes / edges / skeleton / sparkline / chart marks. PR 3
- * fills the slot with the live SNA visualization.
+ * Reserved-slot empty-state discipline preserved (DESIGN.md G5 #2 +
+ * actor-network-graph vocabulary entry): when the BE returns
+ * `nodes: []`, ActorNetworkGraph renders the literal `Planned · no
+ * data yet` empty state with NO svg / canvas / synthetic marks
+ * (pinned by `ActorNetworkGraph.test.tsx` negative assertion). The
+ * populated branch renders d3-force-laid-out SVG with degree-
+ * centrality node sizing per kind.
  */
 
 import { useTranslation } from 'react-i18next'

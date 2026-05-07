@@ -1,13 +1,19 @@
 /**
  * Actor-network co-occurrence graph (PR 3 T10).
  *
- * Plan ``docs/plans/actor-network-data.md`` v1.6 L2 + L4 + L6 + L13.
+ * Plan ``docs/plans/actor-network-data.md`` v1.6 L2 + L4 + L6 + L13
+ * (and §0.1 amendment for the L12 `useEffect` → `useMemo` deviation —
+ * Codex r9 M1 fold required `useMemo` so that label/kind/degree on
+ * same-topology refetch render fresh from CURRENT props, not stale
+ * from a memoized full-node payload).
  *
  * Layout: d3-force run synchronously (`tick(300)` then `.stop()`)
  * inside `useMemo` keyed on the L13 stable topology signature
- * (sorted node ids + sorted `source:target:weight` triples). Result:
- * topology-equal renders share the same memoized layout; different
- * topologies recompute. No continuous animation in v1.
+ * (`JSON.stringify` of sorted node ids + sorted
+ * `source_id:target_id:weight` triples — literal-locked by plan
+ * L13). Result: topology-equal renders share the same memoized
+ * layout; different topologies recompute. No continuous animation
+ * in v1.
  *
  * Empty-state branch preserves the L6 reserved-slot vocabulary —
  * same outer testids (`actor-network-graph-slot`,
@@ -60,13 +66,17 @@ function topologySignature(
   nodes: readonly ActorNetworkNode[],
   edges: readonly ActorNetworkEdge[],
 ): string {
-  const sortedNodeIds = nodes.map((n) => n.id).slice().sort().join(',')
-  const sortedEdges = edges
-    .map((e) => `${e.source_id}:${e.target_id}:${e.weight}`)
-    .slice()
-    .sort()
-    .join(',')
-  return `${sortedNodeIds}||${sortedEdges}`
+  // Canonical signature literal-locked by plan v1.6 L13: sorted node
+  // ids + sorted `source_id:target_id:weight` triples wrapped in
+  // JSON.stringify. Sorts make the signature insensitive to BE return
+  // order; including weight makes it sensitive to weight changes that
+  // affect simulation forces.
+  return JSON.stringify({
+    n: [...nodes].map((x) => x.id).sort(),
+    e: [...edges]
+      .map((e) => `${e.source_id}:${e.target_id}:${e.weight}`)
+      .sort(),
+  })
 }
 
 function radiusForDegree(degree: number, maxDegree: number): number {

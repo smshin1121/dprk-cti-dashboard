@@ -78,6 +78,12 @@ describe('i18n bootstrap', () => {
       'dashboard.drilldown.emptyState',
       'dashboard.actorNetwork.title',
       'dashboard.actorNetwork.plannedEmptyState',
+      // PR 3 T10/T12 fold — cap-breach notice surfaces only when the
+      // BE flags `cap_breached: true` and the actor selection forced
+      // out non-selected high-degree endpoints (plan §5 row #7 +
+      // L7). Both locales translate distinctly so the copy-paste
+      // guard catches drift.
+      'dashboard.actorNetwork.capBreachedNotice',
     ] as const
     for (const key of keys) {
       const ko = i18n.getResource('ko', 'translation', key)

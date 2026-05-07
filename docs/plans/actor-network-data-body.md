@@ -84,7 +84,8 @@ All 16 architectural decisions pre-applied at plan v1.6 lock; see
 |:---|:---|:---|:---|
 | §0.1 (T8) | "Pinned IDs in 999xxx range per memory `pattern_pact_literal_pinned_paths`." | No pinned IDs; natural-key SELECT-first matching `_ensure_attack_matrix_fixture` / `_ensure_trend_fixture` / `_ensure_geo_fixture` patterns. | `pattern_pact_literal_pinned_paths` applies to **path-param** interactions (`/actors/{id}` etc.); actor-network has only query params, so pinning IDs deviates from sibling-analytics convention without unblocking any matcher. Recorded in plan v1.6 history + commit body of `f7e44fc`. |
 | §0.1 (T8 r2) | Plan v1.6 used mitre IDs `G9001/G9002/G9003`. | Implementation uses `G9101/G9102/G9103`. | `_ensure_actor_detail_fixture` already uses `G9003`; `groups.mitre_intrusion_set_id` is NOT a unique column so this wouldn't have raised, but keeps the "cannot collide" claim accurate. Codex r2 M1; folded in `c7bb567`. |
-| §0.1 (T10) | Plan T12 said i18n parity is no-op "if no new keys". | T10 introduces `dashboard.actorNetwork.capBreachedNotice` key (1 per locale) for the cap-breach surface, folding T12 work into T10. | The cap-breach surface is part of T4 contract (testid pinned); rendering an empty surface or hardcoded literal would either fail the test or violate the i18n discipline. |
+| §0.1 (T10) | Plan T12 said i18n parity is no-op "if no new keys". | T10 introduces `dashboard.actorNetwork.capBreachedNotice` key (1 per locale) for the cap-breach surface, folding T12 work into T10. Cross-locale parity test extended in `apps/frontend/src/i18n/__tests__/init.test.ts` to include the new key. | The cap-breach surface is part of T4 contract (testid pinned); rendering an empty surface or hardcoded literal would either fail the test or violate the i18n discipline. T15 PR-as-diff Codex r1 M1 (parity test extension) folded. |
+| §0.1 (T10) | Plan L12 specified d3-force runs inside a `useEffect` keyed on the L13 topology signature. | Implementation uses `useMemo` instead. | Codex r9 M1 fold during T10 GREEN required separating topology-stable computation (positions) from per-render concerns (label/kind/degree on same-topology refetch). With `useEffect`, the layout would run after render and require a `useState` position map + setter to trigger re-render — that bypasses the M1 fold's "render label/kind/degree from CURRENT props" guarantee. With `useMemo`, the topology-keyed memo runs synchronously per render and the render branch reads `nodes` (current props) joined to the position map, satisfying both L12 ("synchronous run + `.stop()`") and the M1 fold (memoize positions only). Pattern saved as memory `pattern_memo_positions_only_when_metadata_can_drift`. T15 PR-as-diff Codex r1 M2 folded. |
 
 ## Test results
 
@@ -92,8 +93,8 @@ All 16 architectural decisions pre-applied at plan v1.6 lock; see
 
 | Test file | Tests | Status |
 |:---|:---:|:---:|
-| `services/api/tests/unit/test_analytics_aggregator.py` (T2 — 8 actor-network classes + sibling) | 16 actor-network + 28 sibling | ✓ all GREEN |
-| `services/api/tests/integration/test_analytics_route.py` (T1 — 6 actor-network classes + sibling) | 18 actor-network + 24 sibling | ✓ all GREEN |
+| `services/api/tests/unit/test_analytics_aggregator.py` (T2 — 8 actor-network classes + sibling) | 16 actor-network + 21 sibling | ✓ all GREEN |
+| `services/api/tests/integration/test_analytics_route.py` (T1 — 6 actor-network classes + sibling) | 18 actor-network + 31 sibling | ✓ all GREEN |
 | `services/api/tests/contract/test_openapi_snapshot.py` (T6) | 4 | ✓ all GREEN |
 | `services/api/tests/integration/test_pact_state_fixtures.py` (T8 +3 actor-network) | 3 actor-network + sibling | skip locally (CI-only) |
 | **Actor-network + sibling analytics suite** | **90** | **✓ all GREEN** |
