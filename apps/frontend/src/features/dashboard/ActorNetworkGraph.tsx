@@ -56,11 +56,6 @@ const KIND_STROKE: Record<ActorNetworkNode['kind'], string> = {
   sector: '#10b981',
 }
 
-interface PositionedNode extends ActorNetworkNode {
-  x: number
-  y: number
-}
-
 function topologySignature(
   nodes: readonly ActorNetworkNode[],
   edges: readonly ActorNetworkEdge[],
@@ -80,28 +75,33 @@ function radiusForDegree(degree: number, maxDegree: number): number {
   return MIN_RADIUS + t * (MAX_RADIUS - MIN_RADIUS)
 }
 
-// Hash a node id to a stable seed in [-1, 1] so each node's initial
+// Hash a node id to a stable seed in [-1, 1) so each node's initial
 // position depends on its identity, not on array index. With identical
 // node counts but different ids the simulation starts from different
 // initial conditions — propagated by force-link/charge perturbation,
 // the post-tick layout WILL differ (pins T4 topology-change reseed).
+// `Math.abs` normalizes the negative-modulo case so the spread is
+// genuinely centred (Codex r9 L2 fold).
 function hashId(id: string): number {
   let h = 0
   for (let i = 0; i < id.length; i += 1) {
     h = (h * 31 + id.charCodeAt(i)) | 0
   }
-  // Map to [-1, 1] range based on the lower bits (stable across runs).
-  return ((h % 2000) - 1000) / 1000
+  return ((Math.abs(h) % 2000) - 1000) / 1000
 }
 
-function layoutNetwork(
+function layoutPositions(
   nodes: readonly ActorNetworkNode[],
   edges: readonly ActorNetworkEdge[],
-): PositionedNode[] {
+): Map<string, { x: number; y: number }> {
   // d3-force mutates simulation nodes in place. Spread into mutable
-  // local objects to avoid mutating the props array.
+  // local objects so the props array is untouched. We pass ONLY id +
+  // x + y to the simulation; label/kind/degree don't influence the
+  // layout, and keeping them out of the memo prevents Codex r9 M1's
+  // stale-render hazard (a refetch with identical topology but
+  // changed label/kind/degree must STILL render fresh values).
   const simNodes = nodes.map((n) => ({
-    ...n,
+    id: n.id,
     x: SVG_WIDTH / 2 + hashId(n.id) * 120,
     y: SVG_HEIGHT / 2 + hashId(`${n.id}:y`) * 80,
   }))
@@ -112,8 +112,8 @@ function layoutNetwork(
 
   // d3-force types declare a permissive `SimulationNodeDatum` for
   // `forceLink.id`; cast through `unknown` to thread our concrete
-  // node shape (`{id: string, x, y}`). The simulation mutates `x`/`y`
-  // in place after each tick.
+  // node shape. The simulation mutates `x`/`y` in place after each
+  // tick.
   const simulation = forceSimulation(simNodes as never)
     .force(
       'link',
@@ -127,11 +127,14 @@ function layoutNetwork(
 
   simulation.tick(300)
 
-  return simNodes.map((n) => ({
-    ...(n as ActorNetworkNode),
-    x: typeof n.x === 'number' ? n.x : SVG_WIDTH / 2,
-    y: typeof n.y === 'number' ? n.y : SVG_HEIGHT / 2,
-  }))
+  const map = new Map<string, { x: number; y: number }>()
+  for (const n of simNodes) {
+    map.set(n.id, {
+      x: typeof n.x === 'number' ? n.x : SVG_WIDTH / 2,
+      y: typeof n.y === 'number' ? n.y : SVG_HEIGHT / 2,
+    })
+  }
+  return map
 }
 
 export function ActorNetworkGraph(): JSX.Element {
@@ -144,21 +147,20 @@ export function ActorNetworkGraph(): JSX.Element {
 
   const signature = topologySignature(nodes, edges)
 
-  const positionedNodes = useMemo(
-    () => (nodes.length > 0 ? layoutNetwork(nodes, edges) : []),
-    // Layout depends only on the topology signature — identical
-    // signatures share the memoized layout; different signatures
-    // recompute. Nodes/edges are read inside the closure but the
-    // signature captures both.
+  // Memoize POSITIONS only, keyed on topology. label / kind / degree
+  // are NOT part of the memo so a refetch that changes those (with
+  // same topology) re-renders fresh values without recomputing the
+  // expensive d3-force layout. Codex r9 M1 fold.
+  const positionMap = useMemo(
+    () =>
+      nodes.length > 0
+        ? layoutPositions(nodes, edges)
+        : new Map<string, { x: number; y: number }>(),
+    // The signature captures the topology dependency; nodes/edges are
+    // read inside the closure for current data.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [signature],
   )
-
-  const positionMap = useMemo(() => {
-    const map = new Map<string, { x: number; y: number }>()
-    for (const n of positionedNodes) map.set(n.id, { x: n.x, y: n.y })
-    return map
-  }, [positionedNodes])
 
   const maxDegree = nodes.reduce((acc, n) => Math.max(acc, n.degree), 0)
 
@@ -215,22 +217,33 @@ export function ActorNetworkGraph(): JSX.Element {
                 />
               )
             })}
-            {positionedNodes.map((n) => (
-              <g
-                key={n.id}
-                data-testid={`actor-network-node-${n.id}`}
-                aria-label={`${n.kind}: ${n.label} (degree ${n.degree})`}
-              >
-                <circle
-                  cx={n.x}
-                  cy={n.y}
-                  r={radiusForDegree(n.degree, maxDegree)}
-                  stroke={KIND_STROKE[n.kind]}
-                  strokeWidth={2}
-                  fill="white"
-                />
-              </g>
-            ))}
+            {nodes.map((n) => {
+              // Render from CURRENT nodes (not the topology-memoized
+              // layout), joined to the position map. A refetch with
+              // same topology + new label / kind / degree updates
+              // here without re-running the d3 simulation.
+              const pos =
+                positionMap.get(n.id) ?? {
+                  x: SVG_WIDTH / 2,
+                  y: SVG_HEIGHT / 2,
+                }
+              return (
+                <g
+                  key={n.id}
+                  data-testid={`actor-network-node-${n.id}`}
+                  aria-label={`${n.kind}: ${n.label} (degree ${n.degree})`}
+                >
+                  <circle
+                    cx={pos.x}
+                    cy={pos.y}
+                    r={radiusForDegree(n.degree, maxDegree)}
+                    stroke={KIND_STROKE[n.kind]}
+                    strokeWidth={2}
+                    fill="white"
+                  />
+                </g>
+              )
+            })}
           </svg>
         </>
       )}
