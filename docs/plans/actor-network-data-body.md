@@ -1,7 +1,9 @@
 # PR 3 — Actor-network data path + populated graph
 
-Implements `docs/plans/actor-network-data.md` v1.6 (final commit
-`174479a`). Closes the Option-C 3-PR sequence by replacing the L6
+Implements `docs/plans/actor-network-data.md` v1.6.1 (commit
+`b2f418c`; original v1.6 plan-lock at commit `174479a`, v1.6.1 adds
+T15 PR-as-diff Codex r1 §0.1 amendments). Closes the Option-C 3-PR
+sequence by replacing the L6
 reserved-slot text-only `actor-network-graph` block (PR #32 lock)
 with a populated SNA visualization driven by a new BE endpoint —
 while preserving every reserved-slot discipline already locked at
@@ -113,13 +115,25 @@ All 16 architectural decisions pre-applied at plan v1.6 lock; see
 
 `pnpm run build` exits 0.
 
-### Pending — CI / manual
+### CI — GREEN on `b2f418c`
 
-- **CI `contract-verify` job**: runs the pact-python verifier
-  against the regenerated `contracts/pacts/frontend-dprk-cti-api.json`
-  (now includes the actor-network interaction) against a live
-  uvicorn instance with the new T8 provider state. Verifier result
-  gates the PR.
+All 12 checks COMPLETED with conclusion=SUCCESS, including:
+
+- **`contract-verify`**: pact-python verifier ran against the
+  regenerated `contracts/pacts/frontend-dprk-cti-api.json` (with
+  the new actor-network interaction) against a live uvicorn
+  instance with the T8 provider state — passed. Matcher cascade
+  intact, all eachLike fixtures non-empty, integer / boolean
+  fields type-checked.
+- `frontend`, `frontend-e2e`, `python-services` (api / worker /
+  llm-proxy), `api-tests`, `worker-tests`, `llm-proxy-tests`,
+  `db-migrations`, `data-quality-tests`, `api-integration` — all
+  GREEN.
+
+PR mergeStateStatus = `CLEAN`, mergeable = `MERGEABLE`.
+
+### Pending — manual smoke
+
 - **Manual smoke (T14)**: pending user run per memory
   `pattern_host_hybrid_dev_triad`. Login as `analyst@dev.local` per
   `keycloak_dev_realm`; navigate to `/dashboard`; verify
@@ -130,10 +144,10 @@ All 16 architectural decisions pre-applied at plan v1.6 lock; see
   navigate to `/reports`, `/incidents`, `/actors` — verify
   ActorNetworkGraph DOES NOT render (slot is dashboard-only per
   DESIGN.md).
-- **Pact provider verifier local run**: deferred — was not run
-  locally as part of this PR's commits because the contract-verify
-  job is the canonical surface; matcher-shape is independently
-  verified by `test_pact_state_fixtures.py` (CI-only).
+- **Pact provider verifier local run**: not run locally as part of
+  this PR's commits because the `contract-verify` CI job is the
+  canonical surface (now GREEN on `b2f418c`); matcher-shape is
+  independently verified by `test_pact_state_fixtures.py`.
 
 ## Cross-AI review trail
 
@@ -158,11 +172,14 @@ All 16 architectural decisions pre-applied at plan v1.6 lock; see
 | r9 (this session) | T10 GREEN review | FOLD-then-PROCEED | 4 (1 MEDIUM memo positions only, 3 LOW: tokens deferred, hashId, d3 types) |
 | r10 (this session) | T10 confirm | CLEAN PROCEED to T11 | 0 |
 | r11 (this session) | T11 review | CLEAN PROCEED to T13 (Path A) | 0 |
+| r1 (T15 PR-as-diff) | post-push, against `478ac76` | FOLD | 4 (2 MEDIUM i18n parity + L13/L12 plan deviation, 2 LOW body counts + DashboardPage docstring) |
+| r2 (T15 PR-as-diff) | post-r1-fold, against `b2f418c` | FOLD (docs-only) | 2 LOW (PR body CI status + v1.6.1 reference drift) |
 
-**Total**: 19 Codex rounds across plan, RED, T7, T8, T3-T5, T9,
-T10, T11. Every CRITICAL/HIGH finding folded. PR-as-diff Codex
-round (per memory `pattern_codex_body_review_loop`) will run after
-push (T15).
+**Total**: 21 Codex rounds across plan, RED, T7, T8, T3-T5, T9,
+T10, T11, and PR-as-diff. Every CRITICAL/HIGH finding folded; r1
+PR-as-diff confirmed all spec/code Codex resolutions held under
+top-to-bottom PR review; r2 verified r1 folds and surfaced only
+docs-only LOWs (this commit folds them).
 
 ## Acceptance criteria
 
@@ -175,9 +192,9 @@ Plan §7 — 12 ACs:
    empty per L10 (verified by T1).
 3. ✅ Rate limit returns 429 after 60 calls/minute (per L8); does
    NOT consume `/analytics/attack_matrix` budget (verified by T1).
-4. 🟡 Pact contract regen GREEN (T11 ✓); provider verifier
-   gated on CI `contract-verify` job (verifier passes locally
-   ungated by `POSTGRES_TEST_URL`; CI runs against live uvicorn).
+4. ✅ Pact contract regen GREEN (T11 ✓); provider verifier
+   passed on CI `contract-verify` job (commit `b2f418c`, against
+   live uvicorn with T8 provider state).
 5. ✅ OpenAPI snapshot diff = 1 new path + 3 schemas (verified by
    T6).
 6. ✅ `useActorNetwork` queryKey isolated from `summarySharedCache`
@@ -196,8 +213,12 @@ Plan §7 — 12 ACs:
 12. ✅ Group-filter cap-aware behavior verifiable per L4 Step B +
     L7(b) — Scenarios A/B/C (verified by T2).
 
-🟡 = pending CI / user action.
+🟡 = pending user action (T14 manual smoke). All CI checks GREEN.
 
 ## Plan reference
 
-`docs/plans/actor-network-data.md` v1.6 (commit `174479a`).
+`docs/plans/actor-network-data.md` v1.6.1 (commit `b2f418c`); v1.6
+plan-lock at commit `174479a`. v1.6.1 adds T15 PR-as-diff Codex r1
+fold §0.1 amendments (i18n parity test extension, L13 signature
+literal compliance, L12 useEffect→useMemo deviation, plus PR body
+count + DashboardPage docstring corrections).
