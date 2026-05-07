@@ -53,6 +53,18 @@ export interface AttackMatrixOptions {
   top_n?: number
 }
 
+/** Actor-network options — three independent per-kind caps. BE bounds
+ *  each to [1, 200] with default 25 at the router layer. Kept optional
+ *  so callers can omit and inherit the BE defaults; each option that
+ *  IS set is serialized + included in the query key (per-instance
+ *  caching scope, mirrors the AttackMatrixOptions pattern). Plan
+ *  ``docs/plans/actor-network-data.md`` v1.6 §4 T9. */
+export interface ActorNetworkOptions {
+  top_n_actor?: number
+  top_n_tool?: number
+  top_n_sector?: number
+}
+
 export function toAnalyticsFilters(
   state: Pick<FilterState, 'dateFrom' | 'dateTo' | 'groupIds'>,
 ): AnalyticsFilters {
@@ -102,6 +114,23 @@ export function toGeoQueryParams(
 ): URLSearchParams {
   const params = new URLSearchParams()
   appendCore(params, filters)
+  return params
+}
+
+export function toActorNetworkQueryParams(
+  filters: AnalyticsFilters,
+  options: ActorNetworkOptions = {},
+): URLSearchParams {
+  const params = new URLSearchParams()
+  appendCore(params, filters)
+  // Each per-kind cap is independently optional; only emit the param
+  // when the caller set it so the BE default applies otherwise.
+  if (options.top_n_actor != null)
+    params.append('top_n_actor', String(options.top_n_actor))
+  if (options.top_n_tool != null)
+    params.append('top_n_tool', String(options.top_n_tool))
+  if (options.top_n_sector != null)
+    params.append('top_n_sector', String(options.top_n_sector))
   return params
 }
 

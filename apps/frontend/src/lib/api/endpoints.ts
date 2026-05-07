@@ -10,9 +10,11 @@
 
 import { apiGet, apiPost, apiRawGet } from '../api'
 import {
+  type ActorNetworkOptions,
   type AnalyticsFilters,
   type AttackMatrixOptions,
   type IncidentsTrendGroupBy,
+  toActorNetworkQueryParams,
   toAttackMatrixQueryParams,
   toGeoQueryParams,
   toIncidentsTrendQueryParams,
@@ -37,6 +39,7 @@ import {
 import {
   actorDetailSchema,
   actorListResponseSchema,
+  actorNetworkResponseSchema,
   actorReportsResponseSchema,
   attackMatrixResponseSchema,
   currentUserSchema,
@@ -51,6 +54,7 @@ import {
   trendResponseSchema,
   type ActorDetail,
   type ActorListResponse,
+  type ActorNetworkResponse,
   type AttackMatrixResponse,
   type CurrentUser,
   type DashboardSummary,
@@ -221,6 +225,30 @@ export function getGeo(
     ? `/api/v1/analytics/geo?${qs}`
     : '/api/v1/analytics/geo'
   return apiGet(path, geoResponseSchema, signal)
+}
+
+/**
+ * `GET /api/v1/analytics/actor_network` — plan
+ * ``docs/plans/actor-network-data.md`` v1.6 L2 + L3 + T9.
+ *
+ * Returns a co-occurrence graph of actor / tool / sector nodes and
+ * the edges between them. Three independent per-kind caps
+ * (`top_n_actor` / `top_n_tool` / `top_n_sector`, BE bounds [1, 200]
+ * with default 25) and the shared analytics filter contract
+ * (`date_from` / `date_to` / `group_id[]`). Schema's
+ * `cap_breached: z.boolean().default(false)` makes a backwards-compat
+ * BE response that omits the field still parse cleanly.
+ */
+export function getActorNetwork(
+  filters: AnalyticsFilters,
+  options: ActorNetworkOptions = {},
+  signal?: AbortSignal,
+): Promise<ActorNetworkResponse> {
+  const qs = toActorNetworkQueryParams(filters, options).toString()
+  const path = qs.length > 0
+    ? `/api/v1/analytics/actor_network?${qs}`
+    : '/api/v1/analytics/actor_network'
+  return apiGet(path, actorNetworkResponseSchema, signal)
 }
 
 /**

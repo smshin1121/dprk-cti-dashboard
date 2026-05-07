@@ -18,6 +18,7 @@
  */
 
 import type {
+  ActorNetworkOptions,
   AnalyticsFilters,
   AttackMatrixOptions,
   IncidentsTrendGroupBy,
@@ -88,6 +89,21 @@ export const queryKeys = {
 
   analyticsGeo: (filters: AnalyticsFilters) =>
     ['analytics', 'geo', filters] as const,
+
+  /**
+   * `/api/v1/analytics/actor_network` — plan
+   * ``docs/plans/actor-network-data.md`` v1.6 L2 + L5 + T9. Mirrors
+   * `analyticsAttackMatrix` (caller-configurable per-kind caps in
+   * options); options live in their own slot of the key so each
+   * `top_n_*` change opens a new cache scope (per T3 cache-scope
+   * tests). Cache slot is **isolated** from `summarySharedCache` /
+   * other dashboard subscribers (plan §7 AC #6 + memory
+   * `pattern_shared_cache_test_extension`).
+   */
+  analyticsActorNetwork: (
+    filters: AnalyticsFilters,
+    options: ActorNetworkOptions = {},
+  ) => ['analytics', 'actor_network', filters, options] as const,
 
   /**
    * `/api/v1/reports/{id}` / `/incidents/{id}` / `/actors/{id}` —
