@@ -63,25 +63,33 @@ const POPULATED_DATA = {
 
 const EMPTY_DATA = { nodes: [], edges: [], cap_breached: false }
 
-// Codex r5 M3 fold: POPULATED_DATA above is a 3-edge star centered
-// on actor:1. To test topology-change reseed we need a GENUINELY
-// different shape (not another star where d3-force's deterministic
-// minimum could land at the same coordinates by accident). This
-// fixture is a chain: actor:9 — tool:99 — sector:FIN — actor:10.
-// Same cardinality (4 nodes / 3 edges) but the connectivity matrix
-// is different.
+// Codex r5 M3 + r6 fold: POPULATED_DATA above is a 3-edge star
+// centered on actor:1. To test topology-change reseed we need a
+// GENUINELY different shape, but every edge MUST be a canonical
+// edge class the BE aggregator emits — `actor↔tool`, `actor↔sector`,
+// canonical `actor↔actor` (source.group_id < target.group_id).
+// `tool↔sector` and `sector↔tool` would never appear from
+// `compute_actor_network`.
+//
+// Shape: tool:99 — actor:9 — actor:10 — sector:FIN.
+// Edges (3, all canonical kinds):
+//   actor:9  ↔ tool:99    (actor-tool)
+//   actor:9  ↔ actor:10   (actor-actor; lower id first)
+//   actor:10 ↔ sector:FIN (actor-sector)
+// Same cardinality (4 nodes / 3 edges) as POPULATED_DATA, different
+// connectivity matrix (no shared center node), so d3-force cannot
+// resolve to the same minimum.
 const POPULATED_DATA_DIFFERENT_TOPOLOGY = {
   nodes: [
-    { id: 'actor:9', kind: 'actor' as const, label: 'APT38', degree: 1 },
-    { id: 'tool:99', kind: 'tool' as const, label: 'Cobalt Strike', degree: 2 },
-    { id: 'sector:FIN', kind: 'sector' as const, label: 'FIN', degree: 2 },
-    { id: 'actor:10', kind: 'actor' as const, label: 'Andariel-X', degree: 1 },
+    { id: 'tool:99', kind: 'tool' as const, label: 'Cobalt Strike', degree: 1 },
+    { id: 'actor:9', kind: 'actor' as const, label: 'APT38', degree: 2 },
+    { id: 'actor:10', kind: 'actor' as const, label: 'Andariel-X', degree: 2 },
+    { id: 'sector:FIN', kind: 'sector' as const, label: 'FIN', degree: 1 },
   ],
   edges: [
-    // Chain: actor:9 — tool:99 — sector:FIN — actor:10
     { source_id: 'actor:9', target_id: 'tool:99', weight: 5 },
-    { source_id: 'tool:99', target_id: 'sector:FIN', weight: 4 },
-    { source_id: 'sector:FIN', target_id: 'actor:10', weight: 2 },
+    { source_id: 'actor:9', target_id: 'actor:10', weight: 2 },
+    { source_id: 'actor:10', target_id: 'sector:FIN', weight: 4 },
   ],
   cap_breached: false,
 }
