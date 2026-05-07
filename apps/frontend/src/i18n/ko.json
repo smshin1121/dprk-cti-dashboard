@@ -117,7 +117,8 @@
     },
     "actorNetwork": {
       "title": "행위자 네트워크 · 공동 발생",
-      "plannedEmptyState": "예정 · 데이터 없음"
+      "plannedEmptyState": "예정 · 데이터 없음",
+      "capBreachedNotice": "필터 선택이 기본 상한을 초과 — 선택된 모든 행위자가 표시됩니다."
     }
   }
 }

@@ -135,6 +135,14 @@ function routeFor(url: string): unknown {
   if (u.pathname === '/api/v1/analytics/trend') return TREND_BODY
   if (u.pathname === '/api/v1/analytics/geo') return GEO_BODY
   if (u.pathname === '/api/v1/analytics/attack_matrix') return ATTACK_MATRIX_BODY
+  if (u.pathname === '/api/v1/analytics/actor_network') {
+    // PR 3 T10 — empty body keeps the slot in the L6 empty-state
+    // branch (text-only `Planned · no data yet`) so the workspace's
+    // "no svg/canvas/node/edge/marks" assertion still holds. A
+    // populated body would render circles/lines and break the
+    // negative pin; that path is exercised by ActorNetworkGraph.test.tsx.
+    return { nodes: [], edges: [], cap_breached: false }
+  }
   if (u.pathname === '/api/v1/analytics/incidents_trend') {
     return u.searchParams.get('group_by') === 'sector'
       ? INCIDENTS_TREND_SECTOR_BODY

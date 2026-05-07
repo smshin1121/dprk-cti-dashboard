@@ -51,6 +51,7 @@
 
 import { useTranslation } from 'react-i18next'
 
+import { ActorNetworkGraph } from '../features/dashboard/ActorNetworkGraph'
 import { AttackHeatmap } from '../features/dashboard/AttackHeatmap'
 import { ContributorsList } from '../features/dashboard/ContributorsList'
 import { DashboardLeftRail } from '../features/dashboard/DashboardLeftRail'
@@ -116,31 +117,13 @@ export function DashboardPage(): JSX.Element {
           </div>
         </div>
 
-        {/* [SLOT] actor-network-graph — RESERVED / FUTURE per DESIGN.md
-            ## Dashboard Workspace Pattern > actor-network-graph
-            vocabulary entry. Card chrome + title + text-only
-            `Planned · no data yet` empty state. NO svg / canvas /
-            synthetic nodes-edges / skeleton chart / sparkline.
-            PR 3 wires the live SNA visualization. */}
-        <section
-          data-testid="actor-network-graph-slot"
-          aria-labelledby="actor-network-graph-heading"
-          className="rounded-none border border-border-card bg-surface p-4"
-        >
-          <h3
-            id="actor-network-graph-heading"
-            data-testid="actor-network-graph-title"
-            className="mb-3 text-sm font-semibold text-ink"
-          >
-            {t('dashboard.actorNetwork.title')}
-          </h3>
-          <p
-            data-testid="actor-network-graph-empty-state"
-            className="text-sm text-ink-muted"
-          >
-            {t('dashboard.actorNetwork.plannedEmptyState')}
-          </p>
-        </section>
+        {/* PR 3 T10 — replaces the L6 reserved-slot text-only block
+            with the live actor-network co-occurrence graph.
+            ActorNetworkGraph preserves the slot/title/empty-state
+            testids (workspace tests pin them via DashboardPage.workspace.test.tsx)
+            and falls back to the same `Planned · no data yet` empty
+            state when nodes.length === 0. */}
+        <ActorNetworkGraph />
 
         {/* PR #23 §6.C C10 — LocationsRanked sits below the WorldMap
             row as a sortable, accessible companion list to the geo

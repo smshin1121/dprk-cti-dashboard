@@ -117,7 +117,8 @@
     },
     "actorNetwork": {
       "title": "Actor network · co-occurrence",
-      "plannedEmptyState": "Planned · no data yet"
+      "plannedEmptyState": "Planned · no data yet",
+      "capBreachedNotice": "Filter selection exceeds default cap — all selected actors shown."
     }
   }
 }
