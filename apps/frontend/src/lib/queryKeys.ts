@@ -106,6 +106,49 @@ export const queryKeys = {
   ) => ['analytics', 'actor_network', filters, options] as const,
 
   /**
+   * `/api/v1/analytics/correlation/series` — Phase 3 Slice 3 D-1
+   * (PR-B T4). Catalog endpoint takes no params and the BE response
+   * is small + immutable per session, so the hook layer (T5) sets
+   * `staleTime: Infinity`. Static three-element tuple — every consumer
+   * shares one cache slot regardless of mount count
+   * (`pattern_shared_query_cache_multi_subscriber`).
+   */
+  analyticsCorrelationCatalog: () =>
+    ['analytics', 'correlation', 'series'] as const,
+
+  /**
+   * `/api/v1/analytics/correlation` — Phase 3 Slice 3 D-1 (PR-B T4).
+   *
+   * Key tuple is the user-input `(x, y, dateFrom, dateTo, alpha)` —
+   * isomorphic to the BE Redis cache key
+   * `correlation:v1:{x}:{y}:{date_from}:{date_to}:{alpha}` (umbrella
+   * §7.5 line 576). The FE keys on user input, not BE-resolved values:
+   * `null` for `dateFrom` / `dateTo` is preserved as the literal `null`
+   * in the tuple so the empty-date URL state is stable across renders
+   * (no `Date.now()` substitution, no `today()` substitution, no
+   * `Math.min` on `undefined`). The BE-resolved dates returned in the
+   * 200 body are *displayed* but never written back into the input
+   * tuple — that would break shareable-URL semantics.
+   *
+   * `alpha` is part of the key because it participates in the BE Redis
+   * cache key; the hook layer always supplies the literal `0.05` (Q4
+   * default) until UX surfaces it. CONTRACT.md §1 + §5.
+   *
+   * `method` (B5 URL state) is purely visual — the chart toggles
+   * between Pearson and Spearman views of the SAME response — so it
+   * is NOT part of the cache key (one fetch per `(x, y, dates, alpha)`
+   * regardless of toggle clicks; pinned by T7 (c) method-toggle test
+   * via `pattern_shared_query_cache_multi_subscriber`).
+   */
+  analyticsCorrelation: (
+    x: string,
+    y: string,
+    dateFrom: string | null,
+    dateTo: string | null,
+    alpha: number,
+  ) => ['analytics', 'correlation', x, y, dateFrom, dateTo, alpha] as const,
+
+  /**
    * `/api/v1/reports/{id}` / `/incidents/{id}` / `/actors/{id}` —
    * plan D1 + D11 (PR #14 Group D). Detail pages aren't filterable:
    * the path-param id IS the identifier. Each key carries ONLY the
