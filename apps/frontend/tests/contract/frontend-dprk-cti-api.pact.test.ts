@@ -23,6 +23,11 @@
  *   /api/v1/search                             — populated   [PR #17 F]
  *                                              — D10 empty   [PR #17 F]
  *                                              — 422 blank q [PR #17 F]
+ *   /api/v1/analytics/correlation/series       — catalog ≥1 series  [PR-B T8]
+ *   /api/v1/analytics/correlation              — happy populated     [PR-B T8]
+ *                                              — happy w/ insufficient_sample_at_lag cells  [PR-B T8]
+ *                                              — happy w/ degenerate + low_count_suppressed [PR-B T8]
+ *                                              — 422 insufficient_sample                    [PR-B T8]
  *
  * Pinned-id strategy for detail + similar + actor-reports paths:
  *   Detail endpoints take the resource id in the PATH. A path-param
@@ -97,7 +102,8 @@ const provider = new PactV3({
   logLevel: 'warn',
 })
 
-const { like, eachLike, integer, string, boolean } = MatchersV3
+const { like, eachLike, integer, string, boolean, equal, arrayContaining } =
+  MatchersV3
 
 // ---------------------------------------------------------------------
 // /auth/me
@@ -1442,6 +1448,612 @@ describe('GET /api/v1/search', () => {
       expect(Array.isArray(body.detail)).toBe(true)
       expect(body.detail.length).toBeGreaterThan(0)
       expect(body.detail[0].loc).toContain('query')
+    })
+  })
+})
+
+// ---------------------------------------------------------------------
+// /analytics/correlation/series — D-1 catalog (PR-B T8 — umbrella §7.6 #1)
+// ---------------------------------------------------------------------
+
+describe('GET /api/v1/analytics/correlation/series', () => {
+  it('returns the curated catalog of named time series with at least one entry', async () => {
+    // Umbrella §7.2 + §2.2 catalog response — `{series: [{id,
+    // label_ko, label_en, root, bucket}]}`. `bucket` is currently
+    // single-valued at `'monthly'` per FE zod literal (schemas.ts
+    // line 693); the matcher uses `string('monthly')` for type-only
+    // pinning + a downstream FE Zod check enforces the literal.
+    // `root` similarly uses a `string()` matcher with one of the two
+    // enum example values; FE zod restricts at parse time. eachLike
+    // requires ≥1 series row (memory `pitfall_pact_fixture_shape`).
+    provider
+      .given(
+        'seeded correlation catalog fixture '
+          + 'and an authenticated analyst session',
+      )
+      .uponReceiving(
+        'a request for the correlation series catalog (PR-B T8)',
+      )
+      .withRequest({
+        method: 'GET',
+        path: '/api/v1/analytics/correlation/series',
+      })
+      .willRespondWith({
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+        body: like({
+          series: eachLike({
+            id: string('reports.total'),
+            label_ko: string('전체 보고서'),
+            label_en: string('All reports'),
+            root: string('reports.published'),
+            bucket: string('monthly'),
+          }),
+        }),
+      })
+
+    await provider.executeTest(async (mockServer) => {
+      const res = await fetch(
+        `${mockServer.url}/api/v1/analytics/correlation/series`,
+      )
+      expect(res.status).toBe(200)
+      const body = (await res.json()) as {
+        series: {
+          id: string
+          label_ko: string
+          label_en: string
+          root: string
+          bucket: string
+        }[]
+      }
+      expect(Array.isArray(body.series)).toBe(true)
+      expect(body.series.length).toBeGreaterThan(0)
+      const item = body.series[0]
+      expect(item.id).toBeTypeOf('string')
+      expect(item.label_ko).toBeTypeOf('string')
+      expect(item.label_en).toBeTypeOf('string')
+      // root is a 2-value enum at the FE zod layer; pact matcher is
+      // type-only ("is string"), and the consumer-side runtime
+      // assertion checks the value is one of the locked literals.
+      expect(['reports.published', 'incidents.reported']).toContain(item.root)
+      // bucket is single-valued in slice 1; future granularities are
+      // umbrella §10.2 (out of scope for PR-B).
+      expect(item.bucket).toBe('monthly')
+    })
+  })
+})
+
+// ---------------------------------------------------------------------
+// /analytics/correlation — D-1 primary endpoint (PR-B T8 — umbrella §7.6 #2-#5)
+// ---------------------------------------------------------------------
+//
+// Four interactions on /correlation pin the umbrella §5.2 homogeneous
+// 6-field per-method cell shape across the 4-value `reason` enum and
+// the 422 typed-error envelope:
+//
+//   #2 happy populated (uniform `reason: null`, with one warning) —
+//      eachLike over lag_grid; populated cell example pins r/p_raw/
+//      p_adjusted as numbers + reason: null literal. State handler
+//      seeds a dense window so all 49 cells satisfy the matcher.
+//
+//   #3 happy with `insufficient_sample_at_lag` extreme-lag cells —
+//      arrayContaining over lag_grid with TWO variants: a populated
+//      mid-lag cell + an insufficient extreme-lag cell. The umbrella
+//      pipeline (§7.4) means k=0 is always populated when effective_n
+//      ≥ 30 (gate condition for 200), so a uniform-insufficient grid
+//      is unreachable; arrayContaining captures the heterogeneity
+//      precisely without forcing the BE state to violate the pipeline.
+//
+//   #4 happy with `degenerate` + `low_count_suppressed` cells —
+//      arrayContaining with FOUR variants pinning all four `reason`
+//      enum values (null populated + 3 non-null). Demonstrates the
+//      full enum in one interaction per umbrella §7.6 line 585.
+//
+//   #5 422 insufficient_sample — narrow window forces effective_n <
+//      30 at k=0, gate raises InsufficientSample → uniform FastAPI
+//      `detail[]` envelope. `type` literal-pinned via `equal()`
+//      because the FE error parser switches on `detail[0].type` per
+//      umbrella §7.3 line 497; cosmetic msg drift would NOT break
+//      the parser, but a type-discriminator drift WOULD.
+//
+// Pinned-id strategy: catalog series IDs are stable strings (no DB
+// row-id coupling), so no ID pinning is needed. The state handlers
+// do seed deterministic bucketed counts; the matcher cascade pins
+// SHAPE only, with the canary `reason` values + the example numbers
+// documenting expected runtime values.
+
+describe('GET /api/v1/analytics/correlation', () => {
+  // Umbrella §5.2 + §7.4 — populated cell shape: r/p_raw/p_adjusted
+  // are numbers, `significant` is a boolean, `effective_n_at_lag` is
+  // an int, `reason` is null literal. Re-used across describe blocks
+  // as the "populated" arrayContaining variant for #3 + #4.
+  const populatedCellTemplate = {
+    lag: integer(0),
+    pearson: {
+      r: like(0.412),
+      p_raw: like(0.00021),
+      p_adjusted: like(0.00514),
+      significant: boolean(true),
+      effective_n_at_lag: integer(64),
+      reason: null,
+    },
+    spearman: {
+      r: like(0.398),
+      p_raw: like(0.00031),
+      p_adjusted: like(0.00759),
+      significant: boolean(false),
+      effective_n_at_lag: integer(64),
+      reason: null,
+    },
+  }
+
+  // Umbrella §5.2 — non-null cell shape: when reason !== null,
+  // r/p_raw/p_adjusted MUST be null and significant MUST be false
+  // (BE-side pydantic `model_validator`). The reason value is
+  // type-matched as a string at the matcher level; the example value
+  // documents which canary the BE state handler is expected to
+  // produce for that arrayContaining variant.
+  function nonNullCellTemplate(
+    lag: number,
+    effectiveN: number,
+    reason: string,
+  ) {
+    return {
+      lag: integer(lag),
+      pearson: {
+        r: null,
+        p_raw: null,
+        p_adjusted: null,
+        significant: boolean(false),
+        effective_n_at_lag: integer(effectiveN),
+        reason: equal(reason),
+      },
+      spearman: {
+        r: null,
+        p_raw: null,
+        p_adjusted: null,
+        significant: boolean(false),
+        effective_n_at_lag: integer(effectiveN),
+        reason: equal(reason),
+      },
+    }
+  }
+
+  it('returns a populated 49-cell lag_grid with reason: null and at least one warning', async () => {
+    // BE state handler (T13): `_ensure_correlation_populated_fixture`
+    // seeds a dense ~7-year window of reports + incidents with
+    // varying monthly counts so every lag's effective_n_at_lag stays
+    // ≥ 30 + non-zero variance + raw counts ≥ 5. All 49 cells return
+    // populated (reason: null) + at least one §6.2 trigger fires
+    // (e.g. `cross_rooted_pair` for the reports↔incidents pair).
+    // Wide query window keeps the gate condition + per-lag
+    // effective_n_at_lag well above 30.
+    provider
+      .given(
+        'seeded correlation populated fixture '
+          + 'and an authenticated analyst session',
+      )
+      .uponReceiving(
+        'a request for the correlation primary endpoint with a populated grid (PR-B T8)',
+      )
+      .withRequest({
+        method: 'GET',
+        path: '/api/v1/analytics/correlation',
+        query: {
+          x: 'reports.total',
+          y: 'incidents.total',
+          date_from: '2018-01-01',
+          date_to: '2026-04-30',
+          alpha: '0.05',
+        },
+      })
+      .willRespondWith({
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+        // Umbrella §7.3 200 response — top-level required fields
+        // pinned via `like()`; lag_grid via `eachLike()` with the
+        // populated cell template (memory
+        // `pitfall_pact_ruby_root_like_required` — root `like()` so
+        // nested matchers cascade); `interpretation.warnings` via
+        // `eachLike()` to pin "≥ 1 warning" per the umbrella spec.
+        body: like({
+          x: string('reports.total'),
+          y: string('incidents.total'),
+          date_from: string('2018-01-01'),
+          date_to: string('2026-04-30'),
+          alpha: like(0.05),
+          effective_n: integer(64),
+          lag_grid: eachLike(populatedCellTemplate),
+          interpretation: like({
+            caveat: string(
+              'Correlation does not imply causation. '
+                + 'See methodology for limitations.',
+            ),
+            methodology_url: string('/docs/methodology/correlation'),
+            warnings: eachLike({
+              code: string('cross_rooted_pair'),
+              message: string(
+                'Pair crosses reports.published and incidents.reported root tables.',
+              ),
+              severity: string('info'),
+            }),
+          }),
+        }),
+      })
+
+    await provider.executeTest(async (mockServer) => {
+      const url = new URL(`${mockServer.url}/api/v1/analytics/correlation`)
+      url.searchParams.append('x', 'reports.total')
+      url.searchParams.append('y', 'incidents.total')
+      url.searchParams.append('date_from', '2018-01-01')
+      url.searchParams.append('date_to', '2026-04-30')
+      url.searchParams.append('alpha', '0.05')
+      const res = await fetch(url.toString())
+      expect(res.status).toBe(200)
+      const body = (await res.json()) as {
+        x: string
+        y: string
+        date_from: string
+        date_to: string
+        alpha: number
+        effective_n: number
+        lag_grid: {
+          lag: number
+          pearson: {
+            r: number | null
+            p_raw: number | null
+            p_adjusted: number | null
+            significant: boolean
+            effective_n_at_lag: number
+            reason: string | null
+          }
+          spearman: {
+            r: number | null
+            p_raw: number | null
+            p_adjusted: number | null
+            significant: boolean
+            effective_n_at_lag: number
+            reason: string | null
+          }
+        }[]
+        interpretation: {
+          caveat: string
+          methodology_url: string
+          warnings: { code: string; message: string; severity: string }[]
+        }
+      }
+      // Umbrella §7.3 envelope sanity — top-level keys typed
+      // correctly; the FE Zod schema (`correlationResponseSchema`)
+      // enforces the strict 49-cell length downstream.
+      expect(body.x).toBeTypeOf('string')
+      expect(body.y).toBeTypeOf('string')
+      expect(body.alpha).toBeGreaterThan(0)
+      expect(body.alpha).toBeLessThan(1)
+      expect(body.effective_n).toBeTypeOf('number')
+      expect(Array.isArray(body.lag_grid)).toBe(true)
+      expect(body.lag_grid.length).toBeGreaterThan(0)
+      // Populated cell — reason null AND r/p_raw/p_adjusted
+      // numbers per umbrella §5.2 invariant.
+      const cell = body.lag_grid[0]
+      expect(cell.lag).toBeTypeOf('number')
+      expect(cell.pearson.reason).toBeNull()
+      expect(cell.spearman.reason).toBeNull()
+      expect(cell.pearson.r).toBeTypeOf('number')
+      expect(cell.pearson.p_raw).toBeTypeOf('number')
+      expect(cell.pearson.p_adjusted).toBeTypeOf('number')
+      expect(cell.pearson.significant).toBeTypeOf('boolean')
+      expect(cell.pearson.effective_n_at_lag).toBeTypeOf('number')
+      // Interpretation block — caveat / methodology_url present +
+      // ≥1 warning entry (umbrella §7.6 #2 explicit lock).
+      expect(body.interpretation.caveat).toBeTypeOf('string')
+      expect(body.interpretation.methodology_url).toBeTypeOf('string')
+      expect(Array.isArray(body.interpretation.warnings)).toBe(true)
+      expect(body.interpretation.warnings.length).toBeGreaterThan(0)
+      const warning = body.interpretation.warnings[0]
+      expect(warning.code).toBeTypeOf('string')
+      expect(warning.severity).toBeTypeOf('string')
+    })
+  })
+
+  it('returns a happy grid containing insufficient_sample_at_lag cells at extreme lags (PR-B T8)', async () => {
+    // BE state handler (T13):
+    // `_ensure_correlation_insufficient_sample_at_lag_fixture` seeds
+    // a 30-month window where lag=0 effective_n_at_lag = 30 (passes
+    // the §7.4 gate) and shifted-pair effective_n_at_lag at extreme
+    // lags falls below 30 → those cells carry
+    // `reason: "insufficient_sample_at_lag"` per umbrella R-12 +
+    // §5.1. The grid is heterogeneous (populated + insufficient),
+    // so `arrayContaining` pins both variants explicitly — eachLike
+    // would force per-element uniformity which the locked pipeline
+    // can't satisfy without escalating to the 422 path (interaction
+    // #5).
+    provider
+      .given(
+        'seeded correlation insufficient_sample_at_lag fixture '
+          + 'and an authenticated analyst session',
+      )
+      .uponReceiving(
+        'a request for the correlation primary endpoint with insufficient_sample_at_lag cells (PR-B T8)',
+      )
+      .withRequest({
+        method: 'GET',
+        path: '/api/v1/analytics/correlation',
+        query: {
+          x: 'reports.total',
+          y: 'incidents.total',
+          date_from: '2024-01-01',
+          date_to: '2026-06-30',
+          alpha: '0.05',
+        },
+      })
+      .willRespondWith({
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+        body: like({
+          x: string('reports.total'),
+          y: string('incidents.total'),
+          date_from: string('2024-01-01'),
+          date_to: string('2026-06-30'),
+          alpha: like(0.05),
+          effective_n: integer(30),
+          lag_grid: arrayContaining(
+            // Populated mid-lag variant (lag=0 always populated when
+            // gate passes — effective_n_at_lag=30 here).
+            populatedCellTemplate,
+            // Insufficient extreme-lag variant — shifted-pair count
+            // < 30 at |k|=24, reason canary literal-pinned via
+            // `equal()` so a BE drift away from the locked enum
+            // value flips red.
+            nonNullCellTemplate(24, 6, 'insufficient_sample_at_lag'),
+          ),
+          interpretation: like({
+            caveat: string(
+              'Correlation does not imply causation. '
+                + 'See methodology for limitations.',
+            ),
+            methodology_url: string('/docs/methodology/correlation'),
+            warnings: eachLike({
+              code: string('sparse_window'),
+              message: string('30 valid months — borderline sample size.'),
+              severity: string('info'),
+            }),
+          }),
+        }),
+      })
+
+    await provider.executeTest(async (mockServer) => {
+      const url = new URL(`${mockServer.url}/api/v1/analytics/correlation`)
+      url.searchParams.append('x', 'reports.total')
+      url.searchParams.append('y', 'incidents.total')
+      url.searchParams.append('date_from', '2024-01-01')
+      url.searchParams.append('date_to', '2026-06-30')
+      url.searchParams.append('alpha', '0.05')
+      const res = await fetch(url.toString())
+      expect(res.status).toBe(200)
+      const body = (await res.json()) as {
+        lag_grid: {
+          lag: number
+          pearson: { reason: string | null }
+          spearman: { reason: string | null }
+        }[]
+      }
+      expect(Array.isArray(body.lag_grid)).toBe(true)
+      // The arrayContaining matcher enforces ≥1 cell of each
+      // variant at verify time; the consumer-side assertions add
+      // explicit at-least-once checks for both reason canaries to
+      // pin the heterogeneous-grid contract independently from the
+      // matcher (defence-in-depth — if pact-ruby's
+      // `array-contains` rule ever silently weakens, this fails).
+      const hasPopulated = body.lag_grid.some(
+        (c) => c.pearson.reason === null && c.spearman.reason === null,
+      )
+      const hasInsufficient = body.lag_grid.some(
+        (c) =>
+          c.pearson.reason === 'insufficient_sample_at_lag'
+            && c.spearman.reason === 'insufficient_sample_at_lag',
+      )
+      expect(hasPopulated).toBe(true)
+      expect(hasInsufficient).toBe(true)
+    })
+  })
+
+  it('returns a happy grid demonstrating the full 4-value reason enum (PR-B T8)', async () => {
+    // BE state handler (T13):
+    // `_ensure_correlation_full_reason_enum_fixture` engineers a
+    // window where the lag scan hits all four §5.2 reason values:
+    //   - populated (reason: null) — mid-lag cells where gate +
+    //     variance + raw-count thresholds all pass
+    //   - insufficient_sample_at_lag — extreme-lag cells where
+    //     shifted-pair count drops below 30
+    //   - degenerate — synthetic zero-variance segment forces
+    //     var(X_shifted)==0 for a chosen lag
+    //   - low_count_suppressed — R-16 disclosure mitigation: raw
+    //     monthly counts < 5 in the shifted-pair window
+    //
+    // Per umbrella §7.6 #4 — pins the full enum in ONE interaction
+    // so a future BE change that introduces a new reason value (or
+    // drops one) is caught here independently of #2/#3.
+    provider
+      .given(
+        'seeded correlation full-reason-enum fixture '
+          + 'and an authenticated analyst session',
+      )
+      .uponReceiving(
+        'a request for the correlation primary endpoint with degenerate + low_count_suppressed cells (PR-B T8)',
+      )
+      .withRequest({
+        method: 'GET',
+        path: '/api/v1/analytics/correlation',
+        query: {
+          x: 'reports.total',
+          y: 'incidents.total',
+          date_from: '2018-01-01',
+          date_to: '2026-04-30',
+          alpha: '0.05',
+        },
+      })
+      .willRespondWith({
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+        body: like({
+          x: string('reports.total'),
+          y: string('incidents.total'),
+          date_from: string('2018-01-01'),
+          date_to: string('2026-04-30'),
+          alpha: like(0.05),
+          effective_n: integer(64),
+          lag_grid: arrayContaining(
+            populatedCellTemplate,
+            nonNullCellTemplate(-24, 28, 'insufficient_sample_at_lag'),
+            nonNullCellTemplate(12, 60, 'degenerate'),
+            nonNullCellTemplate(6, 78, 'low_count_suppressed'),
+          ),
+          interpretation: like({
+            caveat: string(
+              'Correlation does not imply causation. '
+                + 'See methodology for limitations.',
+            ),
+            methodology_url: string('/docs/methodology/correlation'),
+            // R-16 trigger — `low_count_suppressed_cells` warning
+            // auto-emits whenever any cell has reason
+            // `low_count_suppressed` (umbrella §7.4 AFTER-loop
+            // derivation). Pinned via eachLike + canary code.
+            warnings: eachLike({
+              code: string('low_count_suppressed_cells'),
+              message: string(
+                'Some lag cells were suppressed because shifted-pair '
+                  + 'monthly counts fell below the disclosure threshold.',
+              ),
+              severity: string('info'),
+            }),
+          }),
+        }),
+      })
+
+    await provider.executeTest(async (mockServer) => {
+      const url = new URL(`${mockServer.url}/api/v1/analytics/correlation`)
+      url.searchParams.append('x', 'reports.total')
+      url.searchParams.append('y', 'incidents.total')
+      url.searchParams.append('date_from', '2018-01-01')
+      url.searchParams.append('date_to', '2026-04-30')
+      url.searchParams.append('alpha', '0.05')
+      const res = await fetch(url.toString())
+      expect(res.status).toBe(200)
+      const body = (await res.json()) as {
+        lag_grid: {
+          lag: number
+          pearson: { reason: string | null }
+          spearman: { reason: string | null }
+        }[]
+        interpretation: {
+          warnings: { code: string }[]
+        }
+      }
+      // Pin all 4 reason enum values in this single interaction —
+      // matches umbrella §7.6 #4 "demonstrates the full 4-value
+      // reason enum in one interaction" lock.
+      const reasons = new Set<string | null>()
+      for (const cell of body.lag_grid) {
+        reasons.add(cell.pearson.reason)
+      }
+      expect(reasons.has(null)).toBe(true)
+      expect(reasons.has('insufficient_sample_at_lag')).toBe(true)
+      expect(reasons.has('degenerate')).toBe(true)
+      expect(reasons.has('low_count_suppressed')).toBe(true)
+      // R-16 trigger sanity — at least one
+      // `low_count_suppressed_cells` warning when the fixture
+      // produces low_count_suppressed cells (umbrella §7.4
+      // AFTER-loop derivation).
+      const codes = body.interpretation.warnings.map((w) => w.code)
+      expect(codes).toContain('low_count_suppressed_cells')
+    })
+  })
+
+  it('returns 422 with value_error.insufficient_sample when effective_n < 30 (PR-B T8)', async () => {
+    // BE state handler (T13):
+    // `_ensure_correlation_insufficient_sample_422_fixture` seeds a
+    // narrow ~6-month window so the k=0 gate condition fires —
+    // `effective_n < 30 → InsufficientSample`. The router translates
+    // to 422 with the umbrella §7.3 envelope.
+    //
+    // `type` literal-pinned via `equal()` because the FE error
+    // parser switches on `detail[0].type` per umbrella §7.3
+    // line 497; a BE drift away from the locked enum value would
+    // silently break the FE empty-state copy path, so this
+    // matcher must reject it.
+    provider
+      .given(
+        'seeded correlation insufficient_sample 422 fixture '
+          + 'and an authenticated analyst session',
+      )
+      .uponReceiving(
+        'a request for the correlation primary endpoint that fails the effective_n gate (PR-B T8)',
+      )
+      .withRequest({
+        method: 'GET',
+        path: '/api/v1/analytics/correlation',
+        query: {
+          x: 'reports.total',
+          y: 'incidents.total',
+          date_from: '2026-01-01',
+          date_to: '2026-06-30',
+          alpha: '0.05',
+        },
+      })
+      .willRespondWith({
+        status: 422,
+        headers: { 'Content-Type': 'application/json' },
+        // Umbrella §7.3 envelope — uniform FastAPI `detail[]`. `loc`
+        // is type-loose (`eachLike('body')`) because the umbrella
+        // pins `["body", "correlation"]` but the FE parser only
+        // reads `detail[0].type` (memory `pattern_layer_boundary_lock`
+        // intent). `type` is literal-pinned via `equal()`. `ctx` is
+        // wrapped in `like()` so its inner integer matchers cascade
+        // correctly (memory `pitfall_pact_ruby_root_like_required`).
+        body: like({
+          detail: eachLike({
+            loc: eachLike('body'),
+            msg: string(
+              'Minimum 30 valid months required after no_data exclusion; got 18',
+            ),
+            type: equal('value_error.insufficient_sample'),
+            ctx: like({
+              effective_n: integer(18),
+              minimum_n: integer(30),
+            }),
+          }),
+        }),
+      })
+
+    await provider.executeTest(async (mockServer) => {
+      const url = new URL(`${mockServer.url}/api/v1/analytics/correlation`)
+      url.searchParams.append('x', 'reports.total')
+      url.searchParams.append('y', 'incidents.total')
+      url.searchParams.append('date_from', '2026-01-01')
+      url.searchParams.append('date_to', '2026-06-30')
+      url.searchParams.append('alpha', '0.05')
+      const res = await fetch(url.toString())
+      expect(res.status).toBe(422)
+      const body = (await res.json()) as {
+        detail: {
+          loc: unknown[]
+          msg: string
+          type: string
+          ctx: { effective_n: number; minimum_n: number }
+        }[]
+      }
+      expect(Array.isArray(body.detail)).toBe(true)
+      expect(body.detail.length).toBeGreaterThan(0)
+      const entry = body.detail[0]
+      // Type discriminator literal — FE error parser switches on
+      // this exact value (umbrella §7.3 line 497).
+      expect(entry.type).toBe('value_error.insufficient_sample')
+      expect(entry.msg).toBeTypeOf('string')
+      // ctx must surface the runtime `effective_n` so the FE
+      // empty-state copy can render the actual sample size + the
+      // minimum threshold side-by-side.
+      expect(entry.ctx.effective_n).toBeTypeOf('number')
+      expect(entry.ctx.minimum_n).toBe(30)
     })
   })
 })

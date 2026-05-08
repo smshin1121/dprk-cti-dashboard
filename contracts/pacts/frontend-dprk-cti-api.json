@@ -1596,6 +1596,1415 @@
       }
     },
     {
+      "description": "a request for the correlation primary endpoint that fails the effective_n gate (PR-B T8)",
+      "providerStates": [
+        {
+          "name": "seeded correlation insufficient_sample 422 fixture and an authenticated analyst session"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/analytics/correlation",
+        "query": {
+          "alpha": [
+            "0.05"
+          ],
+          "date_from": [
+            "2026-01-01"
+          ],
+          "date_to": [
+            "2026-06-30"
+          ],
+          "x": [
+            "reports.total"
+          ],
+          "y": [
+            "incidents.total"
+          ]
+        }
+      },
+      "response": {
+        "body": {
+          "detail": [
+            {
+              "ctx": {
+                "effective_n": 18,
+                "minimum_n": 30
+              },
+              "loc": [
+                "body"
+              ],
+              "msg": "Minimum 30 valid months required after no_data exclusion; got 18",
+              "type": "value_error.insufficient_sample"
+            }
+          ]
+        },
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "matchingRules": {
+          "body": {
+            "$": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.detail": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type",
+                  "min": 1
+                }
+              ]
+            },
+            "$.detail[*].ctx": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.detail[*].ctx.effective_n": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "integer"
+                }
+              ]
+            },
+            "$.detail[*].ctx.minimum_n": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "integer"
+                }
+              ]
+            },
+            "$.detail[*].loc": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type",
+                  "min": 1
+                }
+              ]
+            },
+            "$.detail[*].msg": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.detail[*].type": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "equality"
+                }
+              ]
+            }
+          }
+        },
+        "status": 422
+      }
+    },
+    {
+      "description": "a request for the correlation primary endpoint with a populated grid (PR-B T8)",
+      "providerStates": [
+        {
+          "name": "seeded correlation populated fixture and an authenticated analyst session"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/analytics/correlation",
+        "query": {
+          "alpha": [
+            "0.05"
+          ],
+          "date_from": [
+            "2018-01-01"
+          ],
+          "date_to": [
+            "2026-04-30"
+          ],
+          "x": [
+            "reports.total"
+          ],
+          "y": [
+            "incidents.total"
+          ]
+        }
+      },
+      "response": {
+        "body": {
+          "alpha": 0.05,
+          "date_from": "2018-01-01",
+          "date_to": "2026-04-30",
+          "effective_n": 64,
+          "interpretation": {
+            "caveat": "Correlation does not imply causation. See methodology for limitations.",
+            "methodology_url": "/docs/methodology/correlation",
+            "warnings": [
+              {
+                "code": "cross_rooted_pair",
+                "message": "Pair crosses reports.published and incidents.reported root tables.",
+                "severity": "info"
+              }
+            ]
+          },
+          "lag_grid": [
+            {
+              "lag": 0,
+              "pearson": {
+                "effective_n_at_lag": 64,
+                "p_adjusted": 0.00514,
+                "p_raw": 0.00021,
+                "r": 0.412,
+                "reason": null,
+                "significant": true
+              },
+              "spearman": {
+                "effective_n_at_lag": 64,
+                "p_adjusted": 0.00759,
+                "p_raw": 0.00031,
+                "r": 0.398,
+                "reason": null,
+                "significant": false
+              }
+            }
+          ],
+          "x": "reports.total",
+          "y": "incidents.total"
+        },
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "matchingRules": {
+          "body": {
+            "$": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.alpha": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.date_from": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.date_to": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.effective_n": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "integer"
+                }
+              ]
+            },
+            "$.interpretation": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.interpretation.caveat": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.interpretation.methodology_url": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.interpretation.warnings": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type",
+                  "min": 1
+                }
+              ]
+            },
+            "$.interpretation.warnings[*].code": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.interpretation.warnings[*].message": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.interpretation.warnings[*].severity": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.lag_grid": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type",
+                  "min": 1
+                }
+              ]
+            },
+            "$.lag_grid[*].lag": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "integer"
+                }
+              ]
+            },
+            "$.lag_grid[*].pearson.effective_n_at_lag": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "integer"
+                }
+              ]
+            },
+            "$.lag_grid[*].pearson.p_adjusted": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.lag_grid[*].pearson.p_raw": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.lag_grid[*].pearson.r": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.lag_grid[*].pearson.significant": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.lag_grid[*].spearman.effective_n_at_lag": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "integer"
+                }
+              ]
+            },
+            "$.lag_grid[*].spearman.p_adjusted": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.lag_grid[*].spearman.p_raw": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.lag_grid[*].spearman.r": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.lag_grid[*].spearman.significant": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.x": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.y": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          }
+        },
+        "status": 200
+      }
+    },
+    {
+      "description": "a request for the correlation primary endpoint with degenerate + low_count_suppressed cells (PR-B T8)",
+      "providerStates": [
+        {
+          "name": "seeded correlation full-reason-enum fixture and an authenticated analyst session"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/analytics/correlation",
+        "query": {
+          "alpha": [
+            "0.05"
+          ],
+          "date_from": [
+            "2018-01-01"
+          ],
+          "date_to": [
+            "2026-04-30"
+          ],
+          "x": [
+            "reports.total"
+          ],
+          "y": [
+            "incidents.total"
+          ]
+        }
+      },
+      "response": {
+        "body": {
+          "alpha": 0.05,
+          "date_from": "2018-01-01",
+          "date_to": "2026-04-30",
+          "effective_n": 64,
+          "interpretation": {
+            "caveat": "Correlation does not imply causation. See methodology for limitations.",
+            "methodology_url": "/docs/methodology/correlation",
+            "warnings": [
+              {
+                "code": "low_count_suppressed_cells",
+                "message": "Some lag cells were suppressed because shifted-pair monthly counts fell below the disclosure threshold.",
+                "severity": "info"
+              }
+            ]
+          },
+          "lag_grid": [
+            {
+              "lag": 0,
+              "pearson": {
+                "effective_n_at_lag": 64,
+                "p_adjusted": 0.00514,
+                "p_raw": 0.00021,
+                "r": 0.412,
+                "reason": null,
+                "significant": true
+              },
+              "spearman": {
+                "effective_n_at_lag": 64,
+                "p_adjusted": 0.00759,
+                "p_raw": 0.00031,
+                "r": 0.398,
+                "reason": null,
+                "significant": false
+              }
+            },
+            {
+              "lag": -24,
+              "pearson": {
+                "effective_n_at_lag": 28,
+                "p_adjusted": null,
+                "p_raw": null,
+                "r": null,
+                "reason": "insufficient_sample_at_lag",
+                "significant": false
+              },
+              "spearman": {
+                "effective_n_at_lag": 28,
+                "p_adjusted": null,
+                "p_raw": null,
+                "r": null,
+                "reason": "insufficient_sample_at_lag",
+                "significant": false
+              }
+            },
+            {
+              "lag": 12,
+              "pearson": {
+                "effective_n_at_lag": 60,
+                "p_adjusted": null,
+                "p_raw": null,
+                "r": null,
+                "reason": "degenerate",
+                "significant": false
+              },
+              "spearman": {
+                "effective_n_at_lag": 60,
+                "p_adjusted": null,
+                "p_raw": null,
+                "r": null,
+                "reason": "degenerate",
+                "significant": false
+              }
+            },
+            {
+              "lag": 6,
+              "pearson": {
+                "effective_n_at_lag": 78,
+                "p_adjusted": null,
+                "p_raw": null,
+                "r": null,
+                "reason": "low_count_suppressed",
+                "significant": false
+              },
+              "spearman": {
+                "effective_n_at_lag": 78,
+                "p_adjusted": null,
+                "p_raw": null,
+                "r": null,
+                "reason": "low_count_suppressed",
+                "significant": false
+              }
+            }
+          ],
+          "x": "reports.total",
+          "y": "incidents.total"
+        },
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "matchingRules": {
+          "body": {
+            "$": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.alpha": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.date_from": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.date_to": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.effective_n": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "integer"
+                }
+              ]
+            },
+            "$.interpretation": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.interpretation.caveat": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.interpretation.methodology_url": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.interpretation.warnings": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type",
+                  "min": 1
+                }
+              ]
+            },
+            "$.interpretation.warnings[*].code": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.interpretation.warnings[*].message": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.interpretation.warnings[*].severity": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.lag_grid": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "arrayContains",
+                  "variants": [
+                    {
+                      "index": 0,
+                      "rules": {
+                        "$.lag": {
+                          "combine": "AND",
+                          "matchers": [
+                            {
+                              "match": "integer"
+                            }
+                          ]
+                        },
+                        "$.pearson.effective_n_at_lag": {
+                          "combine": "AND",
+                          "matchers": [
+                            {
+                              "match": "integer"
+                            }
+                          ]
+                        },
+                        "$.pearson.p_adjusted": {
+                          "combine": "AND",
+                          "matchers": [
+                            {
+                              "match": "type"
+                            }
+                          ]
+                        },
+                        "$.pearson.p_raw": {
+                          "combine": "AND",
+                          "matchers": [
+                            {
+                              "match": "type"
+                            }
+                          ]
+                        },
+                        "$.pearson.r": {
+                          "combine": "AND",
+                          "matchers": [
+                            {
+                              "match": "type"
+                            }
+                          ]
+                        },
+                        "$.pearson.significant": {
+                          "combine": "AND",
+                          "matchers": [
+                            {
+                              "match": "type"
+                            }
+                          ]
+                        },
+                        "$.spearman.effective_n_at_lag": {
+                          "combine": "AND",
+                          "matchers": [
+                            {
+                              "match": "integer"
+                            }
+                          ]
+                        },
+                        "$.spearman.p_adjusted": {
+                          "combine": "AND",
+                          "matchers": [
+                            {
+                              "match": "type"
+                            }
+                          ]
+                        },
+                        "$.spearman.p_raw": {
+                          "combine": "AND",
+                          "matchers": [
+                            {
+                              "match": "type"
+                            }
+                          ]
+                        },
+                        "$.spearman.r": {
+                          "combine": "AND",
+                          "matchers": [
+                            {
+                              "match": "type"
+                            }
+                          ]
+                        },
+                        "$.spearman.significant": {
+                          "combine": "AND",
+                          "matchers": [
+                            {
+                              "match": "type"
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    {
+                      "index": 1,
+                      "rules": {
+                        "$.lag": {
+                          "combine": "AND",
+                          "matchers": [
+                            {
+                              "match": "integer"
+                            }
+                          ]
+                        },
+                        "$.pearson.effective_n_at_lag": {
+                          "combine": "AND",
+                          "matchers": [
+                            {
+                              "match": "integer"
+                            }
+                          ]
+                        },
+                        "$.pearson.reason": {
+                          "combine": "AND",
+                          "matchers": [
+                            {
+                              "match": "equality"
+                            }
+                          ]
+                        },
+                        "$.pearson.significant": {
+                          "combine": "AND",
+                          "matchers": [
+                            {
+                              "match": "type"
+                            }
+                          ]
+                        },
+                        "$.spearman.effective_n_at_lag": {
+                          "combine": "AND",
+                          "matchers": [
+                            {
+                              "match": "integer"
+                            }
+                          ]
+                        },
+                        "$.spearman.reason": {
+                          "combine": "AND",
+                          "matchers": [
+                            {
+                              "match": "equality"
+                            }
+                          ]
+                        },
+                        "$.spearman.significant": {
+                          "combine": "AND",
+                          "matchers": [
+                            {
+                              "match": "type"
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    {
+                      "index": 2,
+                      "rules": {
+                        "$.lag": {
+                          "combine": "AND",
+                          "matchers": [
+                            {
+                              "match": "integer"
+                            }
+                          ]
+                        },
+                        "$.pearson.effective_n_at_lag": {
+                          "combine": "AND",
+                          "matchers": [
+                            {
+                              "match": "integer"
+                            }
+                          ]
+                        },
+                        "$.pearson.reason": {
+                          "combine": "AND",
+                          "matchers": [
+                            {
+                              "match": "equality"
+                            }
+                          ]
+                        },
+                        "$.pearson.significant": {
+                          "combine": "AND",
+                          "matchers": [
+                            {
+                              "match": "type"
+                            }
+                          ]
+                        },
+                        "$.spearman.effective_n_at_lag": {
+                          "combine": "AND",
+                          "matchers": [
+                            {
+                              "match": "integer"
+                            }
+                          ]
+                        },
+                        "$.spearman.reason": {
+                          "combine": "AND",
+                          "matchers": [
+                            {
+                              "match": "equality"
+                            }
+                          ]
+                        },
+                        "$.spearman.significant": {
+                          "combine": "AND",
+                          "matchers": [
+                            {
+                              "match": "type"
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    {
+                      "index": 3,
+                      "rules": {
+                        "$.lag": {
+                          "combine": "AND",
+                          "matchers": [
+                            {
+                              "match": "integer"
+                            }
+                          ]
+                        },
+                        "$.pearson.effective_n_at_lag": {
+                          "combine": "AND",
+                          "matchers": [
+                            {
+                              "match": "integer"
+                            }
+                          ]
+                        },
+                        "$.pearson.reason": {
+                          "combine": "AND",
+                          "matchers": [
+                            {
+                              "match": "equality"
+                            }
+                          ]
+                        },
+                        "$.pearson.significant": {
+                          "combine": "AND",
+                          "matchers": [
+                            {
+                              "match": "type"
+                            }
+                          ]
+                        },
+                        "$.spearman.effective_n_at_lag": {
+                          "combine": "AND",
+                          "matchers": [
+                            {
+                              "match": "integer"
+                            }
+                          ]
+                        },
+                        "$.spearman.reason": {
+                          "combine": "AND",
+                          "matchers": [
+                            {
+                              "match": "equality"
+                            }
+                          ]
+                        },
+                        "$.spearman.significant": {
+                          "combine": "AND",
+                          "matchers": [
+                            {
+                              "match": "type"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            "$.x": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.y": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          }
+        },
+        "status": 200
+      }
+    },
+    {
+      "description": "a request for the correlation primary endpoint with insufficient_sample_at_lag cells (PR-B T8)",
+      "providerStates": [
+        {
+          "name": "seeded correlation insufficient_sample_at_lag fixture and an authenticated analyst session"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/analytics/correlation",
+        "query": {
+          "alpha": [
+            "0.05"
+          ],
+          "date_from": [
+            "2024-01-01"
+          ],
+          "date_to": [
+            "2026-06-30"
+          ],
+          "x": [
+            "reports.total"
+          ],
+          "y": [
+            "incidents.total"
+          ]
+        }
+      },
+      "response": {
+        "body": {
+          "alpha": 0.05,
+          "date_from": "2024-01-01",
+          "date_to": "2026-06-30",
+          "effective_n": 30,
+          "interpretation": {
+            "caveat": "Correlation does not imply causation. See methodology for limitations.",
+            "methodology_url": "/docs/methodology/correlation",
+            "warnings": [
+              {
+                "code": "sparse_window",
+                "message": "30 valid months — borderline sample size.",
+                "severity": "info"
+              }
+            ]
+          },
+          "lag_grid": [
+            {
+              "lag": 0,
+              "pearson": {
+                "effective_n_at_lag": 64,
+                "p_adjusted": 0.00514,
+                "p_raw": 0.00021,
+                "r": 0.412,
+                "reason": null,
+                "significant": true
+              },
+              "spearman": {
+                "effective_n_at_lag": 64,
+                "p_adjusted": 0.00759,
+                "p_raw": 0.00031,
+                "r": 0.398,
+                "reason": null,
+                "significant": false
+              }
+            },
+            {
+              "lag": 24,
+              "pearson": {
+                "effective_n_at_lag": 6,
+                "p_adjusted": null,
+                "p_raw": null,
+                "r": null,
+                "reason": "insufficient_sample_at_lag",
+                "significant": false
+              },
+              "spearman": {
+                "effective_n_at_lag": 6,
+                "p_adjusted": null,
+                "p_raw": null,
+                "r": null,
+                "reason": "insufficient_sample_at_lag",
+                "significant": false
+              }
+            }
+          ],
+          "x": "reports.total",
+          "y": "incidents.total"
+        },
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "matchingRules": {
+          "body": {
+            "$": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.alpha": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.date_from": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.date_to": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.effective_n": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "integer"
+                }
+              ]
+            },
+            "$.interpretation": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.interpretation.caveat": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.interpretation.methodology_url": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.interpretation.warnings": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type",
+                  "min": 1
+                }
+              ]
+            },
+            "$.interpretation.warnings[*].code": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.interpretation.warnings[*].message": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.interpretation.warnings[*].severity": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.lag_grid": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "arrayContains",
+                  "variants": [
+                    {
+                      "index": 0,
+                      "rules": {
+                        "$.lag": {
+                          "combine": "AND",
+                          "matchers": [
+                            {
+                              "match": "integer"
+                            }
+                          ]
+                        },
+                        "$.pearson.effective_n_at_lag": {
+                          "combine": "AND",
+                          "matchers": [
+                            {
+                              "match": "integer"
+                            }
+                          ]
+                        },
+                        "$.pearson.p_adjusted": {
+                          "combine": "AND",
+                          "matchers": [
+                            {
+                              "match": "type"
+                            }
+                          ]
+                        },
+                        "$.pearson.p_raw": {
+                          "combine": "AND",
+                          "matchers": [
+                            {
+                              "match": "type"
+                            }
+                          ]
+                        },
+                        "$.pearson.r": {
+                          "combine": "AND",
+                          "matchers": [
+                            {
+                              "match": "type"
+                            }
+                          ]
+                        },
+                        "$.pearson.significant": {
+                          "combine": "AND",
+                          "matchers": [
+                            {
+                              "match": "type"
+                            }
+                          ]
+                        },
+                        "$.spearman.effective_n_at_lag": {
+                          "combine": "AND",
+                          "matchers": [
+                            {
+                              "match": "integer"
+                            }
+                          ]
+                        },
+                        "$.spearman.p_adjusted": {
+                          "combine": "AND",
+                          "matchers": [
+                            {
+                              "match": "type"
+                            }
+                          ]
+                        },
+                        "$.spearman.p_raw": {
+                          "combine": "AND",
+                          "matchers": [
+                            {
+                              "match": "type"
+                            }
+                          ]
+                        },
+                        "$.spearman.r": {
+                          "combine": "AND",
+                          "matchers": [
+                            {
+                              "match": "type"
+                            }
+                          ]
+                        },
+                        "$.spearman.significant": {
+                          "combine": "AND",
+                          "matchers": [
+                            {
+                              "match": "type"
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    {
+                      "index": 1,
+                      "rules": {
+                        "$.lag": {
+                          "combine": "AND",
+                          "matchers": [
+                            {
+                              "match": "integer"
+                            }
+                          ]
+                        },
+                        "$.pearson.effective_n_at_lag": {
+                          "combine": "AND",
+                          "matchers": [
+                            {
+                              "match": "integer"
+                            }
+                          ]
+                        },
+                        "$.pearson.reason": {
+                          "combine": "AND",
+                          "matchers": [
+                            {
+                              "match": "equality"
+                            }
+                          ]
+                        },
+                        "$.pearson.significant": {
+                          "combine": "AND",
+                          "matchers": [
+                            {
+                              "match": "type"
+                            }
+                          ]
+                        },
+                        "$.spearman.effective_n_at_lag": {
+                          "combine": "AND",
+                          "matchers": [
+                            {
+                              "match": "integer"
+                            }
+                          ]
+                        },
+                        "$.spearman.reason": {
+                          "combine": "AND",
+                          "matchers": [
+                            {
+                              "match": "equality"
+                            }
+                          ]
+                        },
+                        "$.spearman.significant": {
+                          "combine": "AND",
+                          "matchers": [
+                            {
+                              "match": "type"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            "$.x": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.y": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          }
+        },
+        "status": 200
+      }
+    },
+    {
+      "description": "a request for the correlation series catalog (PR-B T8)",
+      "providerStates": [
+        {
+          "name": "seeded correlation catalog fixture and an authenticated analyst session"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/analytics/correlation/series"
+      },
+      "response": {
+        "body": {
+          "series": [
+            {
+              "bucket": "monthly",
+              "id": "reports.total",
+              "label_en": "All reports",
+              "label_ko": "전체 보고서",
+              "root": "reports.published"
+            }
+          ]
+        },
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "matchingRules": {
+          "body": {
+            "$": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.series": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type",
+                  "min": 1
+                }
+              ]
+            },
+            "$.series[*].bucket": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.series[*].id": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.series[*].label_en": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.series[*].label_ko": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.series[*].root": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          }
+        },
+        "status": 200
+      }
+    },
+    {
       "description": "a request for the current user",
       "providerStates": [
         {
