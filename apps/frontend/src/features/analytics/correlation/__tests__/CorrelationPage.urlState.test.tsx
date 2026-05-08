@@ -226,7 +226,7 @@ describe('CorrelationPage URL state (Plan §B8 b + B5)', () => {
     })
   })
 
-  it('writes user date range back to the URL (date_from + date_to)', async () => {
+  it('writes user date range back to the URL (date_from + date_to in the same final href)', async () => {
     const replaceSpy = vi.spyOn(window.history, 'replaceState')
     mockBothEndpoints()
     const user = userEvent.setup()
@@ -243,20 +243,21 @@ describe('CorrelationPage URL state (Plan §B8 b + B5)', () => {
     await user.clear(dateToInput)
     await user.type(dateToInput, '2024-12-31')
 
+    // Pin one FINAL href that carries both — guards against a broken
+    // implementation that overwrites one date while writing the other
+    // (Codex T7 r2 LOW). The last replaceState call settles the URL.
     await waitFor(() => {
-      const dateFromWrite = replaceSpy.mock.calls.find(([, , href]) =>
-        typeof href === 'string' && href.includes('date_from=2024-01-01'),
+      const writes = replaceSpy.mock.calls
+        .map(([, , href]) => (typeof href === 'string' ? href : null))
+        .filter((h): h is string => h !== null)
+      const bothPresent = writes.find(
+        (w) =>
+          w.includes('date_from=2024-01-01')
+          && w.includes('date_to=2024-12-31'),
       )
       expect(
-        dateFromWrite,
-        'expected URL write-back to include date_from=2024-01-01',
-      ).toBeDefined()
-      const dateToWrite = replaceSpy.mock.calls.find(([, , href]) =>
-        typeof href === 'string' && href.includes('date_to=2024-12-31'),
-      )
-      expect(
-        dateToWrite,
-        'expected URL write-back to include date_to=2024-12-31',
+        bothPresent,
+        'expected at least one final URL write to carry BOTH date_from=2024-01-01 AND date_to=2024-12-31',
       ).toBeDefined()
     })
   })
@@ -275,14 +276,22 @@ describe('CorrelationPage URL state (Plan §B8 b + B5)', () => {
     ])
     render(<CorrelationPage />, { wrapper: Wrapper })
 
-    await user.clear(await screen.findByTestId('correlation-filter-date-from'))
-    await user.clear(await screen.findByTestId('correlation-filter-date-to'))
+    // Wait for both inputs to mount (page hydrate complete) BEFORE
+    // snapshotting the spy — any mount/hydrate writes must be excluded
+    // from the post-clear delta (Codex T7 r2 MED).
+    const dateFromInput = await screen.findByTestId('correlation-filter-date-from')
+    const dateToInput = await screen.findByTestId('correlation-filter-date-to')
+
+    // Snapshot baseline AFTER mount + hydrate writes have settled.
+    const baselineCallCount = replaceSpy.mock.calls.length
+
+    await user.clear(dateFromInput)
+    await user.clear(dateToInput)
 
     await waitFor(() => {
-      // At least one write fires after the clear (positive non-vacuous
-      // assertion — the test cannot pass with zero writes since clearing
-      // input has nothing to assert against).
+      // Isolate writes that fire AFTER the user.clear() actions.
       const postClearWrites = replaceSpy.mock.calls
+        .slice(baselineCallCount)
         .map(([, , href]) => (typeof href === 'string' ? href : null))
         .filter((h): h is string => h !== null)
       expect(
@@ -290,15 +299,17 @@ describe('CorrelationPage URL state (Plan §B8 b + B5)', () => {
         'expected at least one URL write after clearing dates',
       ).toBeGreaterThan(0)
 
-      // Every write that touched the URL after the clear must carry
-      // neither the cleared dates nor today's date (no auto-substitution).
+      // The latest write settles the URL state. It MUST omit:
+      //   - the cleared literals (`2024-01-01`, `2024-12-31`)
+      //   - the `date_from=` / `date_to=` query keys themselves
+      //   - any today() substitution
       const todayIso = new Date().toISOString().slice(0, 10)
-      const dateBearingWrites = postClearWrites.filter(
-        (w) => w.includes('date_from=') || w.includes('date_to='),
-      )
-      for (const w of dateBearingWrites) {
-        expect(w).not.toContain(todayIso)
-      }
+      const finalWrite = postClearWrites[postClearWrites.length - 1]
+      expect(finalWrite).not.toContain('2024-01-01')
+      expect(finalWrite).not.toContain('2024-12-31')
+      expect(finalWrite).not.toContain('date_from=')
+      expect(finalWrite).not.toContain('date_to=')
+      expect(finalWrite).not.toContain(todayIso)
     })
   })
 })
