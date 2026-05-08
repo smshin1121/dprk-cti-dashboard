@@ -112,7 +112,10 @@ export const router = buildRouter()
 
 function NotFound(): JSX.Element {
   return (
-    <section className="m-6 rounded-none border border-border-card bg-surface p-5">
+    <section
+      data-page-class="system-page"
+      className="m-6 rounded-none border border-border-card bg-surface p-5"
+    >
       <h1 className="text-lg font-semibold">Not found</h1>
       <p className="mt-2 text-sm text-ink-muted">
         This route doesn&apos;t exist. Pick an entry from the nav above.

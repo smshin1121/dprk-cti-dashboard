@@ -68,6 +68,7 @@ export function ReportDetailPage(): JSX.Element {
   return (
     <section
       data-testid="report-detail-page"
+      data-page-class="analyst-workspace"
       data-report-id={report.id}
       aria-labelledby="report-detail-heading"
       className="editorial-band-light flex flex-col gap-6 bg-app p-6 text-ink"
