@@ -70,6 +70,17 @@ const HAPPY_CATALOG = {
       root: 'incidents.reported',
       bucket: 'monthly',
     },
+    // Third entry — the write-back tests need a non-y option to pick
+    // without colliding with x. Without this entry, T9 catalog-driven
+    // CorrelationFilters would never render the testid the click test
+    // queries (Codex T7 r1 MED finding).
+    {
+      id: 'incidents.lazarus',
+      label_ko: '라자루스 사건',
+      label_en: 'Lazarus incidents',
+      root: 'incidents.reported',
+      bucket: 'monthly',
+    },
   ],
 }
 
@@ -157,7 +168,7 @@ describe('CorrelationPage URL state (Plan §B8 b + B5)', () => {
     )
   })
 
-  it('writes user filter changes back to the URL via replaceState', async () => {
+  it('writes user y change back to the URL via replaceState', async () => {
     const replaceSpy = vi.spyOn(window.history, 'replaceState')
     mockBothEndpoints()
     const user = userEvent.setup()
@@ -187,22 +198,105 @@ describe('CorrelationPage URL state (Plan §B8 b + B5)', () => {
     })
   })
 
-  it('preserves null dates as omitted URL params (no today() substitution)', async () => {
+  // Write-back coverage for the remaining two B5 keys not covered by
+  // the y-change test (Codex T7 r1 LOW): `method` (visual toggle) and
+  // `date_from` / `date_to`. The five-key contract is `x` / `y` /
+  // `date_from` / `date_to` / `method`; `x` is symmetric to `y` and
+  // pinned via the same code path so one positive y-change write +
+  // method-change write + date-change write is sufficient.
+  it('writes user method toggle back to the URL (method=spearman)', async () => {
     const replaceSpy = vi.spyOn(window.history, 'replaceState')
     mockBothEndpoints()
+    const user = userEvent.setup()
     const { Wrapper } = makeWrapper([
       '/analytics/correlation?x=reports.total&y=incidents.total',
     ])
     render(<CorrelationPage />, { wrapper: Wrapper })
 
-    // After hydrate completes, the URL reflects the user-input null
-    // for date_from / date_to (no auto-fill).
+    await user.click(await screen.findByTestId('correlation-method-spearman'))
+
     await waitFor(() => {
-      const writes = replaceSpy.mock.calls
+      const userWrite = replaceSpy.mock.calls.find(([, , href]) =>
+        typeof href === 'string' && href.includes('method=spearman'),
+      )
+      expect(
+        userWrite,
+        'expected URL write-back to include method=spearman',
+      ).toBeDefined()
+    })
+  })
+
+  it('writes user date range back to the URL (date_from + date_to)', async () => {
+    const replaceSpy = vi.spyOn(window.history, 'replaceState')
+    mockBothEndpoints()
+    const user = userEvent.setup()
+    const { Wrapper } = makeWrapper([
+      '/analytics/correlation?x=reports.total&y=incidents.total',
+    ])
+    render(<CorrelationPage />, { wrapper: Wrapper })
+
+    const dateFromInput = await screen.findByTestId('correlation-filter-date-from')
+    await user.clear(dateFromInput)
+    await user.type(dateFromInput, '2024-01-01')
+
+    const dateToInput = await screen.findByTestId('correlation-filter-date-to')
+    await user.clear(dateToInput)
+    await user.type(dateToInput, '2024-12-31')
+
+    await waitFor(() => {
+      const dateFromWrite = replaceSpy.mock.calls.find(([, , href]) =>
+        typeof href === 'string' && href.includes('date_from=2024-01-01'),
+      )
+      expect(
+        dateFromWrite,
+        'expected URL write-back to include date_from=2024-01-01',
+      ).toBeDefined()
+      const dateToWrite = replaceSpy.mock.calls.find(([, , href]) =>
+        typeof href === 'string' && href.includes('date_to=2024-12-31'),
+      )
+      expect(
+        dateToWrite,
+        'expected URL write-back to include date_to=2024-12-31',
+      ).toBeDefined()
+    })
+  })
+
+  // CONTRACT.md §1 — clearing dates must NOT substitute today() / Date.now() /
+  // Math.min(undefined). The URL after a clear reflects the user-input
+  // null literally (omitted params).
+  it('clearing date range omits date_from / date_to from the URL (no today() substitution)', async () => {
+    const replaceSpy = vi.spyOn(window.history, 'replaceState')
+    mockBothEndpoints()
+    const user = userEvent.setup()
+    const { Wrapper } = makeWrapper([
+      // Initial entry has dates — clearing them should DROP them
+      // from the URL, not auto-substitute.
+      '/analytics/correlation?x=reports.total&y=incidents.total&date_from=2024-01-01&date_to=2024-12-31',
+    ])
+    render(<CorrelationPage />, { wrapper: Wrapper })
+
+    await user.clear(await screen.findByTestId('correlation-filter-date-from'))
+    await user.clear(await screen.findByTestId('correlation-filter-date-to'))
+
+    await waitFor(() => {
+      // At least one write fires after the clear (positive non-vacuous
+      // assertion — the test cannot pass with zero writes since clearing
+      // input has nothing to assert against).
+      const postClearWrites = replaceSpy.mock.calls
         .map(([, , href]) => (typeof href === 'string' ? href : null))
         .filter((h): h is string => h !== null)
+      expect(
+        postClearWrites.length,
+        'expected at least one URL write after clearing dates',
+      ).toBeGreaterThan(0)
+
+      // Every write that touched the URL after the clear must carry
+      // neither the cleared dates nor today's date (no auto-substitution).
       const todayIso = new Date().toISOString().slice(0, 10)
-      for (const w of writes) {
+      const dateBearingWrites = postClearWrites.filter(
+        (w) => w.includes('date_from=') || w.includes('date_to='),
+      )
+      for (const w of dateBearingWrites) {
         expect(w).not.toContain(todayIso)
       }
     })
