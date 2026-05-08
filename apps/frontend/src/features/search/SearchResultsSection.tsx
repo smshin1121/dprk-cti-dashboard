@@ -6,13 +6,12 @@
  * `Command.Group`, NOT mixed into the `COMMAND_IDS.map(...)` body.
  * That separation matters for two reasons:
  *
- *   1. The static command set is plan D3 scope (navigation including
- *      /dashboard, /reports, /incidents, /actors, /analytics/correlation
- *      as of PR-B T10; plus filters.clear + logout). Theme cycling
- *      was removed in Ferrari L1 when the theme model collapsed to
- *      a single dark canvas. Interleaving server-backed hits into
- *      that registry would blur its contract and make a scope-lock
- *      review across PRs painful.
+ *   1. The static command set is plan D3 scope: navigation
+ *      (/dashboard, /reports, /incidents, /actors,
+ *      /analytics/correlation), filters.clear, and auth.logout.
+ *      Interleaving server-backed hits into that registry would
+ *      blur its contract and make a scope-lock review across PRs
+ *      painful.
  *   2. cmdk's fuzzy-match filter runs per `Command.Item` and uses
  *      each item's `value`. The BE has already done the matching; we
  *      `forceMount` the hit items so the FE client-side fuzzy filter
