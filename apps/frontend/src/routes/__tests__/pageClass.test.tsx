@@ -19,9 +19,11 @@
  *      container (transient loading / error panels are not part of
  *      the page-class contract).
  *
- *   3. **Cardinality** — exactly 9 entries pre-T10 (T10 of the same
- *      PR adds `/analytics/correlation`, bringing the total to 10
- *      before merge).
+ *   3. **Cardinality** — exactly 10 entries post-T10 (the
+ *      `/analytics/correlation` route was added by PR-B T10 alongside
+ *      this manifest entry, the router mount, the Shell nav entry,
+ *      and the command palette nav entry — all four surfaces stay
+ *      in sync).
  *
  * Static-source rather than DOM render so the contract holds without
  * mocking 6 detail/list page queries. Runtime CSS hookup of
@@ -54,6 +56,7 @@ const ROUTE_TO_SOURCE_FILE: Record<keyof typeof PAGE_CLASS_BY_ROUTE, string> = {
   '/incidents/:id': 'routes/IncidentDetailPage.tsx',
   '/actors': 'routes/ActorsPage.tsx',
   '/actors/:id': 'routes/ActorDetailPage.tsx',
+  '/analytics/correlation': 'features/analytics/correlation/CorrelationPage.tsx',
   '*': 'routes/router.tsx',
 }
 
@@ -101,7 +104,7 @@ describe('pageClass manifest — bidirectional sync', () => {
     },
   )
 
-  it('manifest holds exactly 9 entries pre-T10 (T10 adds /analytics/correlation → 10)', () => {
-    expect(Object.keys(PAGE_CLASS_BY_ROUTE).length).toBe(9)
+  it('manifest holds exactly 10 entries post-T10 (PR-B added /analytics/correlation)', () => {
+    expect(Object.keys(PAGE_CLASS_BY_ROUTE).length).toBe(10)
   })
 })

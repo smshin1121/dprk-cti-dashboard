@@ -4,7 +4,8 @@
       "dashboard": "대시보드",
       "reports": "보고서",
       "incidents": "사건",
-      "actors": "조직"
+      "actors": "조직",
+      "correlation": "상관관계"
     },
     "brand": "DPRK CTI",
     "search": {
@@ -29,6 +30,7 @@
     "nav.reports": "보고서로 이동",
     "nav.incidents": "사건으로 이동",
     "nav.actors": "조직으로 이동",
+    "nav.correlation": "상관관계로 이동",
     "filters.clear": "모든 필터 초기화",
     "auth.logout": "로그아웃"
   },

@@ -73,6 +73,7 @@ const NAV_PATHS: Record<
   'nav.reports': '/reports',
   'nav.incidents': '/incidents',
   'nav.actors': '/actors',
+  'nav.correlation': '/analytics/correlation',
 }
 
 export function CommandPaletteButton(): JSX.Element {
@@ -120,6 +121,7 @@ export function CommandPaletteButton(): JSX.Element {
       case 'nav.reports':
       case 'nav.incidents':
       case 'nav.actors':
+      case 'nav.correlation':
         navigate(NAV_PATHS[id])
         return
       case 'filters.clear':

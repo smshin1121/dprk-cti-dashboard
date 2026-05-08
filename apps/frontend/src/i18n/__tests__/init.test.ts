@@ -37,6 +37,7 @@ describe('i18n bootstrap', () => {
       'nav.reports',
       'nav.incidents',
       'nav.actors',
+      'nav.correlation',
       'filters.clear',
       'auth.logout',
     ] as const

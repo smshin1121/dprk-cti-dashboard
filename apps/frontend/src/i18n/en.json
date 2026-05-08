@@ -4,7 +4,8 @@
       "dashboard": "Dashboard",
       "reports": "Reports",
       "incidents": "Incidents",
-      "actors": "Actors"
+      "actors": "Actors",
+      "correlation": "Correlation"
     },
     "brand": "DPRK CTI",
     "search": {
@@ -29,6 +30,7 @@
     "nav.reports": "Go to Reports",
     "nav.incidents": "Go to Incidents",
     "nav.actors": "Go to Actors",
+    "nav.correlation": "Go to Correlation",
     "filters.clear": "Clear all filters",
     "auth.logout": "Sign out"
   },

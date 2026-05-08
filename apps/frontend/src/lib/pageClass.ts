@@ -18,9 +18,12 @@
  * also excluded — its FE feature directory exists but no route is
  * mounted (DESIGN.md line 411).
  *
- * The `/analytics/correlation` entry is added by T10 of the same PR
- * that introduces this manifest, bringing the post-T10 manifest count
- * to 10. Until then, the manifest holds nine entries.
+ * The `/analytics/correlation` entry was added by T10 of PR-B (D-1
+ * correlation FE), bringing the manifest count to 10. The route
+ * mounts `CorrelationPage`, whose outermost `<section>` declares
+ * `data-page-class="analyst-workspace"` (T9 wired the attribute;
+ * T10 appended the manifest entry + router mount + nav + palette
+ * entries simultaneously to keep the bidirectional sync test green).
  */
 
 export type PageClass =
@@ -39,5 +42,6 @@ export const PAGE_CLASS_BY_ROUTE = {
   '/incidents/:id': 'analyst-workspace',
   '/actors': 'analyst-workspace',
   '/actors/:id': 'analyst-workspace',
+  '/analytics/correlation': 'analyst-workspace',
   '*': 'system-page',
 } as const satisfies Record<string, PageClass>

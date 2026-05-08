@@ -30,6 +30,7 @@ const NAV_ITEMS = [
   { to: '/reports', key: 'shell.nav.reports' },
   { to: '/incidents', key: 'shell.nav.incidents' },
   { to: '/actors', key: 'shell.nav.actors' },
+  { to: '/analytics/correlation', key: 'shell.nav.correlation' },
 ] as const
 
 export function Shell(): JSX.Element {
