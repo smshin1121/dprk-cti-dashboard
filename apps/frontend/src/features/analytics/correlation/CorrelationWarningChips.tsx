@@ -1,13 +1,11 @@
 /**
- * Phase 3 Slice 3 D-1 — CorrelationWarningChips T7 RED stub.
+ * Phase 3 Slice 3 D-1 — CorrelationWarningChips T9 implementation.
  *
- * Renders one chip per `interpretation.warnings[]` entry. Each chip's
- * copy is keyed by `correlation.warnings.<code>` in i18n (T11 — six
- * codes: non_stationary_suspected, outlier_influence, sparse_window,
- * cross_rooted_pair, identity_or_containment_suspected,
- * low_count_suppressed_cells). Severity styling: `info` vs `warn`.
- *
- * Empty `warnings: []` renders nothing (no container, no testid leak).
+ * Renders one chip per `interpretation.warnings[]` entry. Each chip
+ * carries `data-testid="warning-chip-<code>"` plus
+ * `data-severity="info|warn"` so the locale-keyed copy (T11) can
+ * change without test churn. Empty `warnings: []` returns null —
+ * no container, no testid leak per Plan §B8 (e).
  */
 
 import type { CorrelationWarning } from '../../../lib/api/schemas'
@@ -16,10 +14,27 @@ export interface CorrelationWarningChipsProps {
   warnings: CorrelationWarning[]
 }
 
-export function CorrelationWarningChips(
-  _props: CorrelationWarningChipsProps,
-): JSX.Element {
-  throw new Error(
-    'NotImplementedError: CorrelationWarningChips T7 RED stub — T9 not yet implemented.',
+export function CorrelationWarningChips({
+  warnings,
+}: CorrelationWarningChipsProps): JSX.Element | null {
+  if (warnings.length === 0) return null
+
+  return (
+    <ul className="flex flex-wrap gap-2" aria-label="Correlation warnings">
+      {warnings.map((w) => (
+        <li
+          key={w.code}
+          data-testid={`warning-chip-${w.code}`}
+          data-severity={w.severity}
+          className={
+            w.severity === 'warn'
+              ? 'rounded-none border border-border-strong bg-surface px-2 py-1 text-xs text-ink'
+              : 'rounded-none border border-border-card bg-app px-2 py-1 text-xs text-ink-muted'
+          }
+        >
+          {w.message}
+        </li>
+      ))}
+    </ul>
   )
 }
