@@ -156,3 +156,39 @@ export function toIncidentsTrendQueryParams(
   params.append('group_by', groupBy)
   return params
 }
+
+/**
+ * `/api/v1/analytics/correlation` — Phase 3 Slice 3 D-1 (PR-B T3).
+ *
+ * Wire surface differs from the shared `AnalyticsFilters` family — this
+ * endpoint takes opaque series IDs (`x` / `y`, both required) plus an
+ * optional date window plus an `alpha` significance threshold; there is
+ * no `group_id` repetition at all. Hence a dedicated builder rather
+ * than reuse of `appendCore`.
+ *
+ * `dateFrom` / `dateTo` are nullable — `null` means "let the BE resolve
+ * from the data window" (`resolve_default_date_window` server-side); the
+ * BE echoes the resolved dates back in the 200 response. The query key
+ * (T4) keeps the user-input `null` literal so empty-date URL state is
+ * stable across renders (per CONTRACT.md §1 / umbrella §7.5 line 576).
+ *
+ * `alpha` is always emitted — the BE Redis cache key includes it
+ * (`correlation:v1:{x}:{y}:{date_from}:{date_to}:{alpha}`); the FE hook
+ * supplies the literal `0.05` until UX surfaces it (umbrella §10.1 / Q4
+ * default; CONTRACT.md §1 hook signature).
+ */
+export function toCorrelationQueryParams(
+  x: string,
+  y: string,
+  dateFrom: string | null,
+  dateTo: string | null,
+  alpha: number,
+): URLSearchParams {
+  const params = new URLSearchParams()
+  params.append('x', x)
+  params.append('y', y)
+  if (dateFrom != null) params.append('date_from', dateFrom)
+  if (dateTo != null) params.append('date_to', dateTo)
+  params.append('alpha', String(alpha))
+  return params
+}

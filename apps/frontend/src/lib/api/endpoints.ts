@@ -8,7 +8,9 @@
  * it lands.
  */
 
-import { apiGet, apiPost, apiRawGet } from '../api'
+import { z } from 'zod'
+
+import { ApiError, apiGet, apiPost, apiRawGet } from '../api'
 import {
   type ActorNetworkOptions,
   type AnalyticsFilters,
@@ -16,6 +18,7 @@ import {
   type IncidentsTrendGroupBy,
   toActorNetworkQueryParams,
   toAttackMatrixQueryParams,
+  toCorrelationQueryParams,
   toGeoQueryParams,
   toIncidentsTrendQueryParams,
   toTrendQueryParams,
@@ -42,6 +45,8 @@ import {
   actorNetworkResponseSchema,
   actorReportsResponseSchema,
   attackMatrixResponseSchema,
+  correlationCatalogResponseSchema,
+  correlationResponseSchema,
   currentUserSchema,
   dashboardSummarySchema,
   geoResponseSchema,
@@ -56,6 +61,8 @@ import {
   type ActorListResponse,
   type ActorNetworkResponse,
   type AttackMatrixResponse,
+  type CorrelationCatalogResponse,
+  type CorrelationResponse,
   type CurrentUser,
   type DashboardSummary,
   type GeoResponse,
@@ -362,6 +369,124 @@ export function getSearchHits(
 ): Promise<SearchResponse> {
   const qs = toSearchQueryParams(q, filters).toString()
   return apiGet(`/api/v1/search?${qs}`, searchResponseSchema, signal)
+}
+
+/**
+ * 422 detail-entry shape for `/api/v1/analytics/correlation`. Mirrors
+ * the BE-stable subset of FastAPI's per-entry pydantic-error envelope:
+ *
+ *   - `loc` is `[<source>, <field>...]`. FastAPI default validation
+ *     can include numeric indices (e.g. `["body", 0, "field"]`), which
+ *     is why the union is `string | number` not `string` alone.
+ *   - `msg` is always present and human-readable.
+ *   - `type` discriminates router-authored cases (A/B/C/D) from
+ *     FastAPI's stock validators (longer dotted strings like
+ *     `value_error.float.not_lt`).
+ *   - `ctx` is structurally typed by the BE — its shape varies between
+ *     router-authored entries (e.g. `{x, y}` for identical_series,
+ *     `{effective_n, minimum_n}` for insufficient_sample) and FastAPI
+ *     defaults (which may carry a different keyset entirely). Modeled
+ *     as an opaque `Record<string, unknown>` and made optional so the
+ *     `series_not_found` Case-C variant (no `ctx`) parses cleanly.
+ *   - `.passthrough()` (NOT `.strict()`) — extra keys like FastAPI's
+ *     `input` / `url` flow through silently rather than rejecting the
+ *     parse. Per CONTRACT.md §3 schema sketch.
+ *
+ * Used by `getCorrelation()` below to surface a typed `detail` on the
+ * thrown `ApiError` for B10's typed-reason copy paths. Any future BE
+ * error shape that doesn't fit this envelope rethrows the original
+ * `ApiError` untyped — B10 falls back to "Unable to load data".
+ *
+ * Per CONTRACT.md §3 schema sketch + plan §0.1 amendment 2026-05-08
+ * (T2 r2 fold) relocating the error-envelope schema from T2 to T3.
+ */
+const correlationErrorDetailEntrySchema = z
+  .object({
+    loc: z.array(z.union([z.string(), z.number()])).min(1),
+    msg: z.string(),
+    type: z.string(),
+    ctx: z.record(z.string(), z.unknown()).optional(),
+  })
+  .passthrough()
+
+/**
+ * Outer envelope is strict — the `{detail: [...]}` shape itself is a
+ * stable BE invariant (FastAPI) so a payload missing the `detail` key
+ * (or carrying extra siblings) is treated as drift and falls through
+ * to the original untyped `ApiError`.
+ */
+export const correlationErrorEnvelopeSchema = z
+  .object({
+    detail: z.array(correlationErrorDetailEntrySchema).nonempty(),
+  })
+  .strict()
+
+export type CorrelationErrorEnvelope = z.infer<
+  typeof correlationErrorEnvelopeSchema
+>
+
+/**
+ * `GET /api/v1/analytics/correlation/series` — Phase 3 Slice 3 D-1
+ * (PR-B T3). Returns the correlation catalog (≈ 20 series IDs at
+ * spec-time; small + immutable per session, so the `useCorrelationSeries`
+ * hook will set `staleTime: Infinity`). RBAC matrix gates this endpoint
+ * the same as the rest of the analytics surface (CONTRACT.md §1).
+ *
+ * No query params; no path params. The shape returned by the BE never
+ * carries top-level keys other than `series` (CONTRACT.md §2).
+ */
+export function getCorrelationCatalog(
+  signal?: AbortSignal,
+): Promise<CorrelationCatalogResponse> {
+  return apiGet(
+    '/api/v1/analytics/correlation/series',
+    correlationCatalogResponseSchema,
+    signal,
+  )
+}
+
+/**
+ * `GET /api/v1/analytics/correlation` — Phase 3 Slice 3 D-1 (PR-B T3).
+ *
+ * Two opaque series IDs (`x` / `y`, must differ — equality is a pre-DB
+ * 422 guard, Case A `value_error.identical_series`). Optional date
+ * window — `null` lets the BE resolve from the data window via
+ * `resolve_default_date_window`, and the BE echoes the resolved values
+ * back in the 200 body (CONTRACT.md §1). `alpha` is always supplied;
+ * the FE hook sets the literal `0.05` (Q4 default) and the BE Redis
+ * cache key includes it (umbrella §7.5 line 576).
+ *
+ * 422 surface — four router-authored cases (A/B/C/D) plus the FastAPI
+ * default-validation class. We parse the thrown `ApiError`'s `detail`
+ * through `correlationErrorEnvelopeSchema` to give consumers a typed
+ * surface for B10 copy-mapping; envelope drift falls through to the
+ * original untyped throw, where B10 maps to the plain-`value_error`
+ * fallback. Either way the throw is preserved (plan §4 T3 row exit).
+ */
+export async function getCorrelation(
+  x: string,
+  y: string,
+  dateFrom: string | null,
+  dateTo: string | null,
+  alpha: number,
+  signal?: AbortSignal,
+): Promise<CorrelationResponse> {
+  const qs = toCorrelationQueryParams(x, y, dateFrom, dateTo, alpha).toString()
+  try {
+    return await apiGet(
+      `/api/v1/analytics/correlation?${qs}`,
+      correlationResponseSchema,
+      signal,
+    )
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 422) {
+      const parsed = correlationErrorEnvelopeSchema.safeParse(err.detail)
+      if (parsed.success) {
+        throw new ApiError(err.status, parsed.data, err.message)
+      }
+    }
+    throw err
+  }
 }
 
 /**
