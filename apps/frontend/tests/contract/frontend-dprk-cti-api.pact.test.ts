@@ -102,8 +102,7 @@ const provider = new PactV3({
   logLevel: 'warn',
 })
 
-const { like, eachLike, integer, string, boolean, equal, arrayContaining } =
-  MatchersV3
+const { like, eachLike, integer, string, boolean, equal } = MatchersV3
 
 // ---------------------------------------------------------------------
 // /auth/me
@@ -1532,22 +1531,27 @@ describe('GET /api/v1/analytics/correlation/series', () => {
 // the 422 typed-error envelope:
 //
 //   #2 happy populated (uniform `reason: null`, with one warning) —
-//      eachLike over lag_grid; populated cell example pins r/p_raw/
-//      p_adjusted as numbers + reason: null literal. State handler
-//      seeds a dense window so all 49 cells satisfy the matcher.
+//      49-cell raw array literal where every position is a populated
+//      cell (reason: null + numeric r/p_raw/p_adjusted). State
+//      handler seeds a dense window so all 49 cells satisfy the
+//      matcher. pact-ruby length-pins to 49 positionally.
 //
 //   #3 happy with `insufficient_sample_at_lag` extreme-lag cells —
-//      arrayContaining over lag_grid with TWO variants: a populated
-//      mid-lag cell + an insufficient extreme-lag cell. The umbrella
-//      pipeline (§7.4) means k=0 is always populated when effective_n
-//      ≥ 30 (gate condition for 200), so a uniform-insufficient grid
-//      is unreachable; arrayContaining captures the heterogeneity
-//      precisely without forcing the BE state to violate the pipeline.
+//      49-cell raw array literal with cell at idx=24 (lag=0)
+//      populated; cells at all other 48 positions carry
+//      `reason: equal('insufficient_sample_at_lag')`. Reflects the
+//      umbrella §7.4 pipeline: a 30-month window passes the k=0
+//      gate (effective_n=30) but every shifted lag falls below 30,
+//      so only k=0 is populated. BE pydantic locks ascending-lag
+//      order so position i corresponds to lag = i − 24
+//      deterministically.
 //
 //   #4 happy with `degenerate` + `low_count_suppressed` cells —
-//      arrayContaining with FOUR variants pinning all four `reason`
-//      enum values (null populated + 3 non-null). Demonstrates the
-//      full enum in one interaction per umbrella §7.6 line 585.
+//      49-cell raw array literal with cells distributed across all
+//      four §5.2 reason enum values: insufficient_sample_at_lag at
+//      ±24, degenerate at ±12, low_count_suppressed at ±6, populated
+//      elsewhere. Demonstrates the full enum in one interaction per
+//      umbrella §7.6 line 585.
 //
 //   #5 422 insufficient_sample — narrow window forces effective_n <
 //      30 at k=0, gate raises InsufficientSample → uniform FastAPI
@@ -1563,41 +1567,52 @@ describe('GET /api/v1/analytics/correlation/series', () => {
 // documenting expected runtime values.
 
 describe('GET /api/v1/analytics/correlation', () => {
-  // Umbrella §5.2 + §7.4 — populated cell shape: r/p_raw/p_adjusted
-  // are numbers, `significant` is a boolean, `effective_n_at_lag` is
-  // an int, `reason` is null literal. Re-used across describe blocks
-  // as the "populated" arrayContaining variant for #3 + #4.
-  const populatedCellTemplate = {
-    lag: integer(0),
-    pearson: {
-      r: like(0.412),
-      p_raw: like(0.00021),
-      p_adjusted: like(0.00514),
-      significant: boolean(true),
-      effective_n_at_lag: integer(64),
-      reason: null,
-    },
-    spearman: {
-      r: like(0.398),
-      p_raw: like(0.00031),
-      p_adjusted: like(0.00759),
-      significant: boolean(false),
-      effective_n_at_lag: integer(64),
-      reason: null,
-    },
+  // Umbrella §5.2 + §7.3 + §7.4 — every interaction below pins a
+  // FULL 49-cell lag_grid via an explicit JS array of per-position
+  // cell templates (NOT eachLike / arrayContaining). Rationale per
+  // Codex r1 CRITICAL #1: pact-ruby length-pins raw arrays to the
+  // example length; eachLike generates `min: 1` and arrayContaining
+  // doesn't pin total size, so a BE that returns an under-length or
+  // malformed grid would slip past the matcher cascade. The 49-cell
+  // grid is locked at three layers:
+  //   - umbrella §4.4 (`[-24, +24]` fixed scan)
+  //   - BE pydantic `correlation.py:166-179` (`min_length=49,
+  //     max_length=49` + ascending-lag model_validator)
+  //   - FE Zod `schemas.ts:773` (`z.array(...).length(49)`)
+  // The pact contract should match all three. Heterogeneous grids
+  // (#3 + #4) work positionally — BE pydantic guarantees lag-
+  // ascending order, so cell[i] always has lag = i − 24, and the
+  // per-position matcher pins reason canaries by lag.
+
+  // Umbrella §5.2 populated cell — reason null literal AND
+  // r/p_raw/p_adjusted are numbers (BE-side `model_validator`).
+  function populatedCell(lag: number, effectiveN: number) {
+    return {
+      lag: integer(lag),
+      pearson: {
+        r: like(0.412),
+        p_raw: like(0.00021),
+        p_adjusted: like(0.00514),
+        significant: boolean(true),
+        effective_n_at_lag: integer(effectiveN),
+        reason: null,
+      },
+      spearman: {
+        r: like(0.398),
+        p_raw: like(0.00031),
+        p_adjusted: like(0.00759),
+        significant: boolean(false),
+        effective_n_at_lag: integer(effectiveN),
+        reason: null,
+      },
+    }
   }
 
-  // Umbrella §5.2 — non-null cell shape: when reason !== null,
-  // r/p_raw/p_adjusted MUST be null and significant MUST be false
-  // (BE-side pydantic `model_validator`). The reason value is
-  // type-matched as a string at the matcher level; the example value
-  // documents which canary the BE state handler is expected to
-  // produce for that arrayContaining variant.
-  function nonNullCellTemplate(
-    lag: number,
-    effectiveN: number,
-    reason: string,
-  ) {
+  // Umbrella §5.2 non-null cell — reason is one of the 3 locked
+  // non-null enum values (`equal()` literal-pin so a BE drift away
+  // from the locked enum fails verification); r/p_raw/p_adjusted
+  // are null literals AND `significant` is boolean(false).
+  function nonNullCell(lag: number, effectiveN: number, reason: string) {
     return {
       lag: integer(lag),
       pearson: {
@@ -1651,11 +1666,16 @@ describe('GET /api/v1/analytics/correlation', () => {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
         // Umbrella §7.3 200 response — top-level required fields
-        // pinned via `like()`; lag_grid via `eachLike()` with the
-        // populated cell template (memory
+        // pinned via `like()` (memory
         // `pitfall_pact_ruby_root_like_required` — root `like()` so
-        // nested matchers cascade); `interpretation.warnings` via
-        // `eachLike()` to pin "≥ 1 warning" per the umbrella spec.
+        // nested matchers cascade); `lag_grid` is a 49-element raw
+        // array literal so pact-ruby length-pins to 49 positionally
+        // (Codex r1 CRITICAL #1 fold). `interpretation.warnings`
+        // via `eachLike()` to pin "≥ 1 warning" per the umbrella
+        // spec; warning code is a §6.2 enum literal but #2's pick
+        // is illustrative (cross_rooted_pair fires via §7.4
+        // AFTER-loop derivation when x_root != y_root, which holds
+        // for the reports.total ↔ incidents.total pair).
         body: like({
           x: string('reports.total'),
           y: string('incidents.total'),
@@ -1663,7 +1683,9 @@ describe('GET /api/v1/analytics/correlation', () => {
           date_to: string('2026-04-30'),
           alpha: like(0.05),
           effective_n: integer(64),
-          lag_grid: eachLike(populatedCellTemplate),
+          lag_grid: Array.from({ length: 49 }, (_, idx) =>
+            populatedCell(idx - 24, 64),
+          ),
           interpretation: like({
             caveat: string(
               'Correlation does not imply causation. '
@@ -1731,7 +1753,9 @@ describe('GET /api/v1/analytics/correlation', () => {
       expect(body.alpha).toBeLessThan(1)
       expect(body.effective_n).toBeTypeOf('number')
       expect(Array.isArray(body.lag_grid)).toBe(true)
-      expect(body.lag_grid.length).toBeGreaterThan(0)
+      // Umbrella §4.4 + BE pydantic + FE Zod all lock the grid at
+      // exactly 49 cells (Codex r1 CRITICAL #1 fold).
+      expect(body.lag_grid).toHaveLength(49)
       // Populated cell — reason null AND r/p_raw/p_adjusted
       // numbers per umbrella §5.2 invariant.
       const cell = body.lag_grid[0]
@@ -1758,15 +1782,15 @@ describe('GET /api/v1/analytics/correlation', () => {
   it('returns a happy grid containing insufficient_sample_at_lag cells at extreme lags (PR-B T8)', async () => {
     // BE state handler (T13):
     // `_ensure_correlation_insufficient_sample_at_lag_fixture` seeds
-    // a 30-month window where lag=0 effective_n_at_lag = 30 (passes
-    // the §7.4 gate) and shifted-pair effective_n_at_lag at extreme
-    // lags falls below 30 → those cells carry
+    // a 30-month window where k=0 effective_n_at_lag = 30 (passes
+    // the §7.4 gate) and shifted-pair effective_n_at_lag at all
+    // other lags falls below 30 → those 48 cells carry
     // `reason: "insufficient_sample_at_lag"` per umbrella R-12 +
-    // §5.1. The grid is heterogeneous (populated + insufficient),
-    // so `arrayContaining` pins both variants explicitly — eachLike
-    // would force per-element uniformity which the locked pipeline
-    // can't satisfy without escalating to the 422 path (interaction
-    // #5).
+    // §5.1. Per-position raw-array matcher (Codex r1 CRITICAL #1
+    // fold) — cell at index 24 is populated (lag=0); cells at all
+    // other positions carry the reason canary. BE pydantic locks
+    // ascending-lag order (`correlation.py:172-179` model_validator),
+    // so position i corresponds to lag = i − 24 deterministically.
     provider
       .given(
         'seeded correlation insufficient_sample_at_lag fixture '
@@ -1796,16 +1820,20 @@ describe('GET /api/v1/analytics/correlation', () => {
           date_to: string('2026-06-30'),
           alpha: like(0.05),
           effective_n: integer(30),
-          lag_grid: arrayContaining(
-            // Populated mid-lag variant (lag=0 always populated when
-            // gate passes — effective_n_at_lag=30 here).
-            populatedCellTemplate,
-            // Insufficient extreme-lag variant — shifted-pair count
-            // < 30 at |k|=24, reason canary literal-pinned via
-            // `equal()` so a BE drift away from the locked enum
-            // value flips red.
-            nonNullCellTemplate(24, 6, 'insufficient_sample_at_lag'),
-          ),
+          // 49-cell raw array — pact-ruby length-pins to 49
+          // positionally. Cell at k=0 (idx=24) is populated; other
+          // 48 cells are insufficient. effective_n_at_lag at
+          // shifted lag k = max(30 − |k|, 0) per the §7.4 calendar-
+          // aware shifted-pair rule (30-month window).
+          lag_grid: Array.from({ length: 49 }, (_, idx) => {
+            const lag = idx - 24
+            if (lag === 0) return populatedCell(0, 30)
+            return nonNullCell(
+              lag,
+              Math.max(30 - Math.abs(lag), 0),
+              'insufficient_sample_at_lag',
+            )
+          }),
           interpretation: like({
             caveat: string(
               'Correlation does not imply causation. '
@@ -1838,12 +1866,14 @@ describe('GET /api/v1/analytics/correlation', () => {
         }[]
       }
       expect(Array.isArray(body.lag_grid)).toBe(true)
-      // The arrayContaining matcher enforces ≥1 cell of each
-      // variant at verify time; the consumer-side assertions add
-      // explicit at-least-once checks for both reason canaries to
-      // pin the heterogeneous-grid contract independently from the
-      // matcher (defence-in-depth — if pact-ruby's
-      // `array-contains` rule ever silently weakens, this fails).
+      // Length-pin (Codex r1 CRITICAL #1 fold) — 49 cells locked
+      // across umbrella §4.4 + BE pydantic + FE Zod.
+      expect(body.lag_grid).toHaveLength(49)
+      // Defence-in-depth — verify both canaries appear in the
+      // actual response (positional matcher pins each cell's reason
+      // independently; this also pins the heterogeneous-grid
+      // contract at the consumer-test level if a future pact-ruby
+      // weakening loosens per-cell shape match).
       const hasPopulated = body.lag_grid.some(
         (c) => c.pearson.reason === null && c.spearman.reason === null,
       )
@@ -1902,12 +1932,27 @@ describe('GET /api/v1/analytics/correlation', () => {
           date_to: string('2026-04-30'),
           alpha: like(0.05),
           effective_n: integer(64),
-          lag_grid: arrayContaining(
-            populatedCellTemplate,
-            nonNullCellTemplate(-24, 28, 'insufficient_sample_at_lag'),
-            nonNullCellTemplate(12, 60, 'degenerate'),
-            nonNullCellTemplate(6, 78, 'low_count_suppressed'),
-          ),
+          // 49-cell raw array per Codex r1 CRITICAL #1 fold —
+          // pact-ruby length-pins to 49 positionally. All 4
+          // §5.2 reason enum values present:
+          //   - lag ±24 (idx 0, 48): insufficient_sample_at_lag
+          //   - lag ±12 (idx 12, 36): degenerate
+          //   - lag ±6  (idx 18, 30): low_count_suppressed
+          //   - all other lags:       populated (reason: null)
+          lag_grid: Array.from({ length: 49 }, (_, idx) => {
+            const lag = idx - 24
+            const absLag = Math.abs(lag)
+            if (absLag === 24) {
+              return nonNullCell(lag, 28, 'insufficient_sample_at_lag')
+            }
+            if (absLag === 12) {
+              return nonNullCell(lag, 60, 'degenerate')
+            }
+            if (absLag === 6) {
+              return nonNullCell(lag, 78, 'low_count_suppressed')
+            }
+            return populatedCell(lag, 64)
+          }),
           interpretation: like({
             caveat: string(
               'Correlation does not imply causation. '
@@ -1917,14 +1962,18 @@ describe('GET /api/v1/analytics/correlation', () => {
             // R-16 trigger — `low_count_suppressed_cells` warning
             // auto-emits whenever any cell has reason
             // `low_count_suppressed` (umbrella §7.4 AFTER-loop
-            // derivation). Pinned via eachLike + canary code.
+            // derivation). Code + severity literal-pinned via
+            // `equal()` per Codex r1 HIGH fold — this warning is
+            // contractually mandatory (umbrella §6.2 + §7.4
+            // AFTER-loop derivation), so a BE drift to a different
+            // code or severity must fail verification.
             warnings: eachLike({
-              code: string('low_count_suppressed_cells'),
+              code: equal('low_count_suppressed_cells'),
               message: string(
                 'Some lag cells were suppressed because shifted-pair '
                   + 'monthly counts fell below the disclosure threshold.',
               ),
-              severity: string('info'),
+              severity: equal('info'),
             }),
           }),
         }),
@@ -1949,6 +1998,9 @@ describe('GET /api/v1/analytics/correlation', () => {
           warnings: { code: string }[]
         }
       }
+      // Length-pin (Codex r1 CRITICAL #1 fold) — 49 cells locked
+      // across umbrella §4.4 + BE pydantic + FE Zod.
+      expect(body.lag_grid).toHaveLength(49)
       // Pin all 4 reason enum values in this single interaction —
       // matches umbrella §7.6 #4 "demonstrates the full 4-value
       // reason enum in one interaction" lock.
@@ -2004,15 +2056,18 @@ describe('GET /api/v1/analytics/correlation', () => {
         status: 422,
         headers: { 'Content-Type': 'application/json' },
         // Umbrella §7.3 envelope — uniform FastAPI `detail[]`. `loc`
-        // is type-loose (`eachLike('body')`) because the umbrella
-        // pins `["body", "correlation"]` but the FE parser only
-        // reads `detail[0].type` (memory `pattern_layer_boundary_lock`
-        // intent). `type` is literal-pinned via `equal()`. `ctx` is
-        // wrapped in `like()` so its inner integer matchers cascade
-        // correctly (memory `pitfall_pact_ruby_root_like_required`).
+        // is the locked literal 2-element array `["body",
+        // "correlation"]` per umbrella §7.3 lines 462-471 (Codex r1
+        // CRITICAL #2 fold — earlier `eachLike('body')` only
+        // generated `["body"]` and accepted any 1+ string array).
+        // `type` is literal-pinned via `equal()` because the FE
+        // error parser switches on `detail[0].type` per umbrella
+        // §7.3 line 497. `ctx` is wrapped in `like()` so its inner
+        // integer matchers cascade correctly (memory
+        // `pitfall_pact_ruby_root_like_required`).
         body: like({
           detail: eachLike({
-            loc: eachLike('body'),
+            loc: ['body', 'correlation'],
             msg: string(
               'Minimum 30 valid months required after no_data exclusion; got 18',
             ),
@@ -2048,6 +2103,9 @@ describe('GET /api/v1/analytics/correlation', () => {
       // Type discriminator literal — FE error parser switches on
       // this exact value (umbrella §7.3 line 497).
       expect(entry.type).toBe('value_error.insufficient_sample')
+      // Locked `loc` envelope per umbrella §7.3 lines 462-471
+      // (Codex r1 CRITICAL #2 fold).
+      expect(entry.loc).toEqual(['body', 'correlation'])
       expect(entry.msg).toBeTypeOf('string')
       // ctx must surface the runtime `effective_n` so the FE
       // empty-state copy can render the actual sample size + the
