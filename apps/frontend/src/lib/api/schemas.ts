@@ -301,6 +301,48 @@ export const geoResponseSchema = z.object({
   countries: z.array(geoCountrySchema),
 })
 
+/**
+ * `/api/v1/analytics/actor_network` — plan ``docs/plans/actor-network-
+ * data.md`` v1.6 L2 + L3 + T9.
+ *
+ * Three node kinds (`actor` / `tool` / `sector`) tied to the BE DTO
+ * `ActorNetworkNode.kind: Literal["actor", "tool", "sector"]` at
+ * `services/api/src/api/schemas/read.py`. Edges use `source_id` /
+ * `target_id` (NOT `source` / `target` — pinned by T3 negative
+ * assertion). `cap_breached` defaults to `false` so a backwards-compat
+ * BE that omits the field still parses cleanly here (plan L2
+ * forward-compat).
+ */
+export const actorNetworkNodeSchema = z.object({
+  /** Kind-prefixed id: `actor:<group_id>` / `tool:<technique_id>` /
+   *  `sector:<sector_code>`. */
+  id: z.string().min(1),
+  kind: z.enum(['actor', 'tool', 'sector']),
+  label: z.string().min(1),
+  /** Global degree (count of distinct connected nodes across all 3
+   *  edge classes, computed BEFORE the eligibility filter — plan
+   *  L7(b) clarification). */
+  degree: z.number().int().gte(0),
+})
+
+export const actorNetworkEdgeSchema = z.object({
+  source_id: z.string().min(1),
+  target_id: z.string().min(1),
+  /** `COUNT(DISTINCT report_id)` for actor↔tool + actor↔actor;
+   *  `COUNT(DISTINCT incidents.id)` for actor↔sector. Always >= 1. */
+  weight: z.number().int().gte(1),
+})
+
+export const actorNetworkResponseSchema = z.object({
+  nodes: z.array(actorNetworkNodeSchema),
+  edges: z.array(actorNetworkEdgeSchema),
+  /** `true` when `len(selected_actors) > top_n_actor` and selected
+   *  actors are guaranteed inclusion (plan L4 Step B + L7). FE
+   *  legend renders an explanatory tooltip when set. Default
+   *  `false` for forward-compat with a BE that omits the field. */
+  cap_breached: z.boolean().default(false),
+})
+
 export type TacticRef = z.infer<typeof tacticRefSchema>
 export type AttackTechniqueCount = z.infer<typeof attackTechniqueCountSchema>
 export type AttackTacticRow = z.infer<typeof attackTacticRowSchema>
@@ -316,6 +358,10 @@ export type IncidentsTrendResponse = z.infer<
 >
 export type GeoCountry = z.infer<typeof geoCountrySchema>
 export type GeoResponse = z.infer<typeof geoResponseSchema>
+
+export type ActorNetworkNode = z.infer<typeof actorNetworkNodeSchema>
+export type ActorNetworkEdge = z.infer<typeof actorNetworkEdgeSchema>
+export type ActorNetworkResponse = z.infer<typeof actorNetworkResponseSchema>
 
 /**
  * Detail views + similar reports — PR #14 Phase 3 slice 1 (Group D).

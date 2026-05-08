@@ -208,6 +208,138 @@
         "title": "ActorListResponse",
         "type": "object"
       },
+      "ActorNetworkEdge": {
+        "description": "One edge in ``ActorNetworkResponse.edges``.\n\nPlan L2 + L3: ``source_id`` / ``target_id`` reference nodes by\nkind-prefixed id. ``weight`` is co-occurrence count\n(``COUNT(DISTINCT report_id)`` for actor↔tool + actor↔actor;\n``COUNT(DISTINCT incidents.id)`` for actor↔sector). For actor↔actor\nedges the pair is canonicalized with ``ca.group_id < cb.group_id``\nso the response has no ``(A,B)+(B,A)`` duplicates.",
+        "properties": {
+          "source_id": {
+            "minLength": 1,
+            "title": "Source Id",
+            "type": "string"
+          },
+          "target_id": {
+            "minLength": 1,
+            "title": "Target Id",
+            "type": "string"
+          },
+          "weight": {
+            "minimum": 1.0,
+            "title": "Weight",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "source_id",
+          "target_id",
+          "weight"
+        ],
+        "title": "ActorNetworkEdge",
+        "type": "object"
+      },
+      "ActorNetworkNode": {
+        "description": "One node in ``ActorNetworkResponse.nodes``.\n\nPlan L2 + L13: ``id`` is kind-prefixed (``\"actor:<group_id>\"`` /\n``\"tool:<technique_id>\"`` / ``\"sector:<sector_code>\"``). ``label`` is\na human-readable name (``groups.name`` / ``techniques.name`` /\n``incident_sectors.sector_code``). ``degree`` is GLOBAL degree (count\nof distinct connected nodes across all 3 edge classes computed\nBEFORE the eligibility filter is applied — see L7(b) clarification).",
+        "properties": {
+          "degree": {
+            "minimum": 0.0,
+            "title": "Degree",
+            "type": "integer"
+          },
+          "id": {
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "actor",
+              "tool",
+              "sector"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "label",
+          "degree"
+        ],
+        "title": "ActorNetworkNode",
+        "type": "object"
+      },
+      "ActorNetworkResponse": {
+        "description": "Response for ``GET /api/v1/analytics/actor_network``.\n\nPlan L2 lock: ``{nodes, edges, cap_breached}`` — no nesting beyond\none level in either array.",
+        "examples": [
+          {
+            "cap_breached": false,
+            "edges": [
+              {
+                "source_id": "actor:3",
+                "target_id": "tool:42",
+                "weight": 8
+              },
+              {
+                "source_id": "actor:3",
+                "target_id": "sector:GOV",
+                "weight": 3
+              }
+            ],
+            "nodes": [
+              {
+                "degree": 12,
+                "id": "actor:3",
+                "kind": "actor",
+                "label": "Lazarus Group"
+              },
+              {
+                "degree": 5,
+                "id": "tool:42",
+                "kind": "tool",
+                "label": "Phishing"
+              },
+              {
+                "degree": 3,
+                "id": "sector:GOV",
+                "kind": "sector",
+                "label": "GOV"
+              }
+            ]
+          },
+          {
+            "cap_breached": false,
+            "edges": [],
+            "nodes": []
+          }
+        ],
+        "properties": {
+          "cap_breached": {
+            "default": false,
+            "title": "Cap Breached",
+            "type": "boolean"
+          },
+          "edges": {
+            "items": {
+              "$ref": "#/components/schemas/ActorNetworkEdge"
+            },
+            "title": "Edges",
+            "type": "array"
+          },
+          "nodes": {
+            "items": {
+              "$ref": "#/components/schemas/ActorNetworkNode"
+            },
+            "title": "Nodes",
+            "type": "array"
+          }
+        },
+        "title": "ActorNetworkResponse",
+        "type": "object"
+      },
       "AlreadyDecidedError": {
         "description": "409 body when the staging row is no longer ``pending``.\n\n``current_status`` is narrowed to ``promoted|rejected`` — the only\nstates the PR #10 endpoint can drive the row into (plan §2.2 B). If\na future flow introduces ``approved`` as an intermediate state, the\nreachable-state enum here must widen in lock-step.",
         "properties": {
@@ -3145,6 +3277,192 @@
         ]
       }
     },
+    "/api/v1/analytics/actor_network": {
+      "get": {
+        "description": "Returns the SNA co-occurrence graph backing the dashboard ``actor-network-graph`` widget. Three edge classes computed with ``COUNT(DISTINCT)`` weights: actor↔tool (via shared report), actor↔sector (via the 5-table chain incident_sectors → incidents → incident_sources → reports → report_codenames → codenames), and actor↔actor (self-join on report_codenames with unordered pair canonicalization). Node IDs are kind-prefixed: ``actor:<group_id>``, ``tool:<technique_id>``, ``sector:<sector_code>``. ``cap_breached`` flag fires when len(selected actors with eligible degree >= 1) > ``top_n_actor`` per plan v1.4 L4 Step B + L7(b). Filter contract matches sibling analytics endpoints; per-route 60/min/user rate-limit bucket.",
+        "operationId": "actor_network_endpoint_api_v1_analytics_actor_network_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "date_from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Date From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "date_to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Date To"
+            }
+          },
+          {
+            "in": "query",
+            "name": "group_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "integer"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Group Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "top_n_actor",
+            "required": false,
+            "schema": {
+              "default": 25,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Top N Actor",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "top_n_tool",
+            "required": false,
+            "schema": {
+              "default": 25,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Top N Tool",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "top_n_sector",
+            "required": false,
+            "schema": {
+              "default": 25,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Top N Sector",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "empty": {
+                    "summary": "No co-occurrence in window",
+                    "value": {
+                      "cap_breached": false,
+                      "edges": [],
+                      "nodes": []
+                    }
+                  },
+                  "happy": {
+                    "summary": "Populated graph",
+                    "value": {
+                      "cap_breached": false,
+                      "edges": [
+                        {
+                          "source_id": "actor:3",
+                          "target_id": "tool:42",
+                          "weight": 8
+                        }
+                      ],
+                      "nodes": [
+                        {
+                          "degree": 12,
+                          "id": "actor:3",
+                          "kind": "actor",
+                          "label": "Lazarus Group"
+                        },
+                        {
+                          "degree": 5,
+                          "id": "tool:42",
+                          "kind": "tool",
+                          "label": "Phishing"
+                        }
+                      ]
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ActorNetworkResponse"
+                }
+              }
+            },
+            "description": "Actor-network graph payload."
+          },
+          "401": {
+            "description": "Missing or invalid session cookie"
+          },
+          "403": {
+            "description": "Role not analyst / researcher / policy / soc / admin"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "detail": [
+                    {
+                      "loc": [
+                        "query",
+                        "group_id"
+                      ],
+                      "msg": "group_id must be >= 1",
+                      "type": "value_error"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "Invalid query param — bad ISO date, negative ``group_id``, or numeric cap out of ``1..200`` (``top_n`` on ``/attack_matrix``; ``top_n_actor`` / ``top_n_tool`` / ``top_n_sector`` on ``/actor_network``). Plan D12 uniform 422 contract."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": "rate_limit_exceeded",
+                  "message": "60 per 1 minute"
+                }
+              }
+            },
+            "description": "Rate limit exceeded — same 60/min/user policy as other read endpoints (dashboard, reports, incidents, actors) but a per-decorated-route bucket. Exhausting /analytics/attack_matrix does NOT consume /analytics/trend or /dashboard/summary budget."
+          }
+        },
+        "summary": "Actor-tool / actor-sector / actor-actor co-occurrence graph",
+        "tags": [
+          "analytics"
+        ]
+      }
+    },
     "/api/v1/analytics/attack_matrix": {
       "get": {
         "description": "Returns a row-based tactic × technique count matrix over the filter window. Response shape: ``{tactics: [], rows: [{tactic_id, techniques: [{technique_id, count}]}]}``. ``count`` is distinct report count per technique. ``top_n`` (default 30, max 200) caps the number of techniques returned across the whole matrix, ordered by count desc. Techniques with a null tactic are filtered out. Plan D2 + D8.",
@@ -3298,7 +3616,7 @@
                 }
               }
             },
-            "description": "Invalid query param — bad ISO date, negative ``group_id``, or ``top_n`` out of ``1..200`` (attack_matrix only). Plan D12 uniform 422 contract."
+            "description": "Invalid query param — bad ISO date, negative ``group_id``, or numeric cap out of ``1..200`` (``top_n`` on ``/attack_matrix``; ``top_n_actor`` / ``top_n_tool`` / ``top_n_sector`` on ``/actor_network``). Plan D12 uniform 422 contract."
           },
           "429": {
             "content": {
@@ -3631,7 +3949,7 @@
                 }
               }
             },
-            "description": "Invalid query param — bad ISO date, negative ``group_id``, or ``top_n`` out of ``1..200`` (attack_matrix only). Plan D12 uniform 422 contract."
+            "description": "Invalid query param — bad ISO date, negative ``group_id``, or numeric cap out of ``1..200`` (``top_n`` on ``/attack_matrix``; ``top_n_actor`` / ``top_n_tool`` / ``top_n_sector`` on ``/actor_network``). Plan D12 uniform 422 contract."
           },
           "429": {
             "content": {
@@ -3836,7 +4154,7 @@
                 }
               }
             },
-            "description": "Invalid query param — bad ISO date, negative ``group_id``, or ``top_n`` out of ``1..200`` (attack_matrix only). Plan D12 uniform 422 contract."
+            "description": "Invalid query param — bad ISO date, negative ``group_id``, or numeric cap out of ``1..200`` (``top_n`` on ``/attack_matrix``; ``top_n_actor`` / ``top_n_tool`` / ``top_n_sector`` on ``/actor_network``). Plan D12 uniform 422 contract."
           },
           "429": {
             "content": {
@@ -3976,7 +4294,7 @@
                 }
               }
             },
-            "description": "Invalid query param — bad ISO date, negative ``group_id``, or ``top_n`` out of ``1..200`` (attack_matrix only). Plan D12 uniform 422 contract."
+            "description": "Invalid query param — bad ISO date, negative ``group_id``, or numeric cap out of ``1..200`` (``top_n`` on ``/attack_matrix``; ``top_n_actor`` / ``top_n_tool`` / ``top_n_sector`` on ``/actor_network``). Plan D12 uniform 422 contract."
           },
           "429": {
             "content": {

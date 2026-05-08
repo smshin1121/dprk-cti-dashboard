@@ -35,6 +35,7 @@ from ..db import get_db
 from ..deps import require_role
 from ..rate_limit import get_limiter
 from ..read.analytics_aggregator import (
+    compute_actor_network,
     compute_attack_matrix,
     compute_geo,
     compute_incidents_trend,
@@ -42,6 +43,7 @@ from ..read.analytics_aggregator import (
 )
 from ..schemas.read import (
     INCIDENTS_TREND_UNKNOWN_KEY,
+    ActorNetworkResponse,
     AttackMatrixResponse,
     GeoResponse,
     IncidentsTrendResponse,
@@ -106,8 +108,10 @@ _RESPONSES_COMMON_AUTH: dict[int | str, dict[str, object]] = {
 _RESPONSES_422_COMMON: dict[str, object] = {
     "description": (
         "Invalid query param — bad ISO date, negative ``group_id``, "
-        "or ``top_n`` out of ``1..200`` (attack_matrix only). Plan D12 "
-        "uniform 422 contract."
+        "or numeric cap out of ``1..200`` (``top_n`` on "
+        "``/attack_matrix``; ``top_n_actor`` / ``top_n_tool`` / "
+        "``top_n_sector`` on ``/actor_network``). Plan D12 uniform "
+        "422 contract."
     ),
     "content": {
         "application/json": {
@@ -468,3 +472,102 @@ async def incidents_trend_endpoint(
         group_ids=group_id,
     )
     return IncidentsTrendResponse.model_validate(raw)
+
+
+# ---------------------------------------------------------------------------
+# /actor_network — PR 3 SNA co-occurrence (plan v1.4 L1)
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/actor_network",
+    response_model=ActorNetworkResponse,
+    summary="Actor-tool / actor-sector / actor-actor co-occurrence graph",
+    description=(
+        "Returns the SNA co-occurrence graph backing the dashboard "
+        "``actor-network-graph`` widget. Three edge classes computed "
+        "with ``COUNT(DISTINCT)`` weights: actor↔tool (via shared "
+        "report), actor↔sector (via the 5-table chain incident_sectors "
+        "→ incidents → incident_sources → reports → report_codenames "
+        "→ codenames), and actor↔actor (self-join on report_codenames "
+        "with unordered pair canonicalization). Node IDs are kind-"
+        "prefixed: ``actor:<group_id>``, ``tool:<technique_id>``, "
+        "``sector:<sector_code>``. ``cap_breached`` flag fires when "
+        "len(selected actors with eligible degree >= 1) > "
+        "``top_n_actor`` per plan v1.4 L4 Step B + L7(b). Filter "
+        "contract matches sibling analytics endpoints; per-route "
+        "60/min/user rate-limit bucket."
+    ),
+    responses={
+        200: {
+            "description": "Actor-network graph payload.",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "happy": {
+                            "summary": "Populated graph",
+                            "value": {
+                                "nodes": [
+                                    {
+                                        "id": "actor:3",
+                                        "kind": "actor",
+                                        "label": "Lazarus Group",
+                                        "degree": 12,
+                                    },
+                                    {
+                                        "id": "tool:42",
+                                        "kind": "tool",
+                                        "label": "Phishing",
+                                        "degree": 5,
+                                    },
+                                ],
+                                "edges": [
+                                    {
+                                        "source_id": "actor:3",
+                                        "target_id": "tool:42",
+                                        "weight": 8,
+                                    }
+                                ],
+                                "cap_breached": False,
+                            },
+                        },
+                        "empty": {
+                            "summary": "No co-occurrence in window",
+                            "value": {
+                                "nodes": [],
+                                "edges": [],
+                                "cap_breached": False,
+                            },
+                        },
+                    }
+                }
+            },
+        },
+        **_RESPONSES_COMMON_AUTH,
+        422: _RESPONSES_422_COMMON,
+    },
+)
+@_limiter.limit("60/minute")
+async def actor_network_endpoint(
+    request: Request,
+    date_from: Annotated[date | None, Query()] = None,
+    date_to: Annotated[date | None, Query()] = None,
+    group_id: Annotated[
+        list[int] | None, Query(), AfterValidator(_validate_group_ids)
+    ] = None,
+    top_n_actor: Annotated[int, Query(ge=1, le=200)] = 25,
+    top_n_tool: Annotated[int, Query(ge=1, le=200)] = 25,
+    top_n_sector: Annotated[int, Query(ge=1, le=200)] = 25,
+    session: AsyncSession = Depends(get_db),
+    _current_user: CurrentUser = Depends(require_role(*_READ_ROLES)),
+) -> ActorNetworkResponse:
+    raw = await compute_actor_network(
+        session,
+        date_from=date_from,
+        date_to=date_to,
+        group_ids=group_id,
+        top_n_actor=top_n_actor,
+        top_n_tool=top_n_tool,
+        top_n_sector=top_n_sector,
+    )
+    return ActorNetworkResponse.model_validate(raw)

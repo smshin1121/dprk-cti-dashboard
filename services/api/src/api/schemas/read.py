@@ -794,6 +794,118 @@ class GeoResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Actor Network — PR 3 (plan v1.4 L2)
+# ---------------------------------------------------------------------------
+#
+# ``GET /api/v1/analytics/actor_network`` SNA co-occurrence visualization.
+#
+# Plan L2 wire shape: ``{nodes: ActorNetworkNode[], edges: ActorNetworkEdge[],
+# cap_breached: bool}``. Node IDs use a kind-prefixed namespace so the three
+# node kinds share a single FE-side identifier:
+#
+#     "actor:<group_id>"      — ``codenames.group_id``-derived actor node
+#     "tool:<technique_id>"   — ``techniques.id``-derived tool node
+#     "sector:<sector_code>"  — ``incident_sectors.sector_code``-derived sector
+#
+# ``cap_breached`` is True iff ``len(selected actors with eligible degree
+# >= 1) > top_n_actor`` per L4 Step B. Default False covers the empty
+# contract (no group filter, or filter matches nothing).
+
+
+class ActorNetworkNode(BaseModel):
+    """One node in ``ActorNetworkResponse.nodes``.
+
+    Plan L2 + L13: ``id`` is kind-prefixed (``"actor:<group_id>"`` /
+    ``"tool:<technique_id>"`` / ``"sector:<sector_code>"``). ``label`` is
+    a human-readable name (``groups.name`` / ``techniques.name`` /
+    ``incident_sectors.sector_code``). ``degree`` is GLOBAL degree (count
+    of distinct connected nodes across all 3 edge classes computed
+    BEFORE the eligibility filter is applied — see L7(b) clarification).
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    id: str = Field(min_length=1)
+    kind: Literal["actor", "tool", "sector"]
+    label: str = Field(min_length=1)
+    degree: Annotated[int, Field(ge=0)]
+
+
+class ActorNetworkEdge(BaseModel):
+    """One edge in ``ActorNetworkResponse.edges``.
+
+    Plan L2 + L3: ``source_id`` / ``target_id`` reference nodes by
+    kind-prefixed id. ``weight`` is co-occurrence count
+    (``COUNT(DISTINCT report_id)`` for actor↔tool + actor↔actor;
+    ``COUNT(DISTINCT incidents.id)`` for actor↔sector). For actor↔actor
+    edges the pair is canonicalized with ``ca.group_id < cb.group_id``
+    so the response has no ``(A,B)+(B,A)`` duplicates.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    source_id: str = Field(min_length=1)
+    target_id: str = Field(min_length=1)
+    weight: Annotated[int, Field(ge=1)]
+
+
+class ActorNetworkResponse(BaseModel):
+    """Response for ``GET /api/v1/analytics/actor_network``.
+
+    Plan L2 lock: ``{nodes, edges, cap_breached}`` — no nesting beyond
+    one level in either array.
+    """
+
+    model_config = ConfigDict(
+        frozen=True,
+        json_schema_extra={
+            "examples": [
+                {
+                    "nodes": [
+                        {
+                            "id": "actor:3",
+                            "kind": "actor",
+                            "label": "Lazarus Group",
+                            "degree": 12,
+                        },
+                        {
+                            "id": "tool:42",
+                            "kind": "tool",
+                            "label": "Phishing",
+                            "degree": 5,
+                        },
+                        {
+                            "id": "sector:GOV",
+                            "kind": "sector",
+                            "label": "GOV",
+                            "degree": 3,
+                        },
+                    ],
+                    "edges": [
+                        {
+                            "source_id": "actor:3",
+                            "target_id": "tool:42",
+                            "weight": 8,
+                        },
+                        {
+                            "source_id": "actor:3",
+                            "target_id": "sector:GOV",
+                            "weight": 3,
+                        },
+                    ],
+                    "cap_breached": False,
+                },
+                {"nodes": [], "edges": [], "cap_breached": False},
+            ]
+        },
+    )
+
+    nodes: list[ActorNetworkNode] = Field(default_factory=list)
+    edges: list[ActorNetworkEdge] = Field(default_factory=list)
+    cap_breached: bool = False
+
+
+# ---------------------------------------------------------------------------
 # Detail views — PR #14 Phase 3 slice 1 (plan D1 + D9 + D11)
 # ---------------------------------------------------------------------------
 #

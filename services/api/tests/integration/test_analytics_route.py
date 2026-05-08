@@ -856,3 +856,311 @@ class TestRateLimit:
             "/api/v1/analytics/trend", cookies={"dprk_cti_session": cookie}
         )
         assert tripped.status_code == 429
+
+
+# ===========================================================================
+# /analytics/actor_network — PR 3 SNA co-occurrence (RED batch, T1 of plan v1.3)
+# ===========================================================================
+#
+# All tests in this section currently fail because the route is not yet
+# wired (T7 lands the GREEN implementation). RED-state failures expected:
+#   - 404 for happy/empty/filter cases (route does not exist).
+#   - 422 cases also produce 404 (validators run inside the route handler
+#     which doesn't exist yet).
+#   - Rate-limit case produces 60×404 + 1×404 (slowapi never sees the
+#     request since the route is missing).
+#
+# References: docs/plans/actor-network-data.md L1, L6, L7, L10, AC #1-#4.
+
+
+# ---------------------------------------------------------------------------
+# Local seed helper for the actor↔sector chain (the integration test file
+# does not have an incident_sources helper; add one locally for PR 3).
+# ---------------------------------------------------------------------------
+
+
+async def _link_incident_source(
+    engine: AsyncEngine, incident_id: int, report_id: int
+) -> None:
+    from api.tables import incident_sources_table
+
+    async with AsyncSession(engine, expire_on_commit=False) as s:
+        await s.execute(
+            sa.insert(incident_sources_table).values(
+                incident_id=incident_id, report_id=report_id
+            )
+        )
+        await s.commit()
+
+
+# ---------------------------------------------------------------------------
+# TestActorNetworkEmpty — L6 empty contract through HTTP layer
+# ---------------------------------------------------------------------------
+
+
+class TestActorNetworkEmpty:
+    async def test_empty_db_returns_empty_payload(
+        self, analytics_client: AsyncClient, make_session_cookie
+    ) -> None:
+        cookie = await _cookie(make_session_cookie)
+        resp = await analytics_client.get(
+            "/api/v1/analytics/actor_network",
+            cookies={"dprk_cti_session": cookie},
+        )
+        assert resp.status_code == 200
+        assert resp.json() == {
+            "nodes": [],
+            "edges": [],
+            "cap_breached": False,
+        }
+
+
+# ---------------------------------------------------------------------------
+# TestActorNetworkHappy — populated seed produces the expected wire shape
+# ---------------------------------------------------------------------------
+
+
+class TestActorNetworkHappy:
+    async def test_populated_actor_network_shape(
+        self,
+        analytics_client: AsyncClient,
+        make_session_cookie,
+        real_engine: AsyncEngine,
+    ) -> None:
+        # Minimal populated seed: one actor↔tool edge. Smoke-tests the
+        # wire-shape pass-through from aggregator → DTO → JSON, including
+        # node ID kind-prefixing per L13.
+        src = await _seed_source(real_engine)
+        g = await _seed_group(real_engine, "Lazarus")
+        cn = await _seed_codename(real_engine, "Lazarus", g)
+        t = await _seed_technique(
+            real_engine, mitre_id="T1566", name="Phishing", tactic="TA0001"
+        )
+        await _seed_report(
+            real_engine,
+            title="r1",
+            url="u1",
+            source_id=src,
+            published=dt.date(2026, 3, 5),
+            codename_ids=[cn],
+            technique_ids=[t],
+        )
+
+        cookie = await _cookie(make_session_cookie)
+        resp = await analytics_client.get(
+            "/api/v1/analytics/actor_network",
+            cookies={"dprk_cti_session": cookie},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+
+        # Codex r4 HIGH (L2-WIRE-SHAPE) fold: pin the exact top-level
+        # shape — no extra keys allowed. cap_breached defaults to False
+        # in the unfiltered case.
+        assert set(body.keys()) == {"nodes", "edges", "cap_breached"}
+        assert isinstance(body["nodes"], list)
+        assert isinstance(body["edges"], list)
+        assert isinstance(body["cap_breached"], bool)
+        assert body["cap_breached"] is False
+
+        # Node ID kind-prefixing per L13. The seeded fixture has
+        # exactly one actor↔tool edge → exactly 2 nodes, 1 edge.
+        node_ids = {n["id"] for n in body["nodes"]}
+        assert node_ids == {f"actor:{g}", f"tool:{t}"}
+
+        # Pin each node to the EXACT key set per L2 (no extra fields).
+        for n in body["nodes"]:
+            assert set(n.keys()) == {"id", "kind", "label", "degree"}
+            assert isinstance(n["id"], str)
+            assert n["kind"] in {"actor", "tool", "sector"}
+            assert isinstance(n["label"], str)
+            assert n["label"]  # non-empty
+            assert isinstance(n["degree"], int)
+            assert n["degree"] >= 0
+
+        # Pin each edge to the EXACT key set per L2.
+        for e in body["edges"]:
+            assert set(e.keys()) == {"source_id", "target_id", "weight"}
+            assert isinstance(e["source_id"], str)
+            assert isinstance(e["target_id"], str)
+            assert isinstance(e["weight"], int)
+            assert e["weight"] >= 1
+            # Endpoint membership: every edge endpoint MUST appear in
+            # the nodes array (no orphan endpoints per L4 Step F).
+            assert e["source_id"] in node_ids
+            assert e["target_id"] in node_ids
+            # No self-loops (L3 actor-actor pair ordering excludes them).
+            assert e["source_id"] != e["target_id"]
+
+
+# ---------------------------------------------------------------------------
+# TestActorNetworkFilters — L6 vacuous-window 200-empty + L10 422 cases
+# ---------------------------------------------------------------------------
+
+
+class TestActorNetworkFilters:
+    async def test_vacuous_window_returns_200_empty_not_422(
+        self,
+        analytics_client: AsyncClient,
+        make_session_cookie,
+        real_engine: AsyncEngine,
+    ) -> None:
+        # L6 + L10 + Codex r2 fold: date_from > date_to is NOT validator-
+        # enforced (matches existing analytics convention — see
+        # services/api/src/api/routers/analytics.py:191 docstring); it
+        # produces empty-200, not 422. Even with seeded data, an inverted
+        # window must drop everything.
+        src = await _seed_source(real_engine)
+        g = await _seed_group(real_engine, "Lazarus")
+        cn = await _seed_codename(real_engine, "Lazarus", g)
+        t = await _seed_technique(
+            real_engine, mitre_id="T1566", name="Phishing", tactic="TA0001"
+        )
+        await _seed_report(
+            real_engine,
+            title="r",
+            url="u",
+            source_id=src,
+            published=dt.date(2026, 3, 5),
+            codename_ids=[cn],
+            technique_ids=[t],
+        )
+
+        cookie = await _cookie(make_session_cookie)
+        resp = await analytics_client.get(
+            "/api/v1/analytics/actor_network"
+            "?date_from=2026-12-31&date_to=2026-01-01",
+            cookies={"dprk_cti_session": cookie},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["nodes"] == []
+        assert body["edges"] == []
+        assert body["cap_breached"] is False
+
+    async def test_valid_window_no_rows_returns_200_empty(
+        self, analytics_client: AsyncClient, make_session_cookie
+    ) -> None:
+        # Valid window that simply matches no data → empty response.
+        cookie = await _cookie(make_session_cookie)
+        resp = await analytics_client.get(
+            "/api/v1/analytics/actor_network"
+            "?date_from=2099-01-01&date_to=2099-12-31",
+            cookies={"dprk_cti_session": cookie},
+        )
+        assert resp.status_code == 200
+        assert resp.json() == {
+            "nodes": [],
+            "edges": [],
+            "cap_breached": False,
+        }
+
+
+# ---------------------------------------------------------------------------
+# TestActorNetworkValidation — L10 422 contract on bad query params
+# ---------------------------------------------------------------------------
+
+
+class TestActorNetworkValidation:
+    @pytest.mark.parametrize(
+        "query",
+        [
+            "group_id=0",
+            "group_id=-1",
+            "top_n_actor=0",
+            "top_n_actor=201",
+            "top_n_tool=0",
+            "top_n_tool=201",
+            "top_n_sector=0",
+            "top_n_sector=-1",
+            "date_from=not-a-date",
+            "date_to=2026/03/05",
+        ],
+    )
+    async def test_invalid_query_param_returns_422(
+        self,
+        analytics_client: AsyncClient,
+        make_session_cookie,
+        query: str,
+    ) -> None:
+        cookie = await _cookie(make_session_cookie)
+        resp = await analytics_client.get(
+            f"/api/v1/analytics/actor_network?{query}",
+            cookies={"dprk_cti_session": cookie},
+        )
+        assert resp.status_code == 422, (
+            f"query='{query}' expected 422 got {resp.status_code}: "
+            f"{resp.text[:200]}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# TestActorNetworkRBAC — 401 (no cookie) + 403 (wrong role)
+# ---------------------------------------------------------------------------
+
+
+class TestActorNetworkRBAC:
+    async def test_missing_cookie_returns_401(
+        self, analytics_client: AsyncClient
+    ) -> None:
+        resp = await analytics_client.get("/api/v1/analytics/actor_network")
+        assert resp.status_code == 401
+
+    async def test_role_not_in_read_allowlist_returns_403(
+        self, analytics_client: AsyncClient, make_session_cookie
+    ) -> None:
+        cookie = await _cookie(make_session_cookie, role="unprivileged")
+        resp = await analytics_client.get(
+            "/api/v1/analytics/actor_network",
+            cookies={"dprk_cti_session": cookie},
+        )
+        assert resp.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# TestActorNetworkRateLimit — L8 60/min/route + AC #3 independence
+# ---------------------------------------------------------------------------
+
+
+class TestActorNetworkRateLimit:
+    async def test_429_after_60_calls_on_actor_network(
+        self, analytics_client: AsyncClient, make_session_cookie
+    ) -> None:
+        cookie = await _cookie(make_session_cookie)
+        for _ in range(60):
+            ok = await analytics_client.get(
+                "/api/v1/analytics/actor_network",
+                cookies={"dprk_cti_session": cookie},
+            )
+            assert ok.status_code == 200
+
+        tripped = await analytics_client.get(
+            "/api/v1/analytics/actor_network",
+            cookies={"dprk_cti_session": cookie},
+        )
+        assert tripped.status_code == 429
+
+    async def test_actor_network_429_does_not_consume_attack_matrix_budget(
+        self, analytics_client: AsyncClient, make_session_cookie
+    ) -> None:
+        # Plan AC #3 + Codex r2 MEDIUM fold: per-route bucket isolation.
+        # Drain actor_network → 429; attack_matrix's budget MUST be
+        # untouched (200 OK on the very next call to the sibling route).
+        cookie = await _cookie(make_session_cookie)
+        for _ in range(60):
+            await analytics_client.get(
+                "/api/v1/analytics/actor_network",
+                cookies={"dprk_cti_session": cookie},
+            )
+        tripped = await analytics_client.get(
+            "/api/v1/analytics/actor_network",
+            cookies={"dprk_cti_session": cookie},
+        )
+        assert tripped.status_code == 429
+
+        sibling = await analytics_client.get(
+            "/api/v1/analytics/attack_matrix",
+            cookies={"dprk_cti_session": cookie},
+        )
+        # Sibling route's bucket is independent — must still be available.
+        assert sibling.status_code == 200

@@ -70,6 +70,7 @@ from api.routers.pact_states import (  # noqa: E402
     SIMILAR_POPULATED_SOURCE_ID,
     _ProviderStatePayload,
     _ensure_actor_detail_fixture,
+    _ensure_actor_network_fixture,
     _ensure_actor_with_no_reports_fixture,
     _ensure_actor_with_reports_fixture,
     _ensure_attack_matrix_fixture,
@@ -91,6 +92,7 @@ from api.routers.pact_states import (  # noqa: E402
 from api.deps import get_embedding_client  # noqa: E402
 from api.main import app  # noqa: E402
 from api.read.analytics_aggregator import (  # noqa: E402
+    compute_actor_network,
     compute_attack_matrix,
     compute_geo,
     compute_incidents_trend,
@@ -682,6 +684,298 @@ async def test_analytics_pact_fixtures_are_idempotent(
     assert trend["buckets"]
     geo = await compute_geo(pg_session)
     assert geo["countries"]
+
+
+async def test_actor_network_fixture_satisfies_pact_matchers(
+    clean_pg: None, pg_session: AsyncSession
+) -> None:
+    """``/analytics/actor_network`` pact will use
+    ``{nodes: eachLike({id: string, kind: string, label: string,
+    degree: integer(>=1)}), edges: eachLike({source_id: string,
+    target_id: string, weight: integer(>=1)}), cap_breached: false}``.
+
+    Both ``eachLike`` arrays must be non-empty under the pact filter
+    window (``2026-01-01..2026-04-18``) — string fields reject null,
+    weight + degree must be positive integers, and ``cap_breached``
+    must be a bool.
+    """
+    from datetime import date
+
+    await _ensure_actor_network_fixture(pg_session)
+    await pg_session.commit()
+
+    network = await compute_actor_network(
+        pg_session,
+        date_from=date(2026, 1, 1),
+        date_to=date(2026, 4, 18),
+    )
+
+    assert network["nodes"], (
+        "nodes is empty — /analytics/actor_network pact's eachLike "
+        "matcher will fail. Fixture must produce at least one node "
+        "row under the filter window 2026-01-01..2026-04-18."
+    )
+    assert network["edges"], (
+        "edges is empty — /analytics/actor_network pact's eachLike "
+        "matcher will fail. Confirm report_codenames + report_techniques "
+        "+ incident_sources + incident_sectors junctions seeded and the "
+        "reports' published / incidents' reported dates are inside the "
+        "filter window."
+    )
+    assert isinstance(network["cap_breached"], bool), (
+        "pact: ActorNetworkResponse.cap_breached must be bool"
+    )
+    assert network["cap_breached"] is False, (
+        "small fixture should NOT breach the default top_n caps; "
+        "cap_breached=true would surprise the pact's literal false"
+    )
+
+    nodes = network["nodes"]
+    assert isinstance(nodes, list)
+    for node in nodes:
+        assert (
+            isinstance(node["id"], str) and node["id"]
+        ), "pact: ActorNetworkNode.id rejects null/empty"
+        assert (
+            isinstance(node["kind"], str) and node["kind"]
+        ), "pact: ActorNetworkNode.kind rejects null/empty"
+        assert node["kind"] in ("actor", "tool", "sector"), (
+            f"unexpected node kind {node['kind']!r}; "
+            "compute_actor_network() must emit one of actor/tool/sector"
+        )
+        assert (
+            isinstance(node["label"], str) and node["label"]
+        ), "pact: ActorNetworkNode.label rejects null/empty"
+        assert (
+            isinstance(node["degree"], int) and node["degree"] >= 1
+        ), "pact: ActorNetworkNode.degree integer(>=1) under eachLike"
+
+    edges = network["edges"]
+    assert isinstance(edges, list)
+    node_ids = {n["id"] for n in nodes}
+    for edge in edges:
+        assert (
+            isinstance(edge["source_id"], str) and edge["source_id"]
+        ), "pact: ActorNetworkEdge.source_id rejects null/empty"
+        assert (
+            isinstance(edge["target_id"], str) and edge["target_id"]
+        ), "pact: ActorNetworkEdge.target_id rejects null/empty"
+        assert (
+            edge["source_id"] in node_ids
+            and edge["target_id"] in node_ids
+        ), (
+            f"edge endpoints {edge['source_id']}/{edge['target_id']} "
+            "not in nodes — aggregator dropped a referenced node"
+        )
+        assert edge["source_id"] != edge["target_id"], (
+            "self-loop in edge — actor_network must NOT emit "
+            "self-loops per plan L4 contract"
+        )
+        assert (
+            isinstance(edge["weight"], int) and edge["weight"] >= 1
+        ), "pact: ActorNetworkEdge.weight integer(>=1) under eachLike"
+
+    # Edge-class counts pin the seed shape semantically. Plan v1.6 §0.1
+    # docstring of `_ensure_actor_network_fixture` claims:
+    #   (a) actor↔actor — 2 edges (G1↔G2 via r1, G2↔G3 via r2)
+    #   (b) actor↔tool  — 7 distinct pairs (G2↔T9002 weight 2)
+    #   (c) actor↔sector — 9 pairs (every group × every sector)
+    # If any of these drift, the matcher's eachLike still passes but
+    # the aggregator's edge classes don't reflect the documented seed.
+    by_kind: dict[tuple[str, str], int] = {}
+    nodes_by_id = {n["id"]: n for n in nodes}
+    for edge in edges:
+        src_kind = nodes_by_id[edge["source_id"]]["kind"]
+        tgt_kind = nodes_by_id[edge["target_id"]]["kind"]
+        # Canonical ordering: (actor, actor), (actor, tool), (actor, sector).
+        kind_pair = tuple(sorted([src_kind, tgt_kind]))
+        by_kind[kind_pair] = by_kind.get(kind_pair, 0) + 1
+    assert by_kind.get(("actor", "actor"), 0) == 2, (
+        "actor↔actor edge count drift — expected 2 (G1↔G2, G2↔G3), "
+        f"got {by_kind.get(('actor', 'actor'), 0)}"
+    )
+    assert by_kind.get(("actor", "tool"), 0) == 7, (
+        "actor↔tool edge count drift — expected 7 distinct pairs "
+        f"(G2↔T9002 weight 2 + 6 others weight 1), got "
+        f"{by_kind.get(('actor', 'tool'), 0)}"
+    )
+    assert by_kind.get(("actor", "sector"), 0) == 9, (
+        "actor↔sector edge count drift — expected 9 pairs "
+        f"(3 groups × 3 sectors), got "
+        f"{by_kind.get(('actor', 'sector'), 0)}"
+    )
+
+
+async def test_actor_network_fixture_survives_group_filter(
+    clean_pg: None, pg_session: AsyncSession
+) -> None:
+    """When the pact interaction passes ``group_id`` (matching the
+    sibling dashboard convention), the fixture must still produce
+    non-empty nodes + edges. This pins the brittle invariant — a
+    future fixture edit that broke the group_id eligibility filter
+    would break only the group-filtered pact, not the no-filter one.
+
+    Filters on ``actor-network-fixture-G1`` (the rank-1 group).
+    G1 has edges to G2 (actor↔actor on r1), to T9001/T9002
+    (actor↔tool on r1), and to all three sectors (actor↔sector
+    via incident → r1).
+    """
+    from datetime import date
+
+    await _ensure_actor_network_fixture(pg_session)
+    await pg_session.commit()
+
+    g1_id = (
+        await pg_session.execute(
+            sa.text(
+                "SELECT id FROM groups WHERE name = "
+                "'actor-network-fixture-G1'"
+            )
+        )
+    ).scalar_one()
+
+    network = await compute_actor_network(
+        pg_session,
+        date_from=date(2026, 1, 1),
+        date_to=date(2026, 4, 18),
+        group_ids=[int(g1_id)],
+    )
+    assert network["nodes"], (
+        "group-filtered actor_network is empty — fixture reports must "
+        "be linked to actor-network-fixture-G1's codename via "
+        "report_codenames"
+    )
+    assert network["edges"]
+
+    # Plan L7(a): the selected actor MUST appear in the response.
+    # Pin that actor:<G1 id> is present and that every returned edge
+    # has at least one endpoint that traces back to G1's eligibility
+    # neighbourhood (G2 via r1, T9001/T9002 tools, all three sectors
+    # via the incident → r1 chain).
+    g1_node_id = f"actor:{int(g1_id)}"
+    node_ids = {n["id"] for n in network["nodes"]}
+    assert g1_node_id in node_ids, (
+        f"selected actor {g1_node_id} missing from group-filtered "
+        f"response — eligibility filter dropped the selected actor"
+    )
+    for edge in network["edges"]:
+        endpoints = {edge["source_id"], edge["target_id"]}
+        # Plan L7(a): every edge in a group-filtered response must be
+        # incident to the selected actor. G1's neighbourhood under the
+        # filter is: G2 (actor↔actor via r1), T9001/T9002 (actor↔tool
+        # via r1), and the 3 sectors (actor↔sector via incident → r1).
+        # If the aggregator's eligibility filter loses scope, an edge
+        # not incident to G1 would surface — this assertion catches it.
+        assert g1_node_id in endpoints, (
+            f"edge {edge['source_id']}↔{edge['target_id']} is not "
+            f"incident to selected actor {g1_node_id} — group-filter "
+            "eligibility scope leaked"
+        )
+
+
+async def test_actor_network_fixture_is_idempotent(
+    clean_pg: None, pg_session: AsyncSession
+) -> None:
+    """Verifier replays state setup before EVERY interaction; the
+    actor-network seed must tolerate repeats without UNIQUE violations
+    and without doubling the row counts that drive the aggregator.
+    """
+    await _ensure_actor_network_fixture(pg_session)
+    await _ensure_actor_network_fixture(pg_session)  # repeat
+    await pg_session.commit()
+
+    counts: dict[str, int] = {}
+    for label, sql in [
+        ("sources", "SELECT COUNT(*) FROM sources WHERE name = 'actor-network-fixture-SRC1'"),
+        ("groups", "SELECT COUNT(*) FROM groups WHERE name LIKE 'actor-network-fixture-G%'"),
+        ("codenames", "SELECT COUNT(*) FROM codenames WHERE name LIKE 'actor-network-fixture-CN%'"),
+        ("techniques", "SELECT COUNT(*) FROM techniques WHERE mitre_id LIKE 'T900_'"),
+        ("reports", "SELECT COUNT(*) FROM reports WHERE url_canonical LIKE 'https://pact.test/analytics/actor-network/r%'"),
+        ("incidents", "SELECT COUNT(*) FROM incidents WHERE title = 'Pact fixture — actor-network INC1'"),
+    ]:
+        counts[label] = int(
+            (await pg_session.execute(sa.text(sql))).scalar_one()
+        )
+
+    assert counts == {
+        "sources": 1,
+        "groups": 3,
+        "codenames": 3,
+        "techniques": 3,
+        "reports": 2,
+        "incidents": 1,
+    }, (
+        f"actor-network seed lost SELECT-first idempotency on repeat: "
+        f"{counts}"
+    )
+
+    # Junction counts.
+    rc_count = int(
+        (
+            await pg_session.execute(
+                sa.text(
+                    "SELECT COUNT(*) FROM report_codenames rc "
+                    "JOIN reports r ON r.id = rc.report_id "
+                    "WHERE r.url_canonical LIKE "
+                    "'https://pact.test/analytics/actor-network/r%'"
+                )
+            )
+        ).scalar_one()
+    )
+    assert rc_count == 4, (
+        f"expected 4 actor-network report_codenames, got {rc_count} "
+        "— ON CONFLICT lost on report_codenames repeat insert"
+    )
+    rt_count = int(
+        (
+            await pg_session.execute(
+                sa.text(
+                    "SELECT COUNT(*) FROM report_techniques rt "
+                    "JOIN reports r ON r.id = rt.report_id "
+                    "WHERE r.url_canonical LIKE "
+                    "'https://pact.test/analytics/actor-network/r%'"
+                )
+            )
+        ).scalar_one()
+    )
+    assert rt_count == 4, (
+        f"expected 4 actor-network report_techniques, got {rt_count} "
+        "— _link_report_technique lost ON CONFLICT"
+    )
+    is_count = int(
+        (
+            await pg_session.execute(
+                sa.text(
+                    "SELECT COUNT(*) FROM incident_sources isr "
+                    "JOIN incidents i ON i.id = isr.incident_id "
+                    "WHERE i.title = 'Pact fixture — actor-network INC1'"
+                )
+            )
+        ).scalar_one()
+    )
+    assert is_count == 2, (
+        f"expected 2 actor-network incident_sources, got {is_count} "
+        "— ON CONFLICT lost on incident_sources repeat"
+    )
+    isec_count = int(
+        (
+            await pg_session.execute(
+                sa.text(
+                    "SELECT COUNT(*) FROM incident_sectors isc "
+                    "JOIN incidents i ON i.id = isc.incident_id "
+                    "WHERE i.title = 'Pact fixture — actor-network INC1'"
+                )
+            )
+        ).scalar_one()
+    )
+    assert isec_count == 3, (
+        f"expected 3 actor-network incident_sectors, got {isec_count} "
+        "— ON CONFLICT lost on incident_sectors repeat"
+    )
+
+    # Aggregator still coherent after repeats.
+    network = await compute_actor_network(pg_session)
+    assert network["nodes"] and network["edges"]
 
 
 # ---------------------------------------------------------------------------

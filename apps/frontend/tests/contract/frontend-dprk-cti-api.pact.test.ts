@@ -97,7 +97,7 @@ const provider = new PactV3({
   logLevel: 'warn',
 })
 
-const { like, eachLike, integer, string } = MatchersV3
+const { like, eachLike, integer, string, boolean } = MatchersV3
 
 // ---------------------------------------------------------------------
 // /auth/me
@@ -658,6 +658,102 @@ describe('GET /api/v1/analytics/geo', () => {
       expect(body.countries[0].iso2).toBeTypeOf('string')
       expect(body.countries[0].iso2).toHaveLength(2)
       expect(body.countries[0].count).toBeTypeOf('number')
+    })
+  })
+})
+
+// ---------------------------------------------------------------------
+// /analytics/actor_network — plan v1.6 L2 + L3 SNA co-occurrence (PR 3 T11)
+// ---------------------------------------------------------------------
+
+describe('GET /api/v1/analytics/actor_network', () => {
+  it('returns the SNA co-occurrence graph (nodes + edges + cap_breached)', async () => {
+    // BE state handler: `_ensure_actor_network_fixture` in
+    // `services/api/src/api/routers/pact_states.py`. Seeds 3 actor
+    // groups + 3 codenames + 3 techniques + 1 incident with 3
+    // sectors + 4 report_codenames + 4 report_techniques across 2
+    // reports inside the pact window. Yields a non-empty graph for
+    // every canonical edge class (actor↔actor, actor↔tool,
+    // actor↔sector) so all `eachLike` arrays satisfy their
+    // non-empty matcher rules (memory `pitfall_pact_fixture_shape`).
+    //
+    // No `group_id` on the wire — same Codex R1 P2 rationale as
+    // attack_matrix: the provider state doesn't guarantee the
+    // DB-assigned row id, so encoding `group_id=N` would couple the
+    // contract to a specific id assignment. The unfiltered
+    // aggregator output exercises the L2 wire shape.
+    //
+    // No `top_n_*` overrides on the wire — BE defaults (25 each) +
+    // small fixture (3 actors / 3 tools / 3 sectors) keep
+    // `cap_breached: false`. Custom top_n_* values would be a
+    // separate interaction if needed (deferred to a future pact
+    // expansion).
+    provider
+      .given('actor network co-occurrence available')
+      .uponReceiving(
+        'a request for the actor-network co-occurrence graph',
+      )
+      .withRequest({
+        method: 'GET',
+        path: '/api/v1/analytics/actor_network',
+        query: {
+          date_from: '2026-01-01',
+          date_to: '2026-04-18',
+        },
+      })
+      .willRespondWith({
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+        // Plan v1.6 L2 wire shape — nodes[] + edges[] + cap_breached.
+        // Edge fields are `source_id` / `target_id` (NOT `source` /
+        // `target`); pinned by FE T3 negative-property assertion.
+        // The example values use kind-prefixed ids matching the BE
+        // DTO docstring (`actor:<group_id>` etc.); the matcher only
+        // pins type, not literal value.
+        body: like({
+          nodes: eachLike({
+            id: string('actor:1'),
+            kind: string('actor'),
+            label: string('actor-network-fixture-G1'),
+            degree: integer(1),
+          }),
+          edges: eachLike({
+            source_id: string('actor:1'),
+            target_id: string('actor:2'),
+            weight: integer(1),
+          }),
+          cap_breached: boolean(false),
+        }),
+      })
+
+    await provider.executeTest(async (mockServer) => {
+      const url = new URL(
+        `${mockServer.url}/api/v1/analytics/actor_network`,
+      )
+      url.searchParams.append('date_from', '2026-01-01')
+      url.searchParams.append('date_to', '2026-04-18')
+      const res = await fetch(url.toString())
+      expect(res.status).toBe(200)
+      const body = (await res.json()) as {
+        nodes: { id: string; kind: string; label: string; degree: number }[]
+        edges: { source_id: string; target_id: string; weight: number }[]
+        cap_breached: boolean
+      }
+      // Plan L2 wire-shape sanity — non-empty arrays + every field
+      // typed correctly. The runtime parsing (zod) catches schema
+      // drift; this block adds explicit type-of asserts so a future
+      // shape change surfaces here instead of as an opaque pact
+      // mismatch.
+      expect(Array.isArray(body.nodes)).toBe(true)
+      expect(Array.isArray(body.edges)).toBe(true)
+      expect(body.nodes[0].id).toBeTypeOf('string')
+      expect(body.nodes[0].kind).toBeTypeOf('string')
+      expect(body.nodes[0].label).toBeTypeOf('string')
+      expect(body.nodes[0].degree).toBeTypeOf('number')
+      expect(body.edges[0].source_id).toBeTypeOf('string')
+      expect(body.edges[0].target_id).toBeTypeOf('string')
+      expect(body.edges[0].weight).toBeTypeOf('number')
+      expect(body.cap_breached).toBeTypeOf('boolean')
     })
   })
 })

@@ -187,12 +187,21 @@ async def _seed_analyst_session(
 # leave the DB in a mixed state.
 
 
-async def _ensure_source(session: AsyncSession) -> int:
-    """Upsert the `pact-fixture-source` source row; returns its id."""
+async def _ensure_source(
+    session: AsyncSession, *, name: str = "pact-fixture-source"
+) -> int:
+    """Upsert a sources row keyed by ``name``; returns its id.
+
+    The default name preserves the original PR #12 helper behaviour for
+    every existing caller. Pass an explicit ``name`` to seed a fixture
+    whose ``top_sources`` join chain must be isolated from sibling
+    fixtures (e.g. PR #3 actor-network fixture uses
+    ``actor-network-fixture-SRC1``).
+    """
     existing = (
         await session.execute(
             text("SELECT id FROM sources WHERE name = :n"),
-            {"n": "pact-fixture-source"},
+            {"n": name},
         )
     ).first()
     if existing is not None:
@@ -202,7 +211,7 @@ async def _ensure_source(session: AsyncSession) -> int:
             "INSERT INTO sources (name, type) VALUES (:n, :t) "
             "RETURNING id"
         ),
-        {"n": "pact-fixture-source", "t": "vendor"},
+        {"n": name, "t": "vendor"},
     )
     return int(row.scalar_one())
 
@@ -651,6 +660,248 @@ async def _ensure_geo_fixture(session: AsyncSession) -> None:
             title=f"Pact fixture — geo {country_iso2}",
             reported=date(2026, 2, 20),
             country_iso2=country_iso2,
+        )
+
+
+async def _ensure_actor_network_fixture(session: AsyncSession) -> None:
+    """Seed the fixture set ``/analytics/actor_network`` pact requires.
+
+    Response contract (plan ``docs/plans/actor-network-data.md`` v1.5
+    L2):
+
+        {nodes: eachLike({id: string(...), kind: string(...),
+                          label: string(...), degree: integer(>=1)}),
+         edges: eachLike({source_id: string(...),
+                          target_id: string(...),
+                          weight: integer(>=1)}),
+         cap_breached: false}
+
+    Seed produces non-empty arrays for all three edge classes (plan
+    L3) so the FE pact's ``eachLike(nodes)`` and ``eachLike(edges)``
+    matchers have rows under the pact filter window
+    (``date_from=2026-01-01..date_to=2026-04-18``):
+
+      (a) actor↔actor — codenames in different groups co-occur on the
+          same report.
+      (b) actor↔tool   — codename → report → technique.
+      (c) actor↔sector — incident_sectors → incidents → incident_sources
+          → reports → report_codenames → codenames → groups.
+
+    Layout
+    ------
+      - 1 source: ``actor-network-fixture-SRC1`` (NOT shared with the
+        canonical ``pact-fixture-source`` row so the actor-network
+        state cannot cross-contaminate dashboard's ``top_sources``).
+      - 3 groups: ``actor-network-fixture-G1/2/3`` (mitre
+        ``G9101/G9102/G9103`` — the ``G9xxx`` MITRE range is unused in
+        real ATT&CK, eliminating production-data collisions; the
+        ``G9101+`` sub-range avoids reusing ``G9003`` which is
+        already taken by ``_ensure_actor_detail_fixture``. Note:
+        ``groups.mitre_intrusion_set_id`` is NOT a unique column, so
+        a sibling reusing the same value would not throw a DB error,
+        but distinct values keep the fixture self-describing).
+      - 3 codenames: ``actor-network-fixture-CN1/2/3`` (1:1 with
+        ``G1/2/3``).
+      - 3 techniques: ``T9001/T9002/T9003`` (``T9xxx`` is unused in
+        real ATT&CK).
+      - 1 incident: ``Pact fixture — actor-network INC1``
+        (reported ``2026-02-15``, inside the pact window).
+      - 2 reports: ``actor-network-fixture-RPT1/RPT2`` (published
+        ``2026-03-10`` / ``2026-03-15``, inside the pact window).
+      - 2 incident_sources: INC1 → RPT1, INC1 → RPT2.
+      - 4 report_codenames: RPT1 → {CN1, CN2}, RPT2 → {CN2, CN3}.
+      - 4 report_techniques: RPT1 → {T9001, T9002},
+        RPT2 → {T9002, T9003}.
+      - 3 incident_sectors: INC1 →
+        {``actor-network-fixture-SEC1/2/3``}.
+
+    Edges produced (per L3 / aggregator output)
+    -------------------------------------------
+      (a) actor↔actor  — G1↔G2 (r1, weight 1), G2↔G3 (r2, weight 1).
+      (b) actor↔tool   — G2↔T9002 weight 2 (both reports), six other
+                          group/technique pairs weight 1.
+      (c) actor↔sector — every (group, sector) pair at least 1 — the
+                          incident links to BOTH reports, both reports
+                          touch G2, and r1/r2 cover all three groups.
+
+    Distinct natural keys per memory ``pitfall_pinned_id_vs_unique_name``
+    so the seed cannot collide with sibling fixtures (lazarus,
+    attack_matrix, trend, geo, dashboard, incidents_trend).
+
+    Plan v1.5 §4 T8 mentioned ``999xxx`` pinned IDs; this seed does
+    NOT use pinned IDs because the actor-network endpoint has no path
+    parameter — memory ``pattern_pact_literal_pinned_paths`` applies
+    only to path-param interactions. Sibling analytics fixtures
+    (``_ensure_attack_matrix_fixture`` / ``_ensure_trend_fixture`` /
+    ``_ensure_geo_fixture``) all use the natural-key SELECT-first
+    pattern with auto-assigned IDs; this fixture follows that
+    convention. Recorded as a v1.6 §0.1 amendment in the plan.
+    """
+    # 1. Source — distinct from the canonical pact-fixture-source so
+    #    actor-network's reports never bleed into dashboard's
+    #    top_sources aggregation.
+    source_id = await _ensure_source(
+        session, name="actor-network-fixture-SRC1"
+    )
+
+    # 2. Three groups (parents for codenames). Distinct mitre IDs in
+    #    the unused G9xxx range. The G9101+ sub-range avoids reusing
+    #    G9003 from _ensure_actor_detail_fixture (mitre_intrusion_set_id
+    #    is not unique, so the collision would not raise a DB error,
+    #    but a distinct value keeps the fixture self-describing).
+    group_ids: list[int] = []
+    for idx in (1, 2, 3):
+        gid = await _ensure_full_group(
+            session,
+            name=f"actor-network-fixture-G{idx}",
+            mitre_id=f"G9{100 + idx:03d}",
+            aka=[f"actor-network-aka-{idx}"],
+            description=(
+                f"Pact fixture group {idx} for /analytics/actor_network"
+            ),
+        )
+        group_ids.append(gid)
+
+    # 3. Three codenames — 1:1 with the groups so each group has
+    #    exactly one codename for the report_codenames join chain.
+    codename_ids: list[int] = []
+    for idx, gid in enumerate(group_ids, start=1):
+        cn_id = await _ensure_codename(
+            session,
+            name=f"actor-network-fixture-CN{idx}",
+            group_id=gid,
+        )
+        codename_ids.append(cn_id)
+
+    # 4. Three techniques — non-null tactic per
+    #    ``/analytics/attack_matrix`` aggregator convention.
+    technique_ids: list[int] = []
+    for idx in (1, 2, 3):
+        tid = await _ensure_technique(
+            session,
+            mitre_id=f"T900{idx}",
+            name=f"actor-network-fixture-T{idx}",
+            tactic="TA0001",
+        )
+        technique_ids.append(tid)
+
+    # 5. Two reports — published dates inside the pact filter window
+    #    (2026-01-01..2026-04-18). url_canonical is the natural key.
+    report_ids: list[int] = []
+    for idx, published in enumerate(
+        [date(2026, 3, 10), date(2026, 3, 15)], start=1
+    ):
+        url = f"https://pact.test/analytics/actor-network/r{idx}"
+        existing = (
+            await session.execute(
+                text("SELECT id FROM reports WHERE url_canonical = :u"),
+                {"u": url},
+            )
+        ).first()
+        if existing is not None:
+            report_ids.append(int(existing[0]))
+            continue
+        row = await session.execute(
+            text(
+                "INSERT INTO reports "
+                "(source_id, title, url, url_canonical, sha256_title, published) "
+                "VALUES (:s, :t, :u, :uc, :sh, :p) "
+                "RETURNING id"
+            ),
+            {
+                "s": source_id,
+                "t": f"Pact fixture — actor-network r{idx}",
+                "u": url,
+                "uc": url,
+                "sh": f"pact-sha-actor-network-r{idx}",
+                "p": published,
+            },
+        )
+        report_ids.append(int(row.scalar_one()))
+
+    # 6. report_codenames — RPT1→{CN1,CN2}, RPT2→{CN2,CN3}. CN2
+    #    overlap on both reports gives G2 the highest degree
+    #    (connects to G1, G3, all techniques, all sectors).
+    rc_pairs = [
+        (report_ids[0], codename_ids[0]),
+        (report_ids[0], codename_ids[1]),
+        (report_ids[1], codename_ids[1]),
+        (report_ids[1], codename_ids[2]),
+    ]
+    for r_id, c_id in rc_pairs:
+        await session.execute(
+            text(
+                "INSERT INTO report_codenames (report_id, codename_id) "
+                "VALUES (:r, :c) ON CONFLICT DO NOTHING"
+            ),
+            {"r": r_id, "c": c_id},
+        )
+
+    # 7. report_techniques — RPT1→{T9001,T9002}, RPT2→{T9002,T9003}.
+    #    T9002 overlap creates the only weight-2 actor↔tool edge
+    #    (G2↔T9002).
+    rt_pairs = [
+        (report_ids[0], technique_ids[0]),
+        (report_ids[0], technique_ids[1]),
+        (report_ids[1], technique_ids[1]),
+        (report_ids[1], technique_ids[2]),
+    ]
+    for r_id, t_id in rt_pairs:
+        await _link_report_technique(
+            session, report_id=r_id, technique_id=t_id
+        )
+
+    # 8. One incident — reported date inside the pact filter window.
+    inc_title = "Pact fixture — actor-network INC1"
+    existing_inc = (
+        await session.execute(
+            text("SELECT id FROM incidents WHERE title = :t"),
+            {"t": inc_title},
+        )
+    ).first()
+    if existing_inc is not None:
+        incident_id = int(existing_inc[0])
+    else:
+        row = await session.execute(
+            text(
+                "INSERT INTO incidents (reported, title, description) "
+                "VALUES (:r, :t, :d) "
+                "RETURNING id"
+            ),
+            {
+                "r": date(2026, 2, 15),
+                "t": inc_title,
+                "d": (
+                    "Pact fixture incident for actor-network sector edges"
+                ),
+            },
+        )
+        incident_id = int(row.scalar_one())
+
+    # 9. incident_sources — link the incident to BOTH reports so the
+    #    5-table actor↔sector chain produces edges for every group
+    #    that appears on either report.
+    for r_id in report_ids:
+        await session.execute(
+            text(
+                "INSERT INTO incident_sources (incident_id, report_id) "
+                "VALUES (:i, :r) ON CONFLICT DO NOTHING"
+            ),
+            {"i": incident_id, "r": r_id},
+        )
+
+    # 10. incident_sectors — 3 distinct sector_code values keeps
+    #     three actor↔sector edges per group.
+    for idx in (1, 2, 3):
+        await session.execute(
+            text(
+                "INSERT INTO incident_sectors (incident_id, sector_code) "
+                "VALUES (:i, :s) ON CONFLICT DO NOTHING"
+            ),
+            {
+                "i": incident_id,
+                "s": f"actor-network-fixture-SEC{idx}",
+            },
         )
 
 
@@ -1747,6 +1998,13 @@ async def provider_states(
             "seeded geo dataset and an authenticated analyst session"
         ):
             await _ensure_geo_fixture(session)
+            await session.commit()
+            await _seed_analyst_session(response, session_store)
+            continue
+
+        # PR #3 — actor-network co-occurrence graph.
+        if state == "actor network co-occurrence available":
+            await _ensure_actor_network_fixture(session)
             await session.commit()
             await _seed_analyst_session(response, session_store)
             continue
