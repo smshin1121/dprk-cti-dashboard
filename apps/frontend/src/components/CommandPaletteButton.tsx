@@ -7,8 +7,10 @@
  * swaps the placeholder for the real command list while preserving
  * every contract that shell covered.
  *
- * Command set (plan D3 — deliberately narrow):
- *   - Navigate: /dashboard, /reports, /incidents, /actors
+ * Command set (plan D3 — deliberately narrow; PR-B T10 added the
+ * analytics/correlation entry):
+ *   - Navigate: /dashboard, /reports, /incidents, /actors,
+ *               /analytics/correlation
  *   - View:     clear filters
  *   - Session:  sign out
  *

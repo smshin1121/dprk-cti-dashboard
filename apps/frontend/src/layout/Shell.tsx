@@ -46,10 +46,17 @@ export function Shell(): JSX.Element {
         data-testid="shell-topnav"
         className="flex items-center gap-6 border-b border-border-card bg-app px-6 py-4"
       >
-        <p className="text-sm font-cta uppercase tracking-caption text-signal">
+        <p className="text-sm font-cta uppercase tracking-caption text-signal shrink-0">
           {t('shell.brand')}
         </p>
-        <nav className="flex flex-1 items-center gap-4 text-[13px] font-nav uppercase tracking-nav text-ink-muted">
+        {/* `min-w-0 overflow-x-auto whitespace-nowrap` so the 5-link
+            nav (PR-B T10 added /analytics/correlation) stays on a
+            single row at narrow widths and scrolls horizontally
+            instead of wrapping into the action cluster on the right.
+            `min-w-0` is required so the flex-1 child can actually
+            shrink — without it, the nav's intrinsic width overrides
+            flex shrink and pushes the trigger + user menu off-screen. */}
+        <nav className="flex flex-1 min-w-0 items-center gap-4 overflow-x-auto whitespace-nowrap text-[13px] font-nav uppercase tracking-nav text-ink-muted">
           {NAV_ITEMS.map(({ to, key }) => (
             <NavLink
               key={to}

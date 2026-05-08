@@ -29,6 +29,19 @@
  *    the store values (a subsequent return to /dashboard rehydrates
  *    them). Non-dashboard URLs carry only filter params.
  *
+ * 5. **Page-local URL state — emit short-circuit** (PR-B T10 r1
+ *    fold). `/analytics/correlation` (PR-B Phase 3 Slice 3 D-1)
+ *    owns its OWN URL surface (`x` / `y` / `date_from` / `date_to`
+ *    / `method`) inside `CorrelationPage`. The encoder above only
+ *    knows about the global keys, so emitting from this hook on
+ *    correlation routes would replace the entire search string and
+ *    strip those page-local params. We short-circuit emit on the
+ *    correlation pathname; `CorrelationPage`'s own
+ *    `replaceState` write keeps its surface in sync. Hydrate stays
+ *    enabled — the correlation URL has no global keys, so the
+ *    decoder cleanly resolves to `dateFrom: null, dateTo: null,
+ *    groupIds: []`, which is correct for that route's defaults.
+ *
  * Contracts NOT participating in this sync:
  *   - `tlpLevels` — plan D4 + carried D5 lock (UI-only).
  *   - Pagination cursors, dialog-open flags, hover state, ⌘K open.
@@ -53,6 +66,7 @@ import { useDashboardViewStore } from '../../stores/dashboardView'
 import { useFilterStore } from '../../stores/filters'
 
 const DASHBOARD_PATH = '/dashboard'
+const CORRELATION_PATH = '/analytics/correlation'
 
 function readUrlSearch(): string {
   if (typeof window === 'undefined') return ''
@@ -97,6 +111,7 @@ export function useFilterUrlSync(): void {
   const location = useLocation()
   const pathname = location.pathname
   const isDashboard = pathname === DASHBOARD_PATH
+  const isPageLocalUrlState = pathname === CORRELATION_PATH
 
   const dateFrom = useFilterStore((s) => s.dateFrom)
   const dateTo = useFilterStore((s) => s.dateTo)
@@ -144,11 +159,22 @@ export function useFilterUrlSync(): void {
   // hydration ping-pong). Different → `history.replaceState`.
   // Skips its first post-mount run (see isInitialMountRef) so the
   // closure-stale initial state doesn't briefly blank the URL.
+  //
+  // Page-local URL state short-circuit (PR-B T10 r1 fold): when
+  // `isPageLocalUrlState` is true the route owns its own URL surface
+  // (correlation: x / y / date_from / date_to / method). The encoder
+  // here only knows about the global keys, so emitting on those
+  // routes would strip the page-local params from the URL. The
+  // page's own `replaceState` write keeps its surface in sync;
+  // global filter-store toggles applied while on a page-local route
+  // simply don't propagate to the URL until the user navigates
+  // back to a route that participates in this sync.
   useEffect(() => {
     if (isInitialMountRef.current) {
       isInitialMountRef.current = false
       return
     }
+    if (isPageLocalUrlState) return
     const urlState: UrlState = {
       dateFrom,
       dateTo,
@@ -160,7 +186,7 @@ export function useFilterUrlSync(): void {
     const current = readUrlSearch()
     if (next === current) return
     writeUrlSearch(next)
-  }, [dateFrom, dateTo, groupIds, view, tab, isDashboard, pathname])
+  }, [dateFrom, dateTo, groupIds, view, tab, isDashboard, isPageLocalUrlState, pathname])
 }
 
 // Expose the helper for tests that want to snapshot the encode step

@@ -6,8 +6,11 @@
  * `Command.Group`, NOT mixed into the `COMMAND_IDS.map(...)` body.
  * That separation matters for two reasons:
  *
- *   1. The static command set is plan D3 scope (navigation + theme +
- *      filters.clear + logout). Interleaving server-backed hits into
+ *   1. The static command set is plan D3 scope (navigation including
+ *      /dashboard, /reports, /incidents, /actors, /analytics/correlation
+ *      as of PR-B T10; plus filters.clear + logout). Theme cycling
+ *      was removed in Ferrari L1 when the theme model collapsed to
+ *      a single dark canvas. Interleaving server-backed hits into
  *      that registry would blur its contract and make a scope-lock
  *      review across PRs painful.
  *   2. cmdk's fuzzy-match filter runs per `Command.Item` and uses
