@@ -168,7 +168,7 @@ describe('CorrelationPage URL state (Plan §B8 b + B5)', () => {
     )
   })
 
-  it('writes user y change back to the URL via replaceState', async () => {
+  it('writes user y change back to the URL via replaceState (final settled href)', async () => {
     const replaceSpy = vi.spyOn(window.history, 'replaceState')
     mockBothEndpoints()
     const user = userEvent.setup()
@@ -177,8 +177,12 @@ describe('CorrelationPage URL state (Plan §B8 b + B5)', () => {
     ])
     render(<CorrelationPage />, { wrapper: Wrapper })
 
-    // Wait for the page to render its filter UI before clicking it.
+    // Wait for the page to render its filter UI before clicking it,
+    // then snapshot the spy state so post-click writes can be isolated
+    // from any mount/hydrate writes (per `pitfall_browser_router_init_replaceState`).
     const yPicker = await screen.findByTestId('correlation-filter-y')
+    const baselineCallCount = replaceSpy.mock.calls.length
+
     await user.click(yPicker)
     // T9 will surface a dropdown option; the test interacts at the
     // semantic level via testid.
@@ -187,14 +191,18 @@ describe('CorrelationPage URL state (Plan §B8 b + B5)', () => {
     )
     await user.click(newOption)
 
-    // Filter `pitfall_browser_router_init_replaceState` — the test
-    // ignores the initial Router replaceState call and pins only the
-    // user-change-driven write.
+    // Pin THE FINAL post-click write (not just any intermediate
+    // match) — guards against an implementation that briefly writes
+    // the change then overwrites it later (Codex T7 r3 sibling
+    // application of the date-write final-href pattern).
     await waitFor(() => {
-      const userWrite = replaceSpy.mock.calls.find(([, , href]) =>
-        typeof href === 'string' && href.includes('y=incidents.lazarus'),
-      )
-      expect(userWrite, 'expected URL write-back to include y=incidents.lazarus').toBeDefined()
+      const postClickWrites = replaceSpy.mock.calls
+        .slice(baselineCallCount)
+        .map(([, , href]) => (typeof href === 'string' ? href : null))
+        .filter((h): h is string => h !== null)
+      expect(postClickWrites.length).toBeGreaterThan(0)
+      const finalWrite = postClickWrites[postClickWrites.length - 1]
+      expect(finalWrite).toContain('y=incidents.lazarus')
     })
   })
 
@@ -204,7 +212,7 @@ describe('CorrelationPage URL state (Plan §B8 b + B5)', () => {
   // `date_from` / `date_to` / `method`; `x` is symmetric to `y` and
   // pinned via the same code path so one positive y-change write +
   // method-change write + date-change write is sufficient.
-  it('writes user method toggle back to the URL (method=spearman)', async () => {
+  it('writes user method toggle back to the URL (method=spearman, final settled href)', async () => {
     const replaceSpy = vi.spyOn(window.history, 'replaceState')
     mockBothEndpoints()
     const user = userEvent.setup()
@@ -213,16 +221,19 @@ describe('CorrelationPage URL state (Plan §B8 b + B5)', () => {
     ])
     render(<CorrelationPage />, { wrapper: Wrapper })
 
-    await user.click(await screen.findByTestId('correlation-method-spearman'))
+    const toggle = await screen.findByTestId('correlation-method-spearman')
+    const baselineCallCount = replaceSpy.mock.calls.length
+
+    await user.click(toggle)
 
     await waitFor(() => {
-      const userWrite = replaceSpy.mock.calls.find(([, , href]) =>
-        typeof href === 'string' && href.includes('method=spearman'),
-      )
-      expect(
-        userWrite,
-        'expected URL write-back to include method=spearman',
-      ).toBeDefined()
+      const postClickWrites = replaceSpy.mock.calls
+        .slice(baselineCallCount)
+        .map(([, , href]) => (typeof href === 'string' ? href : null))
+        .filter((h): h is string => h !== null)
+      expect(postClickWrites.length).toBeGreaterThan(0)
+      const finalWrite = postClickWrites[postClickWrites.length - 1]
+      expect(finalWrite).toContain('method=spearman')
     })
   })
 
@@ -243,22 +254,19 @@ describe('CorrelationPage URL state (Plan §B8 b + B5)', () => {
     await user.clear(dateToInput)
     await user.type(dateToInput, '2024-12-31')
 
-    // Pin one FINAL href that carries both — guards against a broken
-    // implementation that overwrites one date while writing the other
-    // (Codex T7 r2 LOW). The last replaceState call settles the URL.
+    // Pin THE FINAL settled href carries both — guards against a
+    // broken implementation that overwrites one date in a later call
+    // (Codex T7 r2 LOW + r3 LOW). `.find(...)` would accept any
+    // intermediate intermediate match; checking only `[length - 1]`
+    // pins the URL the user actually sees.
     await waitFor(() => {
       const writes = replaceSpy.mock.calls
         .map(([, , href]) => (typeof href === 'string' ? href : null))
         .filter((h): h is string => h !== null)
-      const bothPresent = writes.find(
-        (w) =>
-          w.includes('date_from=2024-01-01')
-          && w.includes('date_to=2024-12-31'),
-      )
-      expect(
-        bothPresent,
-        'expected at least one final URL write to carry BOTH date_from=2024-01-01 AND date_to=2024-12-31',
-      ).toBeDefined()
+      expect(writes.length).toBeGreaterThan(0)
+      const finalWrite = writes[writes.length - 1]
+      expect(finalWrite).toContain('date_from=2024-01-01')
+      expect(finalWrite).toContain('date_to=2024-12-31')
     })
   })
 
