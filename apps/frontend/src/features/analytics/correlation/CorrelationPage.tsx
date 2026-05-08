@@ -27,6 +27,18 @@
  * 6.4+ already fires its own `replaceState(undefined)` on mount, and
  * adding ours on top would produce two writes for the same URL.
  *
+ * Re-hydrate on `location.search` change covers `popstate` (back /
+ * forward), programmatic `useNavigate({ search })`, and any other
+ * upstream URL mutation. The `useState` initializer alone only fires
+ * once per mount, so without this effect a back-button press from a
+ * later correlation query would leave page state, fetch args, and
+ * the per-method markers stale even though the address bar updated.
+ * The effect is keyed on `location.search` (router-tracked, not
+ * `window.location.search`) so our own `replaceState` write-back
+ * does not retrigger it (router does not listen to manual
+ * `replaceState`). The shape comparison short-circuits identical
+ * URLs so the very first run on mount is a no-op.
+ *
  * Method toggle is purely visual (Plan §4 T4 lock — `method` is NOT
  * in the cache key). `useCorrelation` runs against
  * `(x, y, dateFrom, dateTo, alpha)` and the chart picks which of the
@@ -88,11 +100,31 @@ function readErrorType(error: unknown): string | null {
   return detail?.detail?.[0]?.type ?? null
 }
 
+function urlStateEqual(a: CorrelationUrlState, b: CorrelationUrlState): boolean {
+  return (
+    a.x === b.x &&
+    a.y === b.y &&
+    a.dateFrom === b.dateFrom &&
+    a.dateTo === b.dateTo &&
+    a.method === b.method
+  )
+}
+
 export function CorrelationPage(): JSX.Element {
   const location = useLocation()
   const [state, setState] = useState<CorrelationUrlState>(() =>
     readUrlState(location.search),
   )
+
+  // Re-hydrate when `location.search` changes from outside the page
+  // (popstate / programmatic navigate). Identity-compares the
+  // decoded URL against current state so the very first run on
+  // mount is a no-op and our own write-back does not retrigger
+  // setState (router does not listen to manual replaceState).
+  useEffect(() => {
+    const next = readUrlState(location.search)
+    setState((prev) => (urlStateEqual(prev, next) ? prev : next))
+  }, [location.search])
 
   const isInitialMountRef = useRef(true)
   useEffect(() => {

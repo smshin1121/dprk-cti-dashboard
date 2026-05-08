@@ -14,11 +14,24 @@
  * test contract pins per-option testids (`correlation-filter-y-option-<id>`)
  * which native select options do not expose deterministically under
  * happy-dom + user-event v14.
+ *
+ * Date inputs use a draft + commit pattern: every keystroke updates
+ * a local draft string but only commits to the parent (and therefore
+ * to the URL + the React Query cache key) when the value is empty
+ * or matches the canonical `YYYY-MM-DD` ISO shape. Without this gate
+ * a real-world `2024-01-01` typing pass would issue 9 partial
+ * fetches (`?date_from=2`, `?date_from=20`, …) that the BE would
+ * reject as 422 and that would pollute the React Query cache with
+ * malformed keys. Tests pass because user-event types char-by-char;
+ * only the final keystroke matches the regex and produces the
+ * single committed value the URL-write tests assert against.
  */
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import type { CorrelationSeriesItem } from '../../../lib/api/schemas'
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
 
 export interface CorrelationFiltersProps {
   catalog: CorrelationSeriesItem[]
@@ -88,6 +101,53 @@ function SeriesPicker({ axis, selected, catalog, onPick }: SeriesPickerProps): J
   )
 }
 
+interface DraftDateInputProps {
+  testId: string
+  label: string
+  value: string | null
+  onCommit: (date: string | null) => void
+}
+
+function DraftDateInput({ testId, label, value, onCommit }: DraftDateInputProps): JSX.Element {
+  const [draft, setDraft] = useState<string>(value ?? '')
+
+  // Re-sync draft when the committed value changes from above (URL
+  // hydrate, programmatic clear). Comparison guards against the
+  // self-emit ping-pong: when the input itself drove the commit,
+  // value === draft, so this effect is a no-op.
+  useEffect(() => {
+    setDraft((prev) => (prev === (value ?? '') ? prev : value ?? ''))
+  }, [value])
+
+  return (
+    <label className="flex flex-col gap-1">
+      <span className="text-xs font-cta uppercase tracking-caption text-ink-muted">
+        {label}
+      </span>
+      <input
+        type="text"
+        inputMode="numeric"
+        placeholder="YYYY-MM-DD"
+        data-testid={testId}
+        value={draft}
+        onChange={(e) => {
+          const next = e.target.value
+          setDraft(next)
+          if (next === '') {
+            onCommit(null)
+          } else if (ISO_DATE.test(next)) {
+            onCommit(next)
+          }
+          // Partial values (e.g. "2024-01-0") update the visible
+          // draft but do NOT propagate — the React Query cache key
+          // and the URL stay on the last committed value.
+        }}
+        className="rounded-none border border-border-card bg-app px-3 py-1.5 text-sm font-body text-ink hover:border-border-strong focus:outline-none focus:ring-2 focus:ring-ring"
+      />
+    </label>
+  )
+}
+
 export function CorrelationFilters({
   catalog,
   x,
@@ -103,36 +163,18 @@ export function CorrelationFilters({
     <div className="flex flex-wrap items-end gap-4">
       <SeriesPicker axis="x" selected={x} catalog={catalog} onPick={onChangeX} />
       <SeriesPicker axis="y" selected={y} catalog={catalog} onPick={onChangeY} />
-
-      <label className="flex flex-col gap-1">
-        <span className="text-xs font-cta uppercase tracking-caption text-ink-muted">
-          Date from
-        </span>
-        <input
-          type="text"
-          inputMode="numeric"
-          placeholder="YYYY-MM-DD"
-          data-testid="correlation-filter-date-from"
-          value={dateFrom ?? ''}
-          onChange={(e) => onChangeDateFrom(e.target.value || null)}
-          className="rounded-none border border-border-card bg-app px-3 py-1.5 text-sm font-body text-ink hover:border-border-strong focus:outline-none focus:ring-2 focus:ring-ring"
-        />
-      </label>
-
-      <label className="flex flex-col gap-1">
-        <span className="text-xs font-cta uppercase tracking-caption text-ink-muted">
-          Date to
-        </span>
-        <input
-          type="text"
-          inputMode="numeric"
-          placeholder="YYYY-MM-DD"
-          data-testid="correlation-filter-date-to"
-          value={dateTo ?? ''}
-          onChange={(e) => onChangeDateTo(e.target.value || null)}
-          className="rounded-none border border-border-card bg-app px-3 py-1.5 text-sm font-body text-ink hover:border-border-strong focus:outline-none focus:ring-2 focus:ring-ring"
-        />
-      </label>
+      <DraftDateInput
+        testId="correlation-filter-date-from"
+        label="Date from"
+        value={dateFrom}
+        onCommit={onChangeDateFrom}
+      />
+      <DraftDateInput
+        testId="correlation-filter-date-to"
+        label="Date to"
+        value={dateTo}
+        onCommit={onChangeDateTo}
+      />
     </div>
   )
 }

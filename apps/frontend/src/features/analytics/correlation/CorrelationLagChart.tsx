@@ -16,6 +16,12 @@
  * `data-testid` to multiple sub-elements per
  * `pitfall_recharts_testid_multielement`, which would have produced
  * ambiguous matches anyway.
+ *
+ * Series colors come from `dashboard/_palette` (Tol-derived
+ * `chartSeriesColor` + `CHART_CHROME` chrome literals) — same
+ * palette every other dashboard chart uses. Using `hsl(var(...))`
+ * with non-existent CSS variables would render invisible strokes
+ * in the browser (no token fallback exists for those names).
  */
 
 import { useMemo } from 'react'
@@ -28,6 +34,7 @@ import {
   YAxis,
 } from 'recharts'
 
+import { CHART_CHROME, chartSeriesColor } from '../../dashboard/_palette'
 import type { CorrelationResponse } from '../../../lib/api/schemas'
 
 const CHART_WIDTH = 480
@@ -63,14 +70,23 @@ export function CorrelationLagChart({ data, method }: CorrelationLagChartProps):
         data={chartData}
         margin={{ top: 8, right: 16, bottom: 24, left: 32 }}
       >
-        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border-card))" />
-        <XAxis dataKey="lag" tick={{ fontSize: 11 }} />
-        <YAxis domain={[-1, 1]} tick={{ fontSize: 11 }} />
-        <Tooltip />
+        <CartesianGrid strokeDasharray="3 3" stroke={CHART_CHROME.gridStroke} />
+        <XAxis dataKey="lag" tick={{ fontSize: 11, fill: CHART_CHROME.axisTickFill }} />
+        <YAxis
+          domain={[-1, 1]}
+          tick={{ fontSize: 11, fill: CHART_CHROME.axisTickFill }}
+        />
+        <Tooltip
+          contentStyle={{
+            background: CHART_CHROME.tooltipBg,
+            border: `1px solid ${CHART_CHROME.tooltipBorder}`,
+            color: CHART_CHROME.tooltipText,
+          }}
+        />
         <Line
           type="monotone"
           dataKey="pearson_r"
-          stroke="hsl(var(--chart-series-primary))"
+          stroke={chartSeriesColor(0)}
           strokeWidth={method === 'pearson' ? 2 : 1}
           strokeOpacity={method === 'pearson' ? 1 : 0.3}
           dot={false}
@@ -79,7 +95,7 @@ export function CorrelationLagChart({ data, method }: CorrelationLagChartProps):
         <Line
           type="monotone"
           dataKey="spearman_r"
-          stroke="hsl(var(--chart-series-secondary))"
+          stroke={chartSeriesColor(1)}
           strokeWidth={method === 'spearman' ? 2 : 1}
           strokeOpacity={method === 'spearman' ? 1 : 0.3}
           dot={false}
