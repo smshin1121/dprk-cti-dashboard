@@ -27,13 +27,13 @@ number).
 
 ---
 
-## What lands (20 commits, +19,861 / −50 across 49 files)
+## What lands (22 commits, ~20.2K insertions / 50 deletions across 50 files)
 
 The bulk of the line count is the regenerated `contracts/pacts/frontend-dprk-cti-api.json`
 (+14,722 lines on its own — the 49-cell × 6-field × 2-method × 3 happy
 interactions with explicit per-cell positional matchers per
 `pattern_pact_explicit_array_for_length_pin`; non-Pact code change is
-~5,100 lines).
+~5,500 lines including this plan + body).
 
 | Commit | Phase | Change |
 |:---|:---|:---|
@@ -57,9 +57,14 @@ interactions with explicit per-cell positional matchers per
 | `3e1abd1` | T10 r2 | test: correlation-fe T10 r2 fold — strip historical theme reference from SearchResultsSection comment |
 | `a53663c` | T11 base | feat: correlation-fe T11 — i18n keys for 5 components + parity check |
 | `83687e7` | T11 r1 | test: correlation-fe T11 r1 fold — Codex 3 LOWs (T9→T11 docstring header drift) |
+| `1186930` | T12 base | docs: correlation-fe T12 — PR body draft staged at correlation-fe-body.md |
+| _(this commit)_ | T12 r1 | docs: correlation-fe T12 r1 fold — Codex 2 CRITICAL (Q1+Q4 §8 default deviations) + MED amendment count + LOW round count |
 
-23 Codex review rounds across T0..T11 (within `feedback_codex_iteration`
-3-6 typical band per task).
+28 Codex review rounds across T0..T11 (T0=3, T1=2, T2=4, T3=1, T4=1,
+T5=1, T6=2, T7=4, T8=3, T9=2, T10=3, T11=2 — most tasks within
+`feedback_codex_iteration` 3-6 typical band; the 1-round tasks were
+mechanical and Codex returned CLEAN PROCEED on the first pass).
+Transcripts at `.codex-review/correlation-fe-t{0..11}-r{...}.transcript.log`.
 
 ---
 
@@ -140,13 +145,19 @@ renders the BE-supplied message rather than a raw key string.
 
 ## Defaults applied (umbrella §8 Open Questions)
 
-These are the locked defaults from the plan §8; no user override was
-requested before T2 dispatch:
+These are the defaults from the plan §8; no user override was requested
+before T2 dispatch. Two §8 defaults were adjusted at T9 for
+implementation-vs-plan alignment (Q1 + Q4) and recorded as plan §9
+amendments — see "Plan §0.1 amendments" below.
 
-- **Q1 — Catalog dropdown:** single flat list grouped by `root` via
-  section headers. (Implemented as a flat catalog in T9; `root`-grouping
-  is purely cosmetic and can be added later without touching the URL or
-  cache surface.)
+- **Q1 — Catalog dropdown (deviation from §8 default):** plan §8 Q1
+  default said "flat dropdown **grouped by root via section headers**";
+  T9 ships flat **ungrouped** (`catalog.map(...)` with no
+  `[ Reports ]` / `[ Incidents ]` headers). Section grouping is purely
+  cosmetic — no URL, cache-key, test-contract, or BE-surface impact.
+  Layered in additively in PR-C hardening or a small follow-up PR.
+  Recorded in plan §9 amendment (T9 — Q1 catalog dropdown grouping
+  deferred).
 - **Q2 — Default date window:** empty URL → BE-resolved window
   (`min(reports.published, incidents.reported)` server-side per
   `analytics_correlation.py:219-225`). The BE-resolved dates are echoed
@@ -155,17 +166,28 @@ requested before T2 dispatch:
   shareable-URL determinism for the empty-date case.
 - **Q3 — Banner dismiss:** sessionStorage scoped per-tab. New tab →
   banner reappears. Verified end-to-end under happy-dom 20.9.0.
-- **Q4 — alpha:** not surfaced in the FE filter UI. Hook always supplies
-  the literal `0.05`; `alpha` participates in the cache key (isomorphic
-  to BE Redis key) but not URL state.
+- **Q4 — alpha (deviation from §8 default wording):** plan §8 Q4
+  default said "FE always sends **without** `alpha` and the BE applies
+  its 0.05 default"; this contradicted §B3 hook signature
+  (`useCorrelation(x, y, dateFrom, dateTo, alpha)` — 5 positional args
+  including alpha) AND §7.5 cache-key isomorphism (BE Redis key
+  `correlation:v1:{x}:{y}:{date_from}:{date_to}:{alpha}` — alpha is
+  in the BE key). T9 implementation supplies the literal `0.05` from
+  `const ALPHA = 0.05` in `CorrelationPage.tsx:60`, threads it through
+  the hook → query-key → endpoint helper → URL query string so
+  the FE React Query cache slot is isomorphic to the BE Redis slot.
+  Effective §8 Q4 default reads as "alpha not surfaced in the filter
+  UI; hook always supplies the literal 0.05 for cache-key isomorphism."
+  Recorded in plan §9 amendment (T9 — Q4 alpha exposure cache-key
+  isomorphism).
 
 ---
 
-## Plan §0.1 amendments (6 total, recorded in `docs/plans/correlation-fe.md` §9)
+## Plan §0.1 amendments (7 total, recorded in `docs/plans/correlation-fe.md` §9)
 
 Per `pattern_plan_vs_impl_section_0_1_amendments` — none of these
 changed a B-row policy invariant; all are plan-vs-impl wording
-alignments surfaced during implementation:
+alignments surfaced during implementation or PR-body review:
 
 1. **T2 r2** — §5 risk row attributed error-envelope schema to T2; §4
    T3 row owns it. Reworded.
@@ -180,18 +202,28 @@ alignments surfaced during implementation:
 4. **T7 (Q3 banner storage)** — §5 risk row mitigated to localStorage +
    `<session_uuid>`; §8 Q3 is sessionStorage. §5 corrected per
    `pattern_plan_section_precedence_4_normative_5_descriptive`.
-5. **T8 LoC + interaction count** — §B7 said `+~250 LoC`; actual T8 base
-   was `+2022 LoC` (test +614 / pact JSON +1409). The locked 6-field × 49-cell
-   shape × 3 happy interactions × explicit per-cell matchers makes the
-   estimate unrealistic. Locked Pact interaction count delta corrected
-   from `+5` (was `21 → 26`); previous `25 → 30` count was a `grep -c
-   '"description"'` overcount.
-6. **T8 49-cell length-pin** — Codex T8 r1 CRITICAL: `eachLike`
-   generates `min: 1`, `arrayContaining` doesn't pin total length; both
-   miss the umbrella §4.4 + BE pydantic + FE Zod 49-cell lock at
-   provider-verify time. Fold = explicit 49-cell raw arrays via
-   `Array.from({length:49}, ...)`. New memory anchor recorded:
-   `pattern_pact_explicit_array_for_length_pin`.
+5. **T8 LoC + interaction count + 49-cell length-pin** — Single
+   combined entry. §B7 said `+~250 LoC`; actual T8 base was `+2022
+   LoC` (test +614 / pact JSON +1409) and the 49-cell explicit-array
+   length-pin was a Codex T8 r1 CRITICAL fold (`eachLike` generates
+   `min: 1`; `arrayContaining` doesn't pin total length; both miss
+   the umbrella §4.4 + BE pydantic + FE Zod 49-cell lock at
+   provider-verify time). Pact-interaction count delta `21 → 26` (+5),
+   not `25 → 30` (overcount from `grep -c '"description"'`). New memory
+   anchor recorded: `pattern_pact_explicit_array_for_length_pin`.
+6. **T9 — §8 Q4 alpha exposure (Codex T12 r1 CRITICAL fold).** §8 Q4
+   wording said "FE always sends without `alpha`"; that contradicted
+   §B3 hook signature and §7.5 cache-key isomorphism (BE Redis key
+   includes alpha). T9 ships alpha=0.05 explicitly through the hook →
+   query-key → URL chain so the FE React Query cache slot stays
+   isomorphic to the BE Redis slot. No code change — code has been
+   correct since T5; only §8 Q4 wording was stale.
+7. **T9 — §8 Q1 catalog dropdown grouping deferred (Codex T12 r1
+   CRITICAL fold).** §8 Q1 default said "single flat dropdown grouped
+   by root via section headers"; T9 ships flat ungrouped because the
+   grouping is purely cosmetic (no URL / cache-key / test-contract /
+   BE-surface impact). Layered in additively in PR-C hardening or a
+   small follow-up PR.
 
 ---
 
