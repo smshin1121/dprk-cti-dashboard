@@ -271,9 +271,11 @@ uv run pytest tests/contract/test_openapi_snapshot.py -q   # expect 4 pass
   incidents.total`. Locale toggle KO ↔ EN — every visible string swaps.
   Command-palette path `⌘K → "correlation" / "상관"` lands on the same
   route.
-- **CI green on push.** PR will be opened DRAFT first; the 12-check ×
-  2-event = 24-success surface (validated end-to-end on PR #35) is
-  expected to flip green within ~10 min of push.
+- ~~**CI green on push.**~~ ✅ **24/24 SUCCESS** at the T15 push head
+  `19b1e13`. The 12-check × 2-event surface flipped green on the second
+  pass after a Playwright-browser-install infra hang on one job
+  (sibling event passed first time; cancelled + rerun cleared the stuck
+  workflow). `mergeStateStatus: CLEAN`.
 - **Final external Codex review (PR-as-diff loop).** Per
   `feedback_codex_iteration` 3-6 rounds typical; LOWs at the PASS gate
   are fold-or-skip.
@@ -291,7 +293,7 @@ uv run pytest tests/contract/test_openapi_snapshot.py -q   # expect 4 pass
 | 7 | OpenAPI snapshot diff at PR head is empty | ✅ |
 | 8 | Manual smoke through dev triad | 🟡 (T14) |
 | 9 | Manual i18n smoke | 🟡 (T14) |
-| 10 | Branch CI green on all 12 checks × 2 events | 🟡 (after push) |
+| 10 | Branch CI green on all 12 checks × 2 events | ✅ (24/24 at `19b1e13`) |
 | 11 | Plan doc + PR body present | ✅ (this PR) |
 | 12 | Final Codex review reports no unresolved CRIT/HIGH | 🟡 (PR-as-diff) |
 
