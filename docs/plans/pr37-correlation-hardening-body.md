@@ -48,7 +48,7 @@ PR #36's merge).
 
 ---
 
-## What lands (14 commits, 15 files / 1,764 insertions / 26 deletions at the T7 r0 sync head; verify with `git diff --shortstat main..HEAD`. Reference-point ladder: cddd3b6 T6 base+r1 = 1,686; ea6bfb0 T6 r2 = 1,692; 09fecb7 T6 r3 = 1,700; 4fe0ccd T7 push base = 1,702; f917165 T7 fix #1 (UAT 2 + UAT 5 part 1) = 1,747; 55c4929 T7 fix #2 (UAT 5 dropdown-close) = 1,764. Each T6 fold commit edited only the body; T7 push base renamed plan + body to `pr37-*` (+15 / -13); T7 fix #1 + #2 modified only `correlation-uat.spec.ts` (+76 / 0 across 2 commits). File count stays flat at 15 across the entire chain.)
+## What lands (15 commits, 15 files / 1,774 insertions / 26 deletions at the T7 PR-as-diff r1 fold head; verify with `git diff --shortstat main..HEAD`. Reference-point ladder, each entry verifiable via `git diff --shortstat main..<sha>`: cddd3b6 T6 base+r1 = 1,686; ea6bfb0 T6 r2 = 1,692; 09fecb7 T6 r3 = 1,700; 4fe0ccd T7 push base = 1,702; f917165 T7 fix #1 (UAT 2 + UAT 5 part 1) = 1,739; 55c4929 T7 fix #2 (UAT 5 dropdown-close) = 1,764; 30f87e9 T7 r0 sync = 1,774. Each T6 fold commit edited only the body; T7 push base renamed plan + body to `pr37-*` (+15 / -13); T7 fix #1 + #2 modified only `correlation-uat.spec.ts` — per-commit deltas are +45 / -8 then +31 / -6 (sum +76 / -14 per-commit; the -14 lines were internal to the chain so the cumulative `git diff main..HEAD` deletion count stays at 26 unchanged from T7 push base). File count stays flat at 15 across the entire chain.)
 
 | Commit | Phase | Change |
 |:---|:---|:---|
@@ -65,7 +65,8 @@ PR #36's merge).
 | `4fe0ccd` | T7 push base | docs(correlation-hardening): T7 — pr37 rename + post-T6 body sync (per `plan_doc_convention` + `pattern_codex_body_review_loop`) |
 | `f917165` | T7 fix #1 | fix(correlation-hardening): T7 — UAT 2 query window + UAT 5 UserMenu open (first-CI failures) |
 | `55c4929` | T7 fix #2 | fix(correlation-hardening): T7 — UAT 5 dropdown-close after locale-toggle (Radix aria-hidden focus-trap) |
-| _(this commit)_ | T7 r0 sync | docs(correlation-hardening): T7 r0 — post-CI-green body sync (🟡 → ✅ for UAT 1-5 + AC #11/12/13/14; +2 fix commit rows + stat ladder extended) |
+| `30f87e9` | T7 r0 sync | docs(correlation-hardening): T7 r0 — post-CI-green body sync (🟡 → ✅ for UAT 1-5 + AC #11/12/13/14; +2 fix commit rows + stat ladder extended) |
+| _(this commit)_ | T7 PR-as-diff r1 fold | docs(correlation-hardening): T7 PR-as-diff r1 fold — Codex 2 LOW (f917165 stat ladder + UAT 2 effective_n comment, count-narrative drift continues) |
 
 11 Codex review rounds across **task gates** T-1..T4 (T-1=2 [r1 + r2],
 T1=2 [r1 + r2], T2=3 [r1 + r2 + r2bis — r2 was procedural HOLD on

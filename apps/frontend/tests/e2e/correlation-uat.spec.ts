@@ -69,14 +69,21 @@ const CORRELATION_QS =
 // `_seed_correlation_dense_window` at `pact_states.py:2014-2076`).
 // Sequential UAT 1 + UAT 2 in the same worker therefore accumulates
 // populated + insufficient rows in the DB; querying the populated
-// window 2018-01..2026-04 finds the populated rows + 4 months of
-// insufficient rows, yielding effective_n ≈ 100 → BE returns 200, NOT
-// 422. The fix is to query a date window covering ONLY the months
-// unique to INSUFFICIENT_422 (2026-05..2026-06), where the populated
-// fixture has zero coverage. This yields effective_n=2 < 30 → BE
-// returns 422 with `value_error.insufficient_sample`. The test asserts
-// the 422 envelope shape + locked en copy, NOT the specific
-// effective_n value, so 2 vs 6 is irrelevant.
+// window 2018-01..2026-04 finds the populated rows yielding well over
+// MIN_EFFECTIVE_N=30 → BE returns 200, NOT 422.
+//
+// The fix is to query a date window 2026-05..2027-12 — outside
+// POPULATED's coverage. Only 2026-05 + 2026-06 carry seeded
+// (nonzero) insufficient_sample data; the rest of the 20-month
+// window is empty. The aggregator's effective-n bookkeeping is a BE
+// implementation detail (it may count zero-count months as effective
+// or only nonzero months) — what the spec needs is for the resulting
+// count to be < MIN_EFFECTIVE_N=30, which holds whether the BE
+// counts 2 nonzero months or 20 in-range months. Either way, BE
+// returns 422 with `value_error.insufficient_sample`. The test
+// asserts the 422 envelope shape + locked en copy, NOT a specific
+// effective_n value, so the BE's exact accounting is irrelevant for
+// the assertion.
 const INSUFFICIENT_DATE_FROM = '2026-05-01'
 const INSUFFICIENT_DATE_TO = '2027-12-31'
 const INSUFFICIENT_QS =
