@@ -48,7 +48,7 @@ PR #36's merge).
 
 ---
 
-## What lands (11 commits, 15 files / ~1,710 insertions / ~30 deletions at the T7 push base head; verify with `git diff --shortstat main..HEAD`. Reference points: at T6 base + r1 fold `cddd3b6` the diff was 15 files / 1,686 insertions / 26 deletions; at T6 r2 fold `ea6bfb0` the diff was 15 files / 1,692 insertions / 26 deletions; at T6 r3 fold `09fecb7` the diff was 15 files / 1,700 insertions / 26 deletions. Each T6 fold commit edited only `correlation-hardening-body.md`; the T7 push base commit renames both plan + body to `pr37-*` and updates internal references but does not add new files — file count stays flat at 15.)
+## What lands (14 commits, 15 files / 1,764 insertions / 26 deletions at the T7 r0 sync head; verify with `git diff --shortstat main..HEAD`. Reference-point ladder: cddd3b6 T6 base+r1 = 1,686; ea6bfb0 T6 r2 = 1,692; 09fecb7 T6 r3 = 1,700; 4fe0ccd T7 push base = 1,702; f917165 T7 fix #1 (UAT 2 + UAT 5 part 1) = 1,747; 55c4929 T7 fix #2 (UAT 5 dropdown-close) = 1,764. Each T6 fold commit edited only the body; T7 push base renamed plan + body to `pr37-*` (+15 / -13); T7 fix #1 + #2 modified only `correlation-uat.spec.ts` (+76 / 0 across 2 commits). File count stays flat at 15 across the entire chain.)
 
 | Commit | Phase | Change |
 |:---|:---|:---|
@@ -62,7 +62,10 @@ PR #36's merge).
 | `cddd3b6` | T6 base + r1 fold | docs(correlation-hardening): T6 — PR body draft + r1 fold (Codex 3 MED + 3 LOW count-narrative drift) |
 | `ea6bfb0` | T6 r2 fold | docs(correlation-hardening): T6 r2 fold — Codex 2 LOW (count-narrative + byte-match drift continues) |
 | `09fecb7` | T6 r3 fold | docs(correlation-hardening): T6 r3 fold — Codex 2 LOW (CI-surface drift in scope intro + 🟡 pending bullet) |
-| _(this commit)_ | T7 push base | docs(correlation-hardening): T7 — pr37 rename + post-T6 body sync (per `plan_doc_convention` + `pattern_codex_body_review_loop`) |
+| `4fe0ccd` | T7 push base | docs(correlation-hardening): T7 — pr37 rename + post-T6 body sync (per `plan_doc_convention` + `pattern_codex_body_review_loop`) |
+| `f917165` | T7 fix #1 | fix(correlation-hardening): T7 — UAT 2 query window + UAT 5 UserMenu open (first-CI failures) |
+| `55c4929` | T7 fix #2 | fix(correlation-hardening): T7 — UAT 5 dropdown-close after locale-toggle (Radix aria-hidden focus-trap) |
+| _(this commit)_ | T7 r0 sync | docs(correlation-hardening): T7 r0 — post-CI-green body sync (🟡 → ✅ for UAT 1-5 + AC #11/12/13/14; +2 fix commit rows + stat ladder extended) |
 
 11 Codex review rounds across **task gates** T-1..T4 (T-1=2 [r1 + r2],
 T1=2 [r1 + r2], T2=3 [r1 + r2 + r2bis — r2 was procedural HOLD on
@@ -376,12 +379,19 @@ PERF_TEST=1 uv run pytest --collect-only -m perf tests/perf  # expect 1 collecte
   runs `apps/frontend/lighthouse/README.md` for-loop against the host
   triad after merge; produces `apps/frontend/lighthouse/reports/
   correlation/SUMMARY.md` + 6 JSONs (3 light + 3 dark).
-- **CI green on push.** First push lands at T7. Surface for this branch
-  is 12 PR-event checks (not 24) because `chore/*` is outside the
-  `on.push.branches: ["main", "feat/**"]` filter at
-  `.github/workflows/ci.yml:5` — only the `pull_request` event fires;
-  see AC #14. The new `correlation-perf-smoke` job is
-  `workflow_dispatch` only and NOT counted toward AC #14.
+- ~~**CI green on push.**~~ ✅ **12/12 SUCCESS + 1 SKIPPED** at PR
+  head `55c4929` (`mergeStateStatus: CLEAN`, `mergeable: MERGEABLE`).
+  Surface for this branch is 12 PR-event checks (not 24) because
+  `chore/*` is outside the `on.push.branches: ["main", "feat/**"]`
+  filter at `.github/workflows/ci.yml:5` — only the `pull_request`
+  event fires; see AC #14. The new `correlation-perf-smoke` job is
+  the 1 SKIPPED (`workflow_dispatch` only) and NOT counted toward
+  AC #14. First CI run on PR #37 head `4fe0ccd` surfaced 2 real
+  test failures in the new `correlation-uat.spec.ts` (UAT 2 + UAT 5)
+  that escaped local validation per `phase_status.md` "T3 live
+  Playwright run NOT executed locally"; both fixed in T7 fix #1
+  (`f917165`) + T7 fix #2 (`55c4929`). Net cost: 2 fix commits +
+  CI re-run, no body-side scope expansion.
 - **Final external Codex review (PR-as-diff loop)** per
   `pattern_codex_body_review_loop` + `feedback_codex_iteration` 3-6
   rounds typical. LOWs at the PASS gate are fold-or-skip per
@@ -391,20 +401,20 @@ PERF_TEST=1 uv run pytest --collect-only -m perf tests/perf  # expect 1 collecte
 
 | # | Criterion | Status |
 |:---:|:---|:---:|
-| 1 | UAT 1 — analyst login → correlation page → reports.total × incidents.total → both methods (Pearson + Spearman) render with p-values + caveat banner + lag chart [-24, +24] | 🟡 (T3 spec authored; live CI run at T7) |
-| 2 | UAT 2 — < 30 monthly buckets → empty state with locked copy "표본이 부족합니다 (최소 30개월 필요)" / "Insufficient sample" | 🟡 (T3 spec authored; live CI run at T7) |
-| 3 | UAT 3 — direct GET to `/api/v1/analytics/correlation?...` returns both methods at lag 0 + full lag scan + `interpretation.caveat` + `interpretation.methodology_url` | 🟡 (T3 spec authored; live CI run at T7) |
-| 4 | UAT 4 — URL state survives reload | 🟡 (T3 spec authored; live CI run at T7) |
-| 5 | UAT 5 — KO / EN locale toggle swaps all chart labels including caveat banner | 🟡 (T3 spec authored; live CI run at T7) |
-| 6 | UAT 6 / NFR-1 — p95 ≤ 500 ms over 50 sequential requests | 🟡 (T4 smoke shipped + opt-in gate verified locally; live wall-clock p95 measured at first `workflow_dispatch` run) |
-| 7 | Lighthouse 6-target loop runs cleanly (`reports/correlation/SUMMARY.md` exists; reviewer accepts scores) | 🟡 (T1 README updated; user-side audit run) |
-| 8 | Q1 catalog grouping shows `[ Reports ]` / `[ Incidents ]` headers with options nested correctly | ✅ (T2 — vitest 861 GREEN with discriminating shadow-row test) |
-| 9 | T13 live `pnpm pact:provider` replay 5/5 verify + legacy 21 still pass; transcript captured | 🟡 (T5 — user-side procedural backfill) |
-| 10 | vitest 861/861 GREEN (was 858/858 + 3 new from T2; +1 vs plan's `+2` baseline — within C6 "at least 2 cases" lock) | ✅ |
-| 11 | Pact contract 26/26 GREEN preserved (no PR-C change to consumer interactions) | ✅ (locally) / 🟡 (CI verify at T7) |
-| 12 | FE production build green (`pnpm run build` exits 0) | ✅ (locally) / 🟡 (CI verify at T7) |
-| 13 | OpenAPI snapshot diff at PR head is empty | ✅ (locally — no BE behavior change) / 🟡 (CI `contract-verify` job at T7) |
-| 14 | Branch CI green on all 12 PR-event checks (default surface). The `chore/p3.s3-correlation-hardening` branch name is OUTSIDE the `on.push.branches: ["main", "feat/**"]` filter at `.github/workflows/ci.yml:5`, so the push event does NOT fire on this branch — only the `pull_request` event runs. PR #36's branch matched `feat/**` and saw the 12 × 2 = 24 surface; PR-C's `chore/*` branch sees the 12 PR-event checks only. The perf job is `workflow_dispatch` only and NOT counted toward this AC. | 🟡 (after push) |
+| 1 | UAT 1 — analyst login → correlation page → reports.total × incidents.total → both methods (Pearson + Spearman) render with p-values + caveat banner + lag chart [-24, +24] | ✅ (T3 — `frontend-e2e` CI job pass at PR #37 head `55c4929`, 7.7s) |
+| 2 | UAT 2 — < 30 monthly buckets → empty state with locked copy "표본이 부족합니다 (최소 30개월 필요)" / "Insufficient sample" | ✅ (T7 fix #1 — first-CI surfaced DB-accumulation bug; INSUFFICIENT_QS narrows query to 2026-05..2027-12 to dodge POPULATED's 2018-01..2026-04 coverage; CI pass at `55c4929`) |
+| 3 | UAT 3 — direct GET to `/api/v1/analytics/correlation?...` returns both methods at lag 0 + full lag scan + `interpretation.caveat` + `interpretation.methodology_url` | ✅ (T3 — CI pass at `55c4929`, 4.1s) |
+| 4 | UAT 4 — URL state survives reload | ✅ (T3 — CI pass at `55c4929`, 5.2s) |
+| 5 | UAT 5 — KO / EN locale toggle swaps all chart labels including caveat banner | ✅ (T7 fix #1 + #2 — UserMenu open + dropdown-close-via-Escape after each toggle click; Radix `<DropdownMenu>` aria-hidden focus-trap blocks role queries while menu is open; CI pass at `55c4929`) |
+| 6 | UAT 6 / NFR-1 — p95 ≤ 500 ms over 50 sequential requests | 🟡 (T4 smoke shipped + opt-in gate verified locally; live wall-clock p95 measured at first `workflow_dispatch` run — non-blocking per plan §8 Q-C1 + R-C2) |
+| 7 | Lighthouse 6-target loop runs cleanly (`reports/correlation/SUMMARY.md` exists; reviewer accepts scores) | 🟡 (T1 README updated; user-side audit run — informational only per `run-audit.mjs:22-24` harness contract) |
+| 8 | Q1 catalog grouping shows `[ Reports ]` / `[ Incidents ]` headers with options nested correctly | ✅ (T2 — vitest 861 GREEN with discriminating shadow-row test; CI vitest job pass at `55c4929`) |
+| 9 | T13 live `pnpm pact:provider` replay 5/5 verify + legacy 21 still pass; transcript captured | 🟡 (T5 — user-side procedural backfill; pact-ruby per-interaction reset model means contract-verify CI job already independently verified each interaction) |
+| 10 | vitest 861/861 GREEN (was 858/858 + 3 new from T2; +1 vs plan's `+2` baseline — within C6 "at least 2 cases" lock) | ✅ (locally + CI `frontend` job pass at `55c4929`) |
+| 11 | Pact contract 26/26 GREEN preserved (no PR-C change to consumer interactions) | ✅ (CI `frontend` `pnpm test:contract` step pass at `55c4929`) |
+| 12 | FE production build green (`pnpm run build` exits 0) | ✅ (CI `frontend` `pnpm run build` step pass at `55c4929`) |
+| 13 | OpenAPI snapshot diff at PR head is empty | ✅ (CI `contract-verify` job pass at `55c4929` — no PR-C BE behavior change) |
+| 14 | Branch CI green on all 12 PR-event checks (default surface). The `chore/p3.s3-correlation-hardening` branch name is OUTSIDE the `on.push.branches: ["main", "feat/**"]` filter at `.github/workflows/ci.yml:5`, so the push event does NOT fire on this branch — only the `pull_request` event runs. PR #36's branch matched `feat/**` and saw the 12 × 2 = 24 surface; PR-C's `chore/*` branch sees the 12 PR-event checks only. The perf job is `workflow_dispatch` only and NOT counted toward this AC. | ✅ (12/12 PR-event SUCCESS + 1 SKIPPED `correlation-perf-smoke` at `55c4929`; `mergeStateStatus: CLEAN`, `mergeable: MERGEABLE`) |
 | 15 | Final external Codex review reports no unresolved CRITICAL/HIGH | 🟡 (PR-as-diff at T7-T8) |
 | 16 | PR body present at `docs/plans/pr37-correlation-hardening-body.md`; plan present at `docs/plans/pr37-correlation-hardening.md` | ✅ (renamed at T7 push commit; PR #37 confirmed via `gh pr list`) |
 
