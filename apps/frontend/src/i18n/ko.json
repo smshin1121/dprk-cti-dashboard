@@ -148,7 +148,9 @@
       "yPickerPlaceholder": "Y 선택…",
       "dateFromLabel": "시작일",
       "dateToLabel": "종료일",
-      "datePlaceholder": "YYYY-MM-DD"
+      "datePlaceholder": "YYYY-MM-DD",
+      "groupReports": "보고서",
+      "groupIncidents": "사건"
     },
     "caveat": {
       "title": "상관관계 ≠ 인과관계",

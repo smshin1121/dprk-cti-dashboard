@@ -145,6 +145,8 @@ describe('i18n bootstrap', () => {
       'correlation.filters.dateFromLabel',
       'correlation.filters.dateToLabel',
       'correlation.filters.datePlaceholder',
+      'correlation.filters.groupReports',
+      'correlation.filters.groupIncidents',
       'correlation.caveat.title',
       'correlation.caveat.body',
       'correlation.caveat.dismiss',

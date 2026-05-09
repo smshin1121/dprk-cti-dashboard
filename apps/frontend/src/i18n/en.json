@@ -148,7 +148,9 @@
       "yPickerPlaceholder": "Pick Y…",
       "dateFromLabel": "Date from",
       "dateToLabel": "Date to",
-      "datePlaceholder": "YYYY-MM-DD"
+      "datePlaceholder": "YYYY-MM-DD",
+      "groupReports": "Reports",
+      "groupIncidents": "Incidents"
     },
     "caveat": {
       "title": "Correlation ≠ causation",
