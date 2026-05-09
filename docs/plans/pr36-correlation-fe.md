@@ -71,8 +71,8 @@ These mirror the umbrella spec's locks; this PR introduces no new policy. Each r
 - URL-state additions hooked into `useFilterUrlSync`.
 - Pact consumer test additions in `apps/frontend/tests/contract/frontend-dprk-cti-api.pact.test.ts` (5 new interactions per B7).
 - OpenAPI snapshot regeneration (will pick up nothing new since BE is unchanged — PR is FE-only — but the regen step proves the snapshot didn't drift).
-- Plan doc itself committed under `docs/plans/correlation-fe.md` (this file). When the PR is actually opened, rename to `docs/plans/pr{N}-correlation-fe.md` only after `gh pr list` confirms the assigned number.
-- PR-body draft staged at `docs/plans/correlation-fe-body.md` (per memory `plan_doc_convention`); same rename-after-opening rule applies.
+- Plan doc itself committed under `docs/plans/pr36-correlation-fe.md` (this file; renamed from `correlation-fe.md` at T15 push per `plan_doc_convention`).
+- PR body at `docs/plans/pr36-correlation-fe-body.md` (renamed from `correlation-fe-body.md` at T15 push).
 
 ### Out of scope (deferred — explicit, with target PR)
 
@@ -109,7 +109,7 @@ Per memory `pattern_tdd_10step_inventory_shape_before_contract` — Step 1 is in
 | **T9** | Components implementation: `CorrelationPage` (route container, hook orchestration — carries `data-page-class="analyst-workspace"` per T0 manifest), `CorrelationFilters` (X/Y/date/method), `CorrelationCaveatBanner` (sticky + dismiss-once), `CorrelationLagChart` (recharts LineChart 480×240), `CorrelationWarningChips`. Implement until T7 tests GREEN. | T0, T7, T8 | 1.5d | All component tests green; chart renders deterministically under happy-dom. |
 | **T10** | Router mount + new top-nav entry + command palette entry. URL-state hookup via existing `useFilterUrlSync`. Append `'/analytics/correlation'` to T0's `PAGE_CLASS_BY_ROUTE` manifest. | T0, T9 | 0.25d | Manual smoke: navigating from `/dashboard` → new top-nav entry → correlation page renders the populated state with default `reports.total × incidents.total`. T0 vitest test now covers the new route. |
 | **T11** | i18n keys (ko + en) covering all visible strings: page title, filter labels, method toggle, caveat banner title/body, methodology link text, warning-chip messages (one per code × language), empty-state copy (3 reasons), loading skeleton SR-only label. | T9 | 0.5d | i18n init-test passes + visible-string scan via `eslint-plugin-i18next` (existing) reports 0 hardcoded strings. |
-| **T12** | Plan doc + PR body draft: this file + `docs/plans/correlation-fe-body.md`. | T11 | 0.25d | Both committed. PR body skeleton populated with the umbrella spec lock references. Rename to `pr{N}-*` only after `gh pr list` confirms the assigned number. |
+| **T12** | Plan doc + PR body draft: this file + `docs/plans/pr36-correlation-fe-body.md`. | T11 | 0.25d | Both committed. PR body skeleton populated with the umbrella spec lock references. Rename to `pr{N}-*` happens at T15 push per `plan_doc_convention`. |
 | **T13** | BE-side Pact verifier hook (CI step) wires through unchanged — but verify locally that `pnpm pact:provider` (or equivalent) replays all 5 new interactions against a stub-state-handler-driven backend. Per memory `pattern_pact_dependency_override_via_provider_state`. | T8 | 0.25d | Local replay: 5/5 new interactions verify; legacy interactions still 100% pass. |
 
 **Estimated dev-time:** ≈ 5.9 dev-days (T0 adds 0.5d for the page-class runtime mechanism). Aligns with umbrella §11's "medium ≈ 20 files / ≈ 800 LoC" PR-B sizing — T0 adds ~3 small files (manifest + test + per-route attribute wiring) so total file count holds at ≈ 23 / total LoC stays under 900.
@@ -160,7 +160,7 @@ This PR is mergeable only when **all** of the following hold:
 8. Manual smoke through the dev triad (per memory `pattern_host_hybrid_dev_triad`): log in as `analyst@dev.local` → `/dashboard` → click new top-nav `Analytics` (or `Correlation` direct) entry → `/analytics/correlation` → default-pair render shows populated state, the caveat banner, and at least one significant lag cell. Also exercise via `⌘K → "correlation" / "상관분석"` to verify the command-palette path lands on the same route.
 9. Manual i18n smoke: locale toggle KO ↔ EN — every visible string swaps; the methodology link target is the same URL.
 10. Branch CI green on all jobs validated on PR #35 (`5b42c6e`): the 12 distinct checks `frontend`, `frontend-e2e`, `python-services` (api / worker / llm-proxy), `api-tests`, `worker-tests`, `llm-proxy-tests`, `db-migrations`, `data-quality-tests`, `contract-verify`, `api-integration` — each runs twice (push + pull_request event surfaces) → 24 SUCCESS / 0 FAILURE for the merge gate.
-11. Plan doc + PR body present at `docs/plans/correlation-fe.md` and `docs/plans/correlation-fe-body.md` (or their `pr{N}-*` renamed forms post-opening).
+11. Plan doc + PR body present at `docs/plans/pr36-correlation-fe.md` and `docs/plans/pr36-correlation-fe-body.md`.
 12. Final external Codex review reports no unresolved CRITICAL/HIGH findings (per `feedback_codex_iteration` — 3-6 rounds typical; LOWs at the PASS gate are fold-or-skip).
 
 ---

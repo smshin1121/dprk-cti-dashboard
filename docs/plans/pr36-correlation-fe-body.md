@@ -21,13 +21,12 @@ main. No base-flip risk per `pitfall_stacked_pr_merge_base_flip`.
 
 **Branch:** `feat/p3.s3-correlation-fe`.
 
-**Plan:** `docs/plans/correlation-fe.md` v1.0 (will rename to
-`pr{N}-correlation-fe.md` after `gh pr list` confirms the assigned PR
-number).
+**Plan:** `docs/plans/pr36-correlation-fe.md` v1.0 (renamed from
+`correlation-fe.md` at T15 push per `plan_doc_convention`).
 
 ---
 
-## What lands (22 commits, ~20.2K insertions / 50 deletions across 50 files)
+## What lands (25 commits, ~20.8K insertions / 52 deletions across 52 files)
 
 The bulk of the line count is the regenerated `contracts/pacts/frontend-dprk-cti-api.json`
 (+14,722 lines on its own — the 49-cell × 6-field × 2-method × 3 happy
@@ -58,13 +57,16 @@ interactions with explicit per-cell positional matchers per
 | `a53663c` | T11 base | feat: correlation-fe T11 — i18n keys for 5 components + parity check |
 | `83687e7` | T11 r1 | test: correlation-fe T11 r1 fold — Codex 3 LOWs (T9→T11 docstring header drift) |
 | `1186930` | T12 base | docs: correlation-fe T12 — PR body draft staged at correlation-fe-body.md |
-| _(this commit)_ | T12 r1 | docs: correlation-fe T12 r1 fold — Codex 2 CRITICAL (Q1+Q4 §8 default deviations) + MED amendment count + LOW round count |
+| `13565d7` | T12 r1 | docs: correlation-fe T12 r1 fold — Codex 2 CRITICAL (Q1+Q4 §8 default deviations) + MED amendment count + LOW round count |
+| `91f9ef8` | T13 base | feat(pact): correlation-fe T13 — BE provider-state handlers for 5 D-1 pact interactions |
+| `d362d25` | T13 r1 | feat(pact): correlation-fe T13 r1 fold — Codex MED + LOW (#4 dependency override via Depends factory) |
+| _(this commit)_ | T15 base | docs: correlation-fe T15 — pr36 rename + backfill T12 r1 SHA + post-T13 body sync |
 
-28 Codex review rounds across T0..T11 (T0=3, T1=2, T2=4, T3=1, T4=1,
-T5=1, T6=2, T7=4, T8=3, T9=2, T10=3, T11=2 — most tasks within
-`feedback_codex_iteration` 3-6 typical band; the 1-round tasks were
-mechanical and Codex returned CLEAN PROCEED on the first pass).
-Transcripts at `.codex-review/correlation-fe-t{0..11}-r{...}.transcript.log`.
+32 Codex review rounds across T0..T13 (T0=3, T1=2, T2=4, T3=1, T4=1,
+T5=1, T6=2, T7=4, T8=3, T9=2, T10=3, T11=2, T12=2, T13=2 — most tasks
+within `feedback_codex_iteration` 3-6 typical band; the 1-round tasks
+were mechanical and Codex returned CLEAN PROCEED on the first pass).
+Transcripts at `.codex-review/correlation-fe-t{0..13}-r{...}.transcript.log`.
 
 ---
 
@@ -183,7 +185,7 @@ amendments — see "Plan §0.1 amendments" below.
 
 ---
 
-## Plan §0.1 amendments (7 total, recorded in `docs/plans/correlation-fe.md` §9)
+## Plan §0.1 amendments (7 total, recorded in `docs/plans/pr36-correlation-fe.md` §9)
 
 Per `pattern_plan_vs_impl_section_0_1_amendments` — none of these
 changed a B-row policy invariant; all are plan-vs-impl wording
@@ -252,11 +254,17 @@ uv run pytest tests/contract/test_openapi_snapshot.py -q   # expect 4 pass
 
 ### 🟡 Pending (CI / user-side)
 
-- **T13 — BE-side Pact verifier hook validation.** Add 5
-  `_ensure_correlation_*_fixture` state handlers to
-  `services/api/src/api/routers/pact_states.py` mapping the 5
-  `.given(...)` strings from T8. Local replay should show 5/5 new
-  interactions verify; legacy 21 interactions still pass.
+- **T13 live verifier replay (user-side).** T13 BE-side state handlers
+  for the 5 D-1 pact interactions are committed (`91f9ef8` + `d362d25`)
+  including the Depends-factory `compute_correlation` override for the
+  #4 full-reason-enum interaction (per
+  `pattern_pact_dependency_override_via_provider_state`, applied with
+  the small adaptation of wrapping a non-Depends function in a
+  Depends-yielding factory). Programmatic invariant checks pass (49-cell
+  grid + null-consistency + warning-list shape). Live `pnpm
+  pact:provider` replay against host-hybrid uvicorn + Postgres + Keycloak
+  is user-side (requires Docker stack). Expected: 5/5 new interactions
+  verify; legacy 21 still pass.
 - **T14 — Manual smoke (user-side).** Per umbrella §11 + AC #8: log in
   as `analyst@dev.local` → `/dashboard` → click new top-nav `Correlation`
   → page renders populated state with default `reports.total ×
@@ -279,7 +287,7 @@ uv run pytest tests/contract/test_openapi_snapshot.py -q   # expect 4 pass
 | 3 | `pageClass.test.tsx` green; manifest contains exactly 10 entries | ✅ |
 | 4 | 6 vitest component-test groups (4-state, URL, toggle, banner, chips, shared-cache) | ✅ |
 | 5 | Pact consumer regenerates with +5 interactions | ✅ |
-| 6 | Provider verify passes all interactions | 🟡 (T13) |
+| 6 | Provider verify passes all interactions | 🟡 (live replay user-side; handlers shipped at T13) |
 | 7 | OpenAPI snapshot diff at PR head is empty | ✅ |
 | 8 | Manual smoke through dev triad | 🟡 (T14) |
 | 9 | Manual i18n smoke | 🟡 (T14) |
@@ -405,8 +413,9 @@ curl -i -b "session=<cookie>" 'http://localhost:8000/api/v1/analytics/correlatio
 - [x] EN + KO i18n strings present for the 5 components (27 keys; parity check guards drift)
 - [x] No `data-testid` removals; no OpenAPI line removals; URL_STATE_KEYS unchanged
 - [x] Page-class manifest 9 → 10 (added `/analytics/correlation`); bi-directional drift test green
-- [x] Plan doc (`docs/plans/correlation-fe.md`) + PR body draft (`docs/plans/correlation-fe-body.md`) committed; both rename to `pr{N}-*` post-opening
-- [ ] T13 — BE-side Pact verifier state handlers added; local replay 5/5 new interactions verify
+- [x] Plan doc (`docs/plans/pr36-correlation-fe.md`) + PR body (`docs/plans/pr36-correlation-fe-body.md`) committed under `pr{N}-*` convention at T15
+- [x] T13 — BE-side Pact verifier state handlers added (`91f9ef8` + `d362d25`); programmatic invariant checks green
+- [ ] T13 live `pnpm pact:provider` replay 5/5 new interactions verify (user-side, requires Docker stack)
 - [ ] T14 — Manual smoke through dev triad (user-side)
 - [ ] Push DRAFT; CI 12 × 2 = 24 green
 - [ ] Final external Codex PR-as-diff review reports no unresolved CRIT/HIGH (per `feedback_codex_iteration`)
