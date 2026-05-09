@@ -349,10 +349,24 @@ test.describe('D-1 correlation UAT 1-5 (plan §4 T3 / C5 lock)', () => {
 
     // Toggle to KO. LocaleToggle is nested INSIDE the UserMenu Radix
     // DropdownMenu (see `apps/frontend/src/components/UserMenu.tsx:99`)
-    // so it's only mounted/visible when the menu is open. Click the
-    // `user-menu-trigger` first to open the dropdown, then the
-    // `locale-toggle` becomes visible. Radix auto-closes the menu after
-    // a click inside, so the second toggle below opens it again.
+    // — wrapped in a plain `<div>`, NOT a `<DropdownMenu.Item>`.
+    // Consequences:
+    //   1. The locale-toggle DOM node only exists when the dropdown
+    //      is open (Radix mounts content lazily) → must click
+    //      `user-menu-trigger` first to open the menu.
+    //   2. Radix only auto-closes on `<DropdownMenu.Item>` selection;
+    //      a plain button click does NOT close the menu. Verified
+    //      via Playwright trace artifact: after locale-toggle.click()
+    //      the dropdown stays open (snapshot still contains the menu
+    //      with `[active]: ko` confirming the click DID toggle the
+    //      locale, but the menu remains visible).
+    //   3. While the menu is open, Radix sets `aria-hidden` / `inert`
+    //      on the rest of the page for a11y focus-trap purposes.
+    //      Playwright's `getByRole(...)` filters out aria-hidden
+    //      elements by default — so even though the DOM contains
+    //      `<h1>상관관계</h1>` correctly, role-based queries can't
+    //      find it until the menu closes. The fix is to press
+    //      Escape after each locale-toggle click.
     // LocaleToggle cycles SUPPORTED_LOCALES (ko, en) so a single click
     // flips us to ko.
     const userMenuTrigger = page.getByTestId('user-menu-trigger')
@@ -361,6 +375,13 @@ test.describe('D-1 correlation UAT 1-5 (plan §4 T3 / C5 lock)', () => {
     const localeToggle = page.getByTestId('locale-toggle')
     await expect(localeToggle).toBeVisible()
     await localeToggle.click()
+    // Close the dropdown so role-based queries below can reach the
+    // page heading. `data-locale` on the toggle reflects the new
+    // locale BEFORE the dropdown closes — pin it as the proof-of-
+    // toggle anchor so a future regression in the click handler is
+    // caught here, decoupled from the heading-render assertion.
+    await expect(localeToggle).toHaveAttribute('data-locale', 'ko')
+    await page.keyboard.press('Escape')
 
     // Korean heading is "상관관계"; caveat title swaps to the KO
     // mirror; chart caption swaps to `유효 n` + `기간` per Codex
@@ -392,11 +413,15 @@ test.describe('D-1 correlation UAT 1-5 (plan §4 T3 / C5 lock)', () => {
     // Toggle back to EN to confirm the cycle is reversible (and to
     // leave subsequent tests in the pinned EN state since fullyParallel
     // is false but workers may reuse storage between describes). The
-    // first click closed the dropdown; reopen UserMenu before clicking
-    // locale-toggle again.
+    // Escape key closed the dropdown above; reopen UserMenu before
+    // clicking locale-toggle again, then Escape-close again so the
+    // post-click heading assertion can reach the heading through the
+    // a11y focus-trap.
     await userMenuTrigger.click()
     await expect(localeToggle).toBeVisible()
     await localeToggle.click()
+    await expect(localeToggle).toHaveAttribute('data-locale', 'en')
+    await page.keyboard.press('Escape')
     await expect(
       page.getByRole('heading', { name: 'Correlation' }),
     ).toBeVisible()
