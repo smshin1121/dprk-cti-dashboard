@@ -114,11 +114,15 @@ for detail + similar + actor-reports paths".
    done
    ```
 
-   All five states are idempotent on the DB; the fifth state
-   (PR #15 Group C) overlaps the fourth's actor seed by design — it
-   reuses `ACTOR_DETAIL_FIXTURE_ID=999003` and only ADDS the three
-   `report_codenames` links, so seeding both in one session is
-   safe and leaves the cookie jar intact.
+   All six states are idempotent on the DB. Two overlap notes:
+   the fifth state (PR #15 Group C) overlaps the fourth's actor seed
+   by design — it reuses `ACTOR_DETAIL_FIXTURE_ID=999003` and only
+   ADDS the three `report_codenames` links, so seeding both in one
+   session is safe and leaves the cookie jar intact. The sixth
+   state (PR-C T1) seeds 100 months of `reports` + `incidents` rows
+   in the date range 2018-01..2026-04 used by the populated
+   correlation fixture; it touches different rows than the first
+   five, so no overlap concerns.
 
    Then import `session.cookies` into the browser profile used by
    the headless Chrome the audit launches OR attach it via a
