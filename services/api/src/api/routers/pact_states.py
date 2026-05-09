@@ -1918,6 +1918,262 @@ async def _ensure_similar_reports_empty_embedding_fixture(
 
 
 # ---------------------------------------------------------------------------
+# PR-B T13 — D-1 correlation fixtures (umbrella §7.6 + plan §4 row T13)
+# ---------------------------------------------------------------------------
+#
+# Five FE pact interactions land on the BE under PR-B T8:
+#   #1 catalog            — `seeded correlation catalog fixture ...`
+#   #2 populated          — `seeded correlation populated fixture ...`
+#   #3 insufficient_lag   — `seeded correlation insufficient_sample_at_lag ...`
+#   #4 full reason enum   — `seeded correlation full-reason-enum ...`
+#   #5 422                — `seeded correlation insufficient_sample 422 ...`
+#
+# #1 needs no DB seed beyond an authenticated session — the catalog is
+# the hardcoded `_BASE_CATALOG` in `correlation_aggregator.py` and the
+# eachLike matcher only requires ≥1 series row.
+#
+# #2 / #3 / #5 each seed a dense reports + incidents window where the
+# query window matches the FE pact's `withRequest.query` block exactly
+# (`x=reports.total`, `y=incidents.total`, plus the locked
+# `date_from` / `date_to` / `alpha=0.05`):
+#   - #2: 2018-01..2026-04 wide window so every lag in [-24..+24] keeps
+#     effective_n_at_lag ≥ 30 → BE returns 49 cells with reason=null
+#     each, satisfying the per-cell `populatedCell` matcher.
+#   - #3: exactly 2024-01..2026-06 (30 months) so lag 0 = 30 (just
+#     passes the gate) and every k≠0 yields 30−|k| < 30 → those 48
+#     cells return `insufficient_sample_at_lag`, matching the pact's
+#     positional `nonNullCell(... 'insufficient_sample_at_lag')`.
+#   - #5: 2026-01..2026-06 (6 months) so effective_n < 30 → BE raises
+#     `InsufficientSampleError` and the router returns 422 with the
+#     `value_error.insufficient_sample` envelope.
+#
+# #4 (full-reason-enum) is fundamentally HARDER — the FE pact pins
+# specific reason literals at specific lag positions (idx 0/48 ⇒
+# `insufficient_sample_at_lag`, idx 12/36 ⇒ `degenerate`, idx 18/30 ⇒
+# `low_count_suppressed`, all others ⇒ populated). The aggregator's
+# decision tree shares X/Y arrays across lags so a single low-count
+# month or zero-variance stretch in the seed data ripples across many
+# lag positions; engineering distinct reasons at distinct lag indices
+# from real DB rows is not generally achievable. Per
+# `pattern_pact_dependency_override_via_provider_state` the cleanest
+# resolution is a router-level `Depends(compute_correlation_factory)`
+# refactor so the state handler can install a stub. That refactor
+# expands T13's 0.25d scope; for the initial T13 ship we seed the
+# same dense window as #2 and DOCUMENT the gap. The provider verify
+# job is expected to PASS for #1 / #2 / #3 / #5 and FAIL for #4 until
+# the override pattern lands; the FE consumer test (which runs
+# against the FE-recorded mock, not the live BE) is unaffected.
+#
+# All four fixture seeders below produce monthly counts ≥ 5 across
+# every month they cover so the aggregator's R-16 low-count
+# suppression doesn't fire and `min(x_arr) < 5` stays false at lag 0.
+# Counts vary across months so var(x_arr) > 0 and the populated
+# branch is reachable. Reports are linked to the canonical Lazarus
+# codename so any future `group_id`-filtered correlation query stays
+# non-empty (the slice-3 D-1 endpoint is `group_id`-no-op per
+# `analytics_correlation.py:181-204`, but the link is cheap and keeps
+# the seed shape consistent with other analytics fixtures).
+
+
+def _correlation_monthly_counts(
+    months: list[date],
+    *,
+    lo: int = 6,
+    hi: int = 38,
+) -> list[int]:
+    """Return varying monthly counts ≥ ``lo`` across ``months``.
+
+    The deterministic interleave (e.g. 7-step modular walk over
+    ``[lo, hi]``) keeps variance > 0 without depending on Python's
+    ``random`` module, which would make the seed non-idempotent
+    across replays.
+    """
+    span = hi - lo + 1
+    return [lo + ((idx * 7 + 3) % span) for idx in range(len(months))]
+
+
+def _month_dates(start: date, count: int) -> list[date]:
+    """Generate ``count`` consecutive month-start dates from ``start``."""
+    out: list[date] = []
+    year, month = start.year, start.month
+    for _ in range(count):
+        out.append(date(year, month, 1))
+        month += 1
+        if month > 12:
+            month = 1
+            year += 1
+    return out
+
+
+async def _seed_correlation_dense_window(
+    session: AsyncSession,
+    *,
+    fixture_label: str,
+    months: list[date],
+) -> None:
+    """Seed reports + incidents across each month with counts ≥ 5.
+
+    The aggregator's `reports.total` series counts rows in
+    ``reports`` published within the month; `incidents.total`
+    counts rows in ``incidents`` reported within the month. Seed
+    one report-per-day-of-month spread to control the count
+    deterministically.
+    """
+    source_id = await _ensure_source(session)
+    lazarus_id = await _ensure_canonical_lazarus_fixture(session)
+    andariel_id = await _ensure_codename(
+        session, name="Andariel", group_id=lazarus_id
+    )
+
+    report_counts = _correlation_monthly_counts(months, lo=6, hi=38)
+    incident_counts = _correlation_monthly_counts(months, lo=5, hi=27)
+
+    for month_idx, bucket in enumerate(months):
+        n_reports = report_counts[month_idx]
+        for report_idx in range(n_reports):
+            published = date(
+                bucket.year,
+                bucket.month,
+                min(report_idx + 1, 28),
+            )
+            await _ensure_report_with_codename_link(
+                session,
+                source_id=source_id,
+                codename_id=andariel_id,
+                url_canonical=(
+                    f"https://pact.test/correlation/{fixture_label}/"
+                    f"r-{bucket.isoformat()}-{report_idx}"
+                ),
+                title=(
+                    f"Pact fixture — correlation {fixture_label} report "
+                    f"{bucket.isoformat()} #{report_idx}"
+                ),
+                published=published,
+            )
+
+        n_incidents = incident_counts[month_idx]
+        for incident_idx in range(n_incidents):
+            reported = date(
+                bucket.year,
+                bucket.month,
+                min(incident_idx + 1, 28),
+            )
+            await _ensure_incident_with_motivation(
+                session,
+                title=(
+                    f"Pact fixture — correlation {fixture_label} "
+                    f"incident {bucket.isoformat()} #{incident_idx}"
+                ),
+                motivation="ESPIONAGE",
+                reported=reported,
+            )
+
+
+async def _ensure_correlation_catalog_fixture(
+    session: AsyncSession,
+) -> None:
+    """Seed for the FE pact `correlation series catalog` interaction.
+
+    The catalog endpoint returns `_BASE_CATALOG` (2 hardcoded series)
+    plus any per-motivation / per-sector / per-country derivations
+    that the aggregator builds from existing dimension tables. The
+    FE pact's `eachLike(...)` only requires ≥1 series row, which the
+    hardcoded base catalog satisfies regardless of DB state. We seed
+    a single canonical Lazarus row + Andariel codename for parity
+    with the rest of the analytics fixtures (and so a future
+    extension that needs reports linked to actors stays non-empty),
+    but no dense correlation window is required here.
+    """
+    lazarus_id = await _ensure_canonical_lazarus_fixture(session)
+    await _ensure_codename(session, name="Andariel", group_id=lazarus_id)
+
+
+async def _ensure_correlation_populated_fixture(
+    session: AsyncSession,
+) -> None:
+    """Seed dense ~100 months for the populated 49-cell pact (PR-B T8 #2).
+
+    Window 2018-01..2026-04 inclusive (100 months) so every lag in
+    [-24..+24] keeps effective_n_at_lag = 100 - |k| ≥ 76, well above
+    the §4.4 MIN_EFFECTIVE_N=30 gate. Counts vary 6..38 reports and
+    5..27 incidents per month so var > 0 and the populated branch
+    fires (reason: null) at every cell. The cross-rooted-pair
+    warning fires automatically because x_root=`reports.published`
+    and y_root=`incidents.reported` (umbrella §7.4 AFTER-loop).
+    """
+    months = _month_dates(date(2018, 1, 1), 100)
+    await _seed_correlation_dense_window(
+        session, fixture_label="populated", months=months
+    )
+
+
+async def _ensure_correlation_insufficient_sample_at_lag_fixture(
+    session: AsyncSession,
+) -> None:
+    """Seed exactly 30 months for the insufficient_sample_at_lag pact (#3).
+
+    Window 2024-01..2026-06 inclusive (30 months) chosen so lag 0 has
+    effective_n=30 (just passes the §4.4 gate) and every lag k≠0
+    yields 30 − |k| < 30 → those 48 cells return
+    `insufficient_sample_at_lag`. Counts ≥ 5 prevent the
+    low_count_suppressed reason from firing at lag 0.
+    """
+    months = _month_dates(date(2024, 1, 1), 30)
+    await _seed_correlation_dense_window(
+        session, fixture_label="insufficient_sample_at_lag", months=months
+    )
+
+
+async def _ensure_correlation_full_reason_enum_fixture(
+    session: AsyncSession,
+) -> None:
+    """Seed a wide window for the full-reason-enum pact (#4) — partial.
+
+    KNOWN GAP: the FE pact pins specific reason literals at specific
+    lag positions (idx 0/48 ⇒ `insufficient_sample_at_lag`, idx 12/36
+    ⇒ `degenerate`, idx 18/30 ⇒ `low_count_suppressed`). The
+    aggregator's decision tree shares X/Y arrays across lags so a
+    single low-count month or zero-variance stretch in the seed data
+    ripples across many lag positions — engineering distinct reasons
+    at distinct lag indices from real DB rows is not generally
+    achievable. The clean fix per
+    `pattern_pact_dependency_override_via_provider_state` is a
+    router-level `Depends(compute_correlation_factory)` refactor so
+    the state handler can install a stub; that refactor expands
+    T13's 0.25d scope and is deferred to a follow-up commit.
+
+    For now this seeder mirrors `_ensure_correlation_populated_fixture`
+    so the BE returns a 49-cell 200 with the correct top-level shape;
+    pact verifier is expected to FAIL for the per-position reason
+    matchers at idx 0/12/18/30/36/48 until the override lands.
+    """
+    months = _month_dates(date(2018, 1, 1), 100)
+    await _seed_correlation_dense_window(
+        session, fixture_label="full_reason_enum", months=months
+    )
+
+
+async def _ensure_correlation_insufficient_sample_422_fixture(
+    session: AsyncSession,
+) -> None:
+    """Seed 6 months for the 422 insufficient_sample pact (#5).
+
+    Window 2026-01..2026-06 inclusive (6 months) so effective_n at
+    lag 0 = 6 < MIN_EFFECTIVE_N (30). The aggregator raises
+    `InsufficientSampleError(effective_n=6, minimum_n=30)`; the
+    router returns 422 with the `value_error.insufficient_sample`
+    envelope. The pact's `msg` / `ctx.effective_n` matchers are
+    type-only (`string()` / `integer()`) so the BE-produced "got 6"
+    payload satisfies them despite the FE pact example's "got 18"
+    sample value.
+    """
+    months = _month_dates(date(2026, 1, 1), 6)
+    await _seed_correlation_dense_window(
+        session, fixture_label="insufficient_sample_422", months=months
+    )
+
+
+# ---------------------------------------------------------------------------
 # Endpoint
 # ---------------------------------------------------------------------------
 
@@ -2115,6 +2371,58 @@ async def provider_states(
             "and an authenticated analyst session"
         ):
             await _ensure_search_empty_fixture(session)
+            await session.commit()
+            await _seed_analyst_session(response, session_store)
+            continue
+
+        # PR-B T13 — D-1 correlation fixtures. Each given() string from
+        # `apps/frontend/tests/contract/frontend-dprk-cti-api.pact.test.ts`
+        # umbrella §7.6 maps to one seeder defined above.
+        if state == (
+            "seeded correlation catalog fixture "
+            "and an authenticated analyst session"
+        ):
+            await _ensure_correlation_catalog_fixture(session)
+            await session.commit()
+            await _seed_analyst_session(response, session_store)
+            continue
+
+        if state == (
+            "seeded correlation populated fixture "
+            "and an authenticated analyst session"
+        ):
+            await _ensure_correlation_populated_fixture(session)
+            await session.commit()
+            await _seed_analyst_session(response, session_store)
+            continue
+
+        if state == (
+            "seeded correlation insufficient_sample_at_lag fixture "
+            "and an authenticated analyst session"
+        ):
+            await _ensure_correlation_insufficient_sample_at_lag_fixture(
+                session
+            )
+            await session.commit()
+            await _seed_analyst_session(response, session_store)
+            continue
+
+        if state == (
+            "seeded correlation full-reason-enum fixture "
+            "and an authenticated analyst session"
+        ):
+            await _ensure_correlation_full_reason_enum_fixture(session)
+            await session.commit()
+            await _seed_analyst_session(response, session_store)
+            continue
+
+        if state == (
+            "seeded correlation insufficient_sample 422 fixture "
+            "and an authenticated analyst session"
+        ):
+            await _ensure_correlation_insufficient_sample_422_fixture(
+                session
+            )
             await session.commit()
             await _seed_analyst_session(response, session_store)
             continue
