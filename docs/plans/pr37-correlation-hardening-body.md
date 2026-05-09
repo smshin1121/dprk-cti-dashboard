@@ -48,7 +48,7 @@ PR #36's merge).
 
 ---
 
-## What lands (15 commits, 15 files / 1,774 insertions / 26 deletions at the T7 PR-as-diff r1 fold head; verify with `git diff --shortstat main..HEAD`. Reference-point ladder, each entry verifiable via `git diff --shortstat main..<sha>`: cddd3b6 T6 base+r1 = 1,686; ea6bfb0 T6 r2 = 1,692; 09fecb7 T6 r3 = 1,700; 4fe0ccd T7 push base = 1,702; f917165 T7 fix #1 (UAT 2 + UAT 5 part 1) = 1,739; 55c4929 T7 fix #2 (UAT 5 dropdown-close) = 1,764; 30f87e9 T7 r0 sync = 1,774. Each T6 fold commit edited only the body; T7 push base renamed plan + body to `pr37-*` (+15 / -13); T7 fix #1 + #2 modified only `correlation-uat.spec.ts` — per-commit deltas are +45 / -8 then +31 / -6 (sum +76 / -14 per-commit; the -14 lines were internal to the chain so the cumulative `git diff main..HEAD` deletion count stays at 26 unchanged from T7 push base). File count stays flat at 15 across the entire chain.)
+## What lands (17 commits, 15 files / ~1,800 insertions / 26 deletions at the T7 PR-as-diff r2 fold head; verify with `git diff --shortstat main..HEAD`. Reference-point ladder, each entry verifiable via `git diff --shortstat main..<sha>`: cddd3b6 T6 base+r1 = 1,686; ea6bfb0 T6 r2 = 1,692; 09fecb7 T6 r3 = 1,700; 4fe0ccd T7 push base = 1,702; f917165 T7 fix #1 (UAT 2 + UAT 5 part 1) = 1,739; 55c4929 T7 fix #2 (UAT 5 dropdown-close) = 1,764; 30f87e9 T7 r0 sync = 1,774; 7d6f074 T7 PR-as-diff r1 fold = 1,782. Each T6 fold commit edited only the body; T7 push base renamed plan + body to `pr37-*` (+15 / -13); T7 fix #1 + #2 modified only `correlation-uat.spec.ts` — per-commit deltas are +45 / -8 then +31 / -6 (sum +76 / -14 per-commit; the -14 lines were internal to the chain so the cumulative `git diff main..HEAD` deletion count stays at 26 unchanged from T7 push base). File count stays flat at 15 across the entire chain.)
 
 | Commit | Phase | Change |
 |:---|:---|:---|
@@ -66,7 +66,8 @@ PR #36's merge).
 | `f917165` | T7 fix #1 | fix(correlation-hardening): T7 — UAT 2 query window + UAT 5 UserMenu open (first-CI failures) |
 | `55c4929` | T7 fix #2 | fix(correlation-hardening): T7 — UAT 5 dropdown-close after locale-toggle (Radix aria-hidden focus-trap) |
 | `30f87e9` | T7 r0 sync | docs(correlation-hardening): T7 r0 — post-CI-green body sync (🟡 → ✅ for UAT 1-5 + AC #11/12/13/14; +2 fix commit rows + stat ladder extended) |
-| _(this commit)_ | T7 PR-as-diff r1 fold | docs(correlation-hardening): T7 PR-as-diff r1 fold — Codex 2 LOW (f917165 stat ladder + UAT 2 effective_n comment, count-narrative drift continues) |
+| `7d6f074` | T7 PR-as-diff r1 fold | docs(correlation-hardening): T7 PR-as-diff r1 fold — Codex 2 LOW (f917165 stat ladder + UAT 2 effective_n comment, count-narrative drift continues) |
+| _(this commit)_ | T7 PR-as-diff r2 fold | docs(correlation-hardening): T7 PR-as-diff r2 fold — Codex 3 LOW (header stat + AC SHA refs + GitHub PR body sync, drift continues at PR-as-diff layer) |
 
 11 Codex review rounds across **task gates** T-1..T4 (T-1=2 [r1 + r2],
 T1=2 [r1 + r2], T2=3 [r1 + r2 + r2bis — r2 was procedural HOLD on
@@ -381,7 +382,11 @@ PERF_TEST=1 uv run pytest --collect-only -m perf tests/perf  # expect 1 collecte
   triad after merge; produces `apps/frontend/lighthouse/reports/
   correlation/SUMMARY.md` + 6 JSONs (3 light + 3 dark).
 - ~~**CI green on push.**~~ ✅ **12/12 SUCCESS + 1 SKIPPED** at PR
-  head `55c4929` (`mergeStateStatus: CLEAN`, `mergeable: MERGEABLE`).
+  the latest CI-witnessed SHA at body-write-time: `7d6f074` (T7
+  PR-as-diff r1 fold; `mergeStateStatus: CLEAN`, `mergeable:
+  MERGEABLE`). Subsequent fold commits will re-run CI; the SHA in
+  this paragraph is the most recent CI-green head at write-time and
+  will be re-synced on the next post-CI body sync if a fold lands.
   Surface for this branch is 12 PR-event checks (not 24) because
   `chore/*` is outside the `on.push.branches: ["main", "feat/**"]`
   filter at `.github/workflows/ci.yml:5` — only the `pull_request`
@@ -402,20 +407,20 @@ PERF_TEST=1 uv run pytest --collect-only -m perf tests/perf  # expect 1 collecte
 
 | # | Criterion | Status |
 |:---:|:---|:---:|
-| 1 | UAT 1 — analyst login → correlation page → reports.total × incidents.total → both methods (Pearson + Spearman) render with p-values + caveat banner + lag chart [-24, +24] | ✅ (T3 — `frontend-e2e` CI job pass at PR #37 head `55c4929`, 7.7s) |
-| 2 | UAT 2 — < 30 monthly buckets → empty state with locked copy "표본이 부족합니다 (최소 30개월 필요)" / "Insufficient sample" | ✅ (T7 fix #1 — first-CI surfaced DB-accumulation bug; INSUFFICIENT_QS narrows query to 2026-05..2027-12 to dodge POPULATED's 2018-01..2026-04 coverage; CI pass at `55c4929`) |
-| 3 | UAT 3 — direct GET to `/api/v1/analytics/correlation?...` returns both methods at lag 0 + full lag scan + `interpretation.caveat` + `interpretation.methodology_url` | ✅ (T3 — CI pass at `55c4929`, 4.1s) |
-| 4 | UAT 4 — URL state survives reload | ✅ (T3 — CI pass at `55c4929`, 5.2s) |
-| 5 | UAT 5 — KO / EN locale toggle swaps all chart labels including caveat banner | ✅ (T7 fix #1 + #2 — UserMenu open + dropdown-close-via-Escape after each toggle click; Radix `<DropdownMenu>` aria-hidden focus-trap blocks role queries while menu is open; CI pass at `55c4929`) |
+| 1 | UAT 1 — analyst login → correlation page → reports.total × incidents.total → both methods (Pearson + Spearman) render with p-values + caveat banner + lag chart [-24, +24] | ✅ (T3 — `frontend-e2e` CI job pass at PR #37 head `7d6f074`, 7.7s — CI also green on prior heads `55c4929` + `30f87e9`) |
+| 2 | UAT 2 — < 30 monthly buckets → empty state with locked copy "표본이 부족합니다 (최소 30개월 필요)" / "Insufficient sample" | ✅ (T7 fix #1 — first-CI surfaced DB-accumulation bug; INSUFFICIENT_QS narrows query to 2026-05..2027-12 to dodge POPULATED's 2018-01..2026-04 coverage; CI pass since `f917165` through `7d6f074`) |
+| 3 | UAT 3 — direct GET to `/api/v1/analytics/correlation?...` returns both methods at lag 0 + full lag scan + `interpretation.caveat` + `interpretation.methodology_url` | ✅ (T3 — CI pass at `7d6f074`, 4.1s) |
+| 4 | UAT 4 — URL state survives reload | ✅ (T3 — CI pass at `7d6f074`, 5.2s) |
+| 5 | UAT 5 — KO / EN locale toggle swaps all chart labels including caveat banner | ✅ (T7 fix #1 + #2 — UserMenu open + dropdown-close-via-Escape after each toggle click; Radix `<DropdownMenu>` aria-hidden focus-trap blocks role queries while menu is open; CI pass since `55c4929` through `7d6f074`) |
 | 6 | UAT 6 / NFR-1 — p95 ≤ 500 ms over 50 sequential requests | 🟡 (T4 smoke shipped + opt-in gate verified locally; live wall-clock p95 measured at first `workflow_dispatch` run — non-blocking per plan §8 Q-C1 + R-C2) |
 | 7 | Lighthouse 6-target loop runs cleanly (`reports/correlation/SUMMARY.md` exists; reviewer accepts scores) | 🟡 (T1 README updated; user-side audit run — informational only per `run-audit.mjs:22-24` harness contract) |
-| 8 | Q1 catalog grouping shows `[ Reports ]` / `[ Incidents ]` headers with options nested correctly | ✅ (T2 — vitest 861 GREEN with discriminating shadow-row test; CI vitest job pass at `55c4929`) |
+| 8 | Q1 catalog grouping shows `[ Reports ]` / `[ Incidents ]` headers with options nested correctly | ✅ (T2 — vitest 861 GREEN with discriminating shadow-row test; CI `frontend` vitest job pass at `7d6f074`) |
 | 9 | T13 live `pnpm pact:provider` replay 5/5 verify + legacy 21 still pass; transcript captured | 🟡 (T5 — user-side procedural backfill; pact-ruby per-interaction reset model means contract-verify CI job already independently verified each interaction) |
-| 10 | vitest 861/861 GREEN (was 858/858 + 3 new from T2; +1 vs plan's `+2` baseline — within C6 "at least 2 cases" lock) | ✅ (locally + CI `frontend` job pass at `55c4929`) |
-| 11 | Pact contract 26/26 GREEN preserved (no PR-C change to consumer interactions) | ✅ (CI `frontend` `pnpm test:contract` step pass at `55c4929`) |
-| 12 | FE production build green (`pnpm run build` exits 0) | ✅ (CI `frontend` `pnpm run build` step pass at `55c4929`) |
-| 13 | OpenAPI snapshot diff at PR head is empty | ✅ (CI `contract-verify` job pass at `55c4929` — no PR-C BE behavior change) |
-| 14 | Branch CI green on all 12 PR-event checks (default surface). The `chore/p3.s3-correlation-hardening` branch name is OUTSIDE the `on.push.branches: ["main", "feat/**"]` filter at `.github/workflows/ci.yml:5`, so the push event does NOT fire on this branch — only the `pull_request` event runs. PR #36's branch matched `feat/**` and saw the 12 × 2 = 24 surface; PR-C's `chore/*` branch sees the 12 PR-event checks only. The perf job is `workflow_dispatch` only and NOT counted toward this AC. | ✅ (12/12 PR-event SUCCESS + 1 SKIPPED `correlation-perf-smoke` at `55c4929`; `mergeStateStatus: CLEAN`, `mergeable: MERGEABLE`) |
+| 10 | vitest 861/861 GREEN (was 858/858 + 3 new from T2; +1 vs plan's `+2` baseline — within C6 "at least 2 cases" lock) | ✅ (locally + CI `frontend` job pass at `7d6f074`) |
+| 11 | Pact contract 26/26 GREEN preserved (no PR-C change to consumer interactions) | ✅ (CI `frontend` `pnpm test:contract` step pass at `7d6f074`) |
+| 12 | FE production build green (`pnpm run build` exits 0) | ✅ (CI `frontend` `pnpm run build` step pass at `7d6f074`) |
+| 13 | OpenAPI snapshot diff at PR head is empty | ✅ (CI `contract-verify` job pass at `7d6f074` — no PR-C BE behavior change) |
+| 14 | Branch CI green on all 12 PR-event checks (default surface). The `chore/p3.s3-correlation-hardening` branch name is OUTSIDE the `on.push.branches: ["main", "feat/**"]` filter at `.github/workflows/ci.yml:5`, so the push event does NOT fire on this branch — only the `pull_request` event runs. PR #36's branch matched `feat/**` and saw the 12 × 2 = 24 surface; PR-C's `chore/*` branch sees the 12 PR-event checks only. The perf job is `workflow_dispatch` only and NOT counted toward this AC. | ✅ (12/12 PR-event SUCCESS + 1 SKIPPED `correlation-perf-smoke` at `7d6f074` — also at prior heads `55c4929` + `30f87e9`; `mergeStateStatus: CLEAN`, `mergeable: MERGEABLE`) |
 | 15 | Final external Codex review reports no unresolved CRITICAL/HIGH | 🟡 (PR-as-diff at T7-T8) |
 | 16 | PR body present at `docs/plans/pr37-correlation-hardening-body.md`; plan present at `docs/plans/pr37-correlation-hardening.md` | ✅ (renamed at T7 push commit; PR #37 confirmed via `gh pr list`) |
 
