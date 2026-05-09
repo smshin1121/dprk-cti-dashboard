@@ -47,6 +47,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useLocation } from 'react-router-dom'
 
 import { ApiError } from '../../../lib/api'
@@ -111,6 +112,7 @@ function urlStateEqual(a: CorrelationUrlState, b: CorrelationUrlState): boolean 
 }
 
 export function CorrelationPage(): JSX.Element {
+  const { t } = useTranslation()
   const location = useLocation()
   const [state, setState] = useState<CorrelationUrlState>(() =>
     readUrlState(location.search),
@@ -171,7 +173,7 @@ export function CorrelationPage(): JSX.Element {
   )
 
   const methodToggle = (
-    <div role="group" aria-label="Correlation method" className="flex gap-2">
+    <div role="group" aria-label={t('correlation.methodToggle.ariaLabel')} className="flex gap-2">
       <button
         type="button"
         data-testid="correlation-method-pearson"
@@ -183,7 +185,7 @@ export function CorrelationPage(): JSX.Element {
             : 'rounded-none border border-border-card bg-app px-3 py-1 text-xs font-cta uppercase tracking-cta text-ink-muted hover:border-border-strong'
         }
       >
-        Pearson
+        {t('correlation.method.pearson')}
       </button>
       <button
         type="button"
@@ -196,7 +198,7 @@ export function CorrelationPage(): JSX.Element {
             : 'rounded-none border border-border-card bg-app px-3 py-1 text-xs font-cta uppercase tracking-cta text-ink-muted hover:border-border-strong'
         }
       >
-        Spearman
+        {t('correlation.method.spearman')}
       </button>
     </div>
   )
@@ -205,11 +207,17 @@ export function CorrelationPage(): JSX.Element {
   if (!state.x || !state.y) {
     body = (
       <div data-testid="correlation-empty" role="status" className="py-md text-sm text-ink-muted">
-        Pick X and Y series to start the correlation analysis.
+        {t('correlation.state.emptyPickXY')}
       </div>
     )
   } else if (correlationQuery.isError) {
     const errorType = readErrorType(correlationQuery.error)
+    const errorCopy =
+      errorType === 'value_error.insufficient_sample'
+        ? t('correlation.state.errorInsufficientSample')
+        : errorType === 'value_error.identical_series'
+          ? t('correlation.state.errorIdenticalSeries')
+          : t('correlation.state.errorUnknown')
     body = (
       <div
         data-testid="correlation-error"
@@ -217,11 +225,7 @@ export function CorrelationPage(): JSX.Element {
         data-error-type={errorType ?? 'unknown'}
         className="py-md text-sm text-ink"
       >
-        {errorType === 'value_error.insufficient_sample'
-          ? 'Insufficient sample (minimum 30 months required).'
-          : errorType === 'value_error.identical_series'
-          ? 'X and Y must be different series.'
-          : 'Unable to load data.'}
+        {errorCopy}
       </div>
     )
   } else if (correlationQuery.isLoading) {
@@ -232,7 +236,7 @@ export function CorrelationPage(): JSX.Element {
         aria-busy="true"
         className="py-md text-sm text-ink-muted"
       >
-        Loading correlation…
+        {t('correlation.state.loading')}
       </div>
     )
   } else if (correlationQuery.data) {
@@ -247,7 +251,7 @@ export function CorrelationPage(): JSX.Element {
   } else {
     body = (
       <div data-testid="correlation-loading" role="status" aria-busy="true" className="py-md text-sm text-ink-muted">
-        Loading correlation…
+        {t('correlation.state.loading')}
       </div>
     )
   }
@@ -277,7 +281,7 @@ export function CorrelationPage(): JSX.Element {
       />
       <header className="flex h-md items-center justify-between gap-4">
         <h1 id="correlation-heading" className="text-xl font-semibold tracking-tight text-ink">
-          Correlation
+          {t('correlation.page.heading')}
         </h1>
         {methodToggle}
       </header>

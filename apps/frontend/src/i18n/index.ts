@@ -98,6 +98,38 @@ export interface Resources {
     empty: string
     error: string
   }
+  correlation: {
+    page: { heading: string }
+    methodToggle: { ariaLabel: string }
+    method: { pearson: string; spearman: string }
+    state: {
+      emptyPickXY: string
+      loading: string
+      errorInsufficientSample: string
+      errorIdenticalSeries: string
+      errorUnknown: string
+    }
+    filters: {
+      xSeriesLabel: string
+      ySeriesLabel: string
+      xPickerPlaceholder: string
+      yPickerPlaceholder: string
+      dateFromLabel: string
+      dateToLabel: string
+      datePlaceholder: string
+    }
+    caveat: { title: string; body: string; dismiss: string }
+    chart: { caption: string }
+    warnings: {
+      ariaLabel: string
+      non_stationary_suspected: string
+      outlier_influence: string
+      sparse_window: string
+      cross_rooted_pair: string
+      identity_or_containment_suspected: string
+      low_count_suppressed_cells: string
+    }
+  }
 }
 
 // Guarded init so HMR / test resets don't re-initialize and wipe

@@ -28,6 +28,7 @@
  */
 
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 
 import type { CorrelationSeriesItem } from '../../../lib/api/schemas'
 
@@ -58,12 +59,22 @@ interface SeriesPickerProps {
 }
 
 function SeriesPicker({ axis, selected, catalog, onPick }: SeriesPickerProps): JSX.Element {
+  const { t } = useTranslation()
   const [open, setOpen] = useState(false)
+
+  const seriesLabel =
+    axis === 'x'
+      ? t('correlation.filters.xSeriesLabel')
+      : t('correlation.filters.ySeriesLabel')
+  const pickerPlaceholder =
+    axis === 'x'
+      ? t('correlation.filters.xPickerPlaceholder')
+      : t('correlation.filters.yPickerPlaceholder')
 
   return (
     <div className="relative flex flex-col gap-1">
       <span className="text-xs font-cta uppercase tracking-caption text-ink-muted">
-        {axis === 'x' ? 'X series' : 'Y series'}
+        {seriesLabel}
       </span>
       <button
         type="button"
@@ -73,7 +84,7 @@ function SeriesPicker({ axis, selected, catalog, onPick }: SeriesPickerProps): J
         onClick={() => setOpen((v) => !v)}
         className="rounded-none border border-border-card bg-app px-3 py-1.5 text-left text-sm font-body text-ink hover:border-border-strong focus:outline-none focus:ring-2 focus:ring-ring"
       >
-        {selected ? labelFor(catalog, selected) : `Pick ${axis.toUpperCase()}…`}
+        {selected ? labelFor(catalog, selected) : pickerPlaceholder}
       </button>
       {open ? (
         <ul
@@ -109,6 +120,7 @@ interface DraftDateInputProps {
 }
 
 function DraftDateInput({ testId, label, value, onCommit }: DraftDateInputProps): JSX.Element {
+  const { t } = useTranslation()
   const [draft, setDraft] = useState<string>(value ?? '')
 
   // Re-sync draft when the committed value changes from above (URL
@@ -127,7 +139,7 @@ function DraftDateInput({ testId, label, value, onCommit }: DraftDateInputProps)
       <input
         type="text"
         inputMode="numeric"
-        placeholder="YYYY-MM-DD"
+        placeholder={t('correlation.filters.datePlaceholder')}
         data-testid={testId}
         value={draft}
         onChange={(e) => {
@@ -159,19 +171,20 @@ export function CorrelationFilters({
   onChangeDateFrom,
   onChangeDateTo,
 }: CorrelationFiltersProps): JSX.Element {
+  const { t } = useTranslation()
   return (
     <div className="flex flex-wrap items-end gap-4">
       <SeriesPicker axis="x" selected={x} catalog={catalog} onPick={onChangeX} />
       <SeriesPicker axis="y" selected={y} catalog={catalog} onPick={onChangeY} />
       <DraftDateInput
         testId="correlation-filter-date-from"
-        label="Date from"
+        label={t('correlation.filters.dateFromLabel')}
         value={dateFrom}
         onCommit={onChangeDateFrom}
       />
       <DraftDateInput
         testId="correlation-filter-date-to"
-        label="Date to"
+        label={t('correlation.filters.dateToLabel')}
         value={dateTo}
         onCommit={onChangeDateTo}
       />

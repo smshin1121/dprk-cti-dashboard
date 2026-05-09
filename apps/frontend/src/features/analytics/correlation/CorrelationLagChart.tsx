@@ -25,6 +25,7 @@
  */
 
 import { useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   CartesianGrid,
   Line,
@@ -52,6 +53,7 @@ interface LagPoint {
 }
 
 export function CorrelationLagChart({ data, method }: CorrelationLagChartProps): JSX.Element {
+  const { t } = useTranslation()
   const chartData = useMemo<LagPoint[]>(
     () =>
       data.lag_grid.map((cell) => ({
@@ -103,8 +105,12 @@ export function CorrelationLagChart({ data, method }: CorrelationLagChartProps):
         />
       </LineChart>
       <p className="text-xs text-ink-muted">
-        α = {data.alpha} · effective n = {data.effective_n} · period{' '}
-        {data.date_from} – {data.date_to}
+        {t('correlation.chart.caption', {
+          alpha: data.alpha,
+          n: data.effective_n,
+          from: data.date_from,
+          to: data.date_to,
+        })}
       </p>
     </div>
   )
