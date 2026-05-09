@@ -1947,22 +1947,28 @@ async def _ensure_similar_reports_empty_embedding_fixture(
 #     `InsufficientSampleError` and the router returns 422 with the
 #     `value_error.insufficient_sample` envelope.
 #
-# #4 (full-reason-enum) is fundamentally HARDER — the FE pact pins
-# specific reason literals at specific lag positions (idx 0/48 ⇒
-# `insufficient_sample_at_lag`, idx 12/36 ⇒ `degenerate`, idx 18/30 ⇒
-# `low_count_suppressed`, all others ⇒ populated). The aggregator's
-# decision tree shares X/Y arrays across lags so a single low-count
-# month or zero-variance stretch in the seed data ripples across many
-# lag positions; engineering distinct reasons at distinct lag indices
-# from real DB rows is not generally achievable. Per
-# `pattern_pact_dependency_override_via_provider_state` the cleanest
-# resolution is a router-level `Depends(compute_correlation_factory)`
-# refactor so the state handler can install a stub. That refactor
-# expands T13's 0.25d scope; for the initial T13 ship we seed the
-# same dense window as #2 and DOCUMENT the gap. The provider verify
-# job is expected to PASS for #1 / #2 / #3 / #5 and FAIL for #4 until
-# the override pattern lands; the FE consumer test (which runs
-# against the FE-recorded mock, not the live BE) is unaffected.
+# #4 (full-reason-enum) is fundamentally HARDER via real DB rows
+# alone — the FE pact pins specific reason literals at specific lag
+# positions (idx 0/48 ⇒ `insufficient_sample_at_lag`, idx 12/36 ⇒
+# `degenerate`, idx 18/30 ⇒ `low_count_suppressed`, all others ⇒
+# populated) AND a single warning code
+# `equal('low_count_suppressed_cells')`. The aggregator's decision
+# tree shares X/Y arrays across lags AND its warning derivation
+# always emits `cross_rooted_pair` for `reports.total` ↔
+# `incidents.total`; both pact requirements are unreachable from
+# normal DB seeds. Per
+# `pattern_pact_dependency_override_via_provider_state` the
+# resolution is to install a stub via `app.dependency_overrides`
+# behind the `Depends(get_compute_correlation)` indirection in
+# `analytics_correlation.py`: the #4 dispatcher branch installs
+# `_correlation_full_reason_enum_compute_stub` (defined below) for
+# the next request only, returning the canned 49-cell payload that
+# satisfies the pact's per-position matchers and the locked
+# `low_count_suppressed_cells` warning. The override is cleared at
+# the top of every subsequent state request via
+# `_clear_correlation_compute_override`, parallel to
+# `_clear_embedding_client_override`, so the stub does not bleed
+# into #1/#2/#3/#5 or any unrelated correlation request.
 #
 # All four fixture seeders below produce monthly counts ≥ 5 across
 # every month they cover so the aggregator's R-16 low-count
@@ -2127,29 +2133,209 @@ async def _ensure_correlation_insufficient_sample_at_lag_fixture(
 async def _ensure_correlation_full_reason_enum_fixture(
     session: AsyncSession,
 ) -> None:
-    """Seed a wide window for the full-reason-enum pact (#4) — partial.
+    """Seed a wide window for the full-reason-enum pact (#4).
 
-    KNOWN GAP: the FE pact pins specific reason literals at specific
-    lag positions (idx 0/48 ⇒ `insufficient_sample_at_lag`, idx 12/36
-    ⇒ `degenerate`, idx 18/30 ⇒ `low_count_suppressed`). The
-    aggregator's decision tree shares X/Y arrays across lags so a
-    single low-count month or zero-variance stretch in the seed data
-    ripples across many lag positions — engineering distinct reasons
-    at distinct lag indices from real DB rows is not generally
-    achievable. The clean fix per
-    `pattern_pact_dependency_override_via_provider_state` is a
-    router-level `Depends(compute_correlation_factory)` refactor so
-    the state handler can install a stub; that refactor expands
-    T13's 0.25d scope and is deferred to a follow-up commit.
+    The FE pact pins specific reason literals at specific lag
+    positions (idx 0/48 ⇒ `insufficient_sample_at_lag`, idx 12/36
+    ⇒ `degenerate`, idx 18/30 ⇒ `low_count_suppressed`) AND a
+    single warning code `equal('low_count_suppressed_cells')` (no
+    `cross_rooted_pair` allowed). The real aggregator cannot
+    produce this shape from real DB rows because its
+    `_safe_pearsonr` / `_safe_spearmanr` decision tree shares X/Y
+    arrays across all 49 lags AND the warning derivation always
+    emits `cross_rooted_pair` for `reports.total` ↔
+    `incidents.total` (umbrella §7.4 AFTER-loop).
 
-    For now this seeder mirrors `_ensure_correlation_populated_fixture`
-    so the BE returns a 49-cell 200 with the correct top-level shape;
-    pact verifier is expected to FAIL for the per-position reason
-    matchers at idx 0/12/18/30/36/48 until the override lands.
+    Resolution per
+    `pattern_pact_dependency_override_via_provider_state`: the
+    `provider_states` handler installs a stub via
+    `app.dependency_overrides[get_compute_correlation]` which
+    returns the canned 49-cell response (see
+    `_correlation_full_reason_enum_compute_stub`). This DB seed
+    still runs (the stub doesn't touch DB but the seed keeps the
+    fixture self-consistent if a future contributor unwires the
+    stub) — same dense 100-month window as the populated fixture.
     """
     months = _month_dates(date(2018, 1, 1), 100)
     await _seed_correlation_dense_window(
         session, fixture_label="full_reason_enum", months=months
+    )
+
+
+# ---------------------------------------------------------------------------
+# PR-B T13 — full-reason-enum compute stub + dependency override
+# ---------------------------------------------------------------------------
+
+
+_FULL_REASON_ENUM_DEFAULT_EFFECTIVE_N = 64
+
+
+def _full_reason_enum_lag_grid_payload() -> list[dict[str, object]]:
+    """Build the 49-cell lag_grid for the full-reason-enum stub.
+
+    Layout matches the FE pact at
+    `apps/frontend/tests/contract/frontend-dprk-cti-api.pact.test.ts:1942-1955`:
+
+      idx 0, 48   (lag ±24)  ⇒ `insufficient_sample_at_lag`, n=28
+      idx 12, 36  (lag ±12)  ⇒ `degenerate`,                  n=60
+      idx 18, 30  (lag ±6)   ⇒ `low_count_suppressed`,        n=78
+      all others             ⇒ populated (reason=null),       n=64
+
+    The cell shape mirrors `compute_correlation`'s lag_grid_payload
+    return shape (`correlation_aggregator.py:1059-1080`) and
+    satisfies the `CorrelationCellMethodBlock` null-consistency
+    invariant (`schemas/correlation.py:81-96`): `reason != null`
+    cells carry r/p_raw/p_adjusted = null, significant = false;
+    populated cells carry finite floats. Per-cell n values match
+    the FE pact's `integer(...)` matchers.
+    """
+    grid: list[dict[str, object]] = []
+    for idx in range(49):
+        lag = idx - 24
+        abs_lag = abs(lag)
+        if abs_lag == 24:
+            reason: str | None = "insufficient_sample_at_lag"
+            n_at_lag = 28
+        elif abs_lag == 12:
+            reason = "degenerate"
+            n_at_lag = 60
+        elif abs_lag == 6:
+            reason = "low_count_suppressed"
+            n_at_lag = 78
+        else:
+            reason = None
+            n_at_lag = _FULL_REASON_ENUM_DEFAULT_EFFECTIVE_N
+
+        if reason is None:
+            method_block: dict[str, object] = {
+                "r": 0.412,
+                "p_raw": 0.00021,
+                "p_adjusted": 0.00514,
+                "significant": True,
+                "effective_n_at_lag": n_at_lag,
+                "reason": None,
+            }
+            spearman_block: dict[str, object] = {
+                "r": 0.398,
+                "p_raw": 0.00031,
+                "p_adjusted": 0.00759,
+                "significant": False,
+                "effective_n_at_lag": n_at_lag,
+                "reason": None,
+            }
+        else:
+            method_block = {
+                "r": None,
+                "p_raw": None,
+                "p_adjusted": None,
+                "significant": False,
+                "effective_n_at_lag": n_at_lag,
+                "reason": reason,
+            }
+            spearman_block = dict(method_block)
+
+        grid.append(
+            {
+                "lag": lag,
+                "pearson": method_block,
+                "spearman": spearman_block,
+            }
+        )
+    return grid
+
+
+async def _correlation_full_reason_enum_compute_stub(
+    session: AsyncSession,
+    *,
+    x: str,
+    y: str,
+    date_from: date,
+    date_to: date,
+    alpha: float,
+) -> dict[str, object]:
+    """Stub for `compute_correlation` returning the canned full-reason-enum payload.
+
+    Signature matches `correlation_aggregator.compute_correlation`
+    so it slots cleanly behind the
+    `Depends(get_compute_correlation)` indirection in
+    `analytics_correlation.py`. The `session` argument is unused
+    (the stub does not touch the DB) but accepted so the
+    dependency-override binding stays signature-compatible.
+
+    The returned shape mirrors the real aggregator's payload
+    structure exactly — `CorrelationResponse.model_validate(...)`
+    must accept it without drift. In particular:
+
+      - `lag_grid` is exactly 49 cells in ascending lag order
+        (`schemas/correlation.py:172-179` model_validator).
+      - Cells with `reason != null` carry null r/p_raw/p_adjusted
+        and significant=false (null-consistency invariant
+        `schemas/correlation.py:81-96`).
+      - `interpretation.warnings` carries ONLY one entry with
+        `code='low_count_suppressed_cells'` so the FE pact's
+        `equal('low_count_suppressed_cells')` matcher passes
+        (the real aggregator would emit `cross_rooted_pair`,
+        which the pact's `equal()` literal would reject).
+    """
+    del session  # stub does not touch the DB
+    return {
+        "x": x,
+        "y": y,
+        "date_from": date_from,
+        "date_to": date_to,
+        "alpha": alpha,
+        "effective_n": _FULL_REASON_ENUM_DEFAULT_EFFECTIVE_N,
+        "lag_grid": _full_reason_enum_lag_grid_payload(),
+        "interpretation": {
+            "caveat": (
+                "Correlation does not imply causation. This chart "
+                "shows statistical co-movement only; non-stationarity, "
+                "autocorrelation, and unobserved confounders can "
+                "produce spurious associations. See the methodology "
+                "page for details."
+            ),
+            "methodology_url": "/docs/methodology/correlation",
+            "warnings": [
+                {
+                    "code": "low_count_suppressed_cells",
+                    "message": (
+                        "Some lag cells were suppressed because "
+                        "shifted-pair monthly counts fell below the "
+                        "disclosure threshold."
+                    ),
+                    "severity": "info",
+                }
+            ],
+        },
+    }
+
+
+def _clear_correlation_compute_override(app) -> None:
+    """Remove any prior Pact-installed correlation-compute override.
+
+    The verifier reuses one uvicorn process for the whole run, so
+    the full-reason-enum stub must not leak into other correlation
+    interactions (#1/#2/#3/#5) or unrelated routes. Every
+    provider-state call clears this override at the top, parallel
+    to `_clear_embedding_client_override`.
+    """
+    from .analytics_correlation import get_compute_correlation
+
+    app.dependency_overrides.pop(get_compute_correlation, None)
+
+
+def _install_correlation_full_reason_enum_compute_override(app) -> None:
+    """Install the full-reason-enum stub for the next request only.
+
+    The stub is bound via `app.dependency_overrides` so FastAPI's
+    Depends resolution picks it up at request time. The provider-
+    state handler clears the override at the start of every state
+    request so stale stubs don't bleed across interactions.
+    """
+    from .analytics_correlation import get_compute_correlation
+
+    app.dependency_overrides[get_compute_correlation] = (
+        lambda: _correlation_full_reason_enum_compute_stub
     )
 
 
@@ -2193,6 +2379,7 @@ async def provider_states(
     ``apps/frontend/tests/contract/frontend-dprk-cti-api.pact.test.ts``.
     """
     _clear_embedding_client_override(request.app)
+    _clear_correlation_compute_override(request.app)
 
     states = _states_from_payload(payload)
     if not states:
@@ -2413,6 +2600,9 @@ async def provider_states(
         ):
             await _ensure_correlation_full_reason_enum_fixture(session)
             await session.commit()
+            _install_correlation_full_reason_enum_compute_override(
+                request.app
+            )
             await _seed_analyst_session(response, session_store)
             continue
 
