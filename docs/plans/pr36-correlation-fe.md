@@ -11,7 +11,7 @@
 
 ## 1. Goal
 
-Land the user-visible side of the D-1 correlation primitive: an `/analytics/correlation` route that lets an `analyst`-role user pick two series from the catalog, render the lag-scan chart with both Pearson and Spearman significance flags, see the typed warning chips, and read the "correlation ≠ causation" caveat banner — all while consuming PR #28's locked DTO with no new BE changes.
+Land the user-visible side of the D-1 correlation primitive: an `/analytics/correlation` route that lets an `analyst`-role user pick two series from the catalog, render the lag-scan chart with both Pearson and Spearman significance flags, see the typed warning chips, and read the "correlation ≠ causation" caveat banner — all while consuming PR #28's locked DTO with **no new production BE behavior change** (T13 adds Pact provider-state handlers + a Depends-factory indirection for the full-reason-enum stub override; the factory returns the real `compute_correlation` unchanged outside pact-verify dependency-overrides; OpenAPI snapshot diff is empty).
 
 **Non-goal (deferred to the next slice-3 hardening PR — umbrella §11 PR C):**
 - Lighthouse target wiring + 6-target loop expansion

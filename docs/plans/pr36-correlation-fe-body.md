@@ -1,9 +1,21 @@
 # Phase 3 Slice 3 PR-B — D-1 Correlation FE Visualization
 
-**Scope:** FE-only. New `/analytics/correlation` route, 5 leaf components, 2
-react-query hooks, 7 zod schemas, 5 Pact consumer interactions, page-class
-runtime mechanism, full ko + en i18n. **Zero BE changes** — consumes the
-D-1 primitive shipped in PR #28.
+**Scope:** FE primary surface + BE Pact provider-state hooks (T13).
+
+- FE surface: new `/analytics/correlation` route, 5 leaf components, 2
+  react-query hooks, 7 zod schemas, 5 Pact consumer interactions,
+  page-class runtime mechanism, full ko + en i18n. Consumes the D-1
+  primitive shipped in PR #28.
+- BE additions (T13): 5 provider-state handlers in
+  `services/api/src/api/routers/pact_states.py` mapping the 5 D-1
+  `.given(...)` strings to deterministic fixtures + a Depends-factory
+  indirection for `compute_correlation` in
+  `services/api/src/api/routers/analytics_correlation.py` so the
+  full-reason-enum interaction can be served by a canned stub at
+  pact-verify time. **Zero production BE behavior change** — the
+  factory returns the real `compute_correlation` unchanged outside the
+  pact-verify dependency-override; OpenAPI snapshot diff at PR head is
+  empty (verified at T6 + 24/24 SUCCESS at T15 head).
 
 **Why:** PR #28 landed the BE side of the D-1 correlation primitive
 (`/analytics/correlation/series` catalog + `/analytics/correlation` lag
@@ -26,7 +38,7 @@ main. No base-flip risk per `pitfall_stacked_pr_merge_base_flip`.
 
 ---
 
-## What lands (25 commits, ~20.8K insertions / 52 deletions across 52 files)
+## What lands (27 commits, ~21,000 insertions / ~205 deletions across 53 files at the T15 r1 fold head; verify with `git diff --shortstat main..HEAD`)
 
 The bulk of the line count is the regenerated `contracts/pacts/frontend-dprk-cti-api.json`
 (+14,722 lines on its own — the 49-cell × 6-field × 2-method × 3 happy
@@ -60,13 +72,18 @@ interactions with explicit per-cell positional matchers per
 | `13565d7` | T12 r1 | docs: correlation-fe T12 r1 fold — Codex 2 CRITICAL (Q1+Q4 §8 default deviations) + MED amendment count + LOW round count |
 | `91f9ef8` | T13 base | feat(pact): correlation-fe T13 — BE provider-state handlers for 5 D-1 pact interactions |
 | `d362d25` | T13 r1 | feat(pact): correlation-fe T13 r1 fold — Codex MED + LOW (#4 dependency override via Depends factory) |
-| _(this commit)_ | T15 base | docs: correlation-fe T15 — pr36 rename + backfill T12 r1 SHA + post-T13 body sync |
+| `19b1e13` | T15 base | docs: correlation-fe T15 — pr36 rename + backfill T12 r1 SHA + post-T13 body sync |
+| `4c92c1b` | T15 r0 | docs: correlation-fe T15 r0 — body post-CI-green sync (24/24 SUCCESS at `19b1e13`) |
+| _(this commit)_ | T15 r1 | docs: correlation-fe T15 r1 fold — Codex 1 HIGH (FE-only/Zero-BE narrative drift) + 2 MED (stats + T8 r2b accounting) |
 
 32 Codex review rounds across T0..T13 (T0=3, T1=2, T2=4, T3=1, T4=1,
-T5=1, T6=2, T7=4, T8=3, T9=2, T10=3, T11=2, T12=2, T13=2 — most tasks
-within `feedback_codex_iteration` 3-6 typical band; the 1-round tasks
-were mechanical and Codex returned CLEAN PROCEED on the first pass).
-Transcripts at `.codex-review/correlation-fe-t{0..13}-r{...}.transcript.log`.
+T5=1, T6=2, T7=4, T8=3 [r1+r2+r2b — r2b is a 1.8K-byte targeted
+re-verify after r2 fold; counts as a separate round], T9=2, T10=3,
+T11=2, T12=2, T13=2 — most tasks within `feedback_codex_iteration` 3-6
+typical band; the 1-round tasks were mechanical and Codex returned
+CLEAN PROCEED on the first pass). Transcripts at
+`.codex-review/correlation-fe-t{0..13}-r{1..3,2b}.transcript.log` —
+glob pattern `r*` matches all (including `r2b`).
 
 ---
 
