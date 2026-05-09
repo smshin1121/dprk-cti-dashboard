@@ -20,8 +20,12 @@ target, and a small cosmetic refactor of the X/Y catalog dropdown.
   unchanged; OpenAPI snapshot diff at PR head is empty.
 - **CI**: `.github/workflows/ci.yml` adds a `correlation-perf-smoke` job
   gated on `workflow_dispatch` (manual trigger only — NOT on push / PR)
-  per plan §8 Q-C1 default + R-C2 mitigation. The default 12-check × 2-event
-  surface is preserved unchanged.
+  per plan §8 Q-C1 default + R-C2 mitigation. The default 12-check
+  PR-event surface is preserved unchanged. (PR-C's `chore/*` branch is
+  outside the `on.push.branches: ["main", "feat/**"]` filter at
+  `.github/workflows/ci.yml:5`, so this branch sees 12 PR-event checks
+  on push — not 24 like PR #36's `feat/**`-matching branch saw. See
+  AC #14 for full reasoning.)
 
 **Why:** PR #36 shipped the D-1 visualization with its T13 + T14
 verification gates carved out (T13 live `pnpm pact:provider` replay +
@@ -43,7 +47,7 @@ rename to `pr{N}-correlation-hardening.md` at T7 push per
 
 ---
 
-## What lands (9 commits, ~1,680 insertions / ~26 deletions across 15 files at the T6 r2 fold head; verify with `git diff --shortstat main..HEAD` — at T6 base + r1 fold `cddd3b6` the same diff is 15 files / 1,686 insertions / 26 deletions; this T6 r2 fold commit edits only `correlation-hardening-body.md` so file count + deletion count stay flat)
+## What lands (10 commits, 15 files / ~1,700 insertions / 26 deletions at the T6 r3 fold head; verify with `git diff --shortstat main..HEAD`. Reference points: at T6 base + r1 fold `cddd3b6` the diff was 15 files / 1,686 insertions / 26 deletions; at T6 r2 fold `ea6bfb0` the diff was 15 files / 1,692 insertions / 26 deletions. Each subsequent T6 fold commit edits only `correlation-hardening-body.md` — file count + deletion count stay flat; insertions tick by single digits per fold.)
 
 | Commit | Phase | Change |
 |:---|:---|:---|
@@ -55,7 +59,8 @@ rename to `pr{N}-correlation-hardening.md` at T7 push per
 | `0e5a62c` | T3 base + r1 + r2 | feat(correlation-hardening): T3 — Playwright UAT 1-5 spec + r1+r2 fold |
 | `d5ce424` | T4 base | feat(correlation-hardening): T4 — NFR-1 perf smoke + opt-in marker + workflow_dispatch CI job |
 | `cddd3b6` | T6 base + r1 fold | docs(correlation-hardening): T6 — PR body draft + r1 fold (Codex 3 MED + 3 LOW count-narrative drift) |
-| _(this commit)_ | T6 r2 fold | docs(correlation-hardening): T6 r2 fold — Codex 2 LOW (count-narrative + byte-match drift continues) |
+| `ea6bfb0` | T6 r2 fold | docs(correlation-hardening): T6 r2 fold — Codex 2 LOW (count-narrative + byte-match drift continues) |
+| _(this commit)_ | T6 r3 fold | docs(correlation-hardening): T6 r3 fold — Codex 2 LOW (CI-surface drift in scope intro + 🟡 pending bullet) |
 
 11 Codex review rounds across **task gates** T-1..T4 (T-1=2 [r1 + r2],
 T1=2 [r1 + r2], T2=3 [r1 + r2 + r2bis — r2 was procedural HOLD on
@@ -369,8 +374,11 @@ PERF_TEST=1 uv run pytest --collect-only -m perf tests/perf  # expect 1 collecte
   runs `apps/frontend/lighthouse/README.md` for-loop against the host
   triad after merge; produces `apps/frontend/lighthouse/reports/
   correlation/SUMMARY.md` + 6 JSONs (3 light + 3 dark).
-- **CI green on push.** First push lands at T7. Default 12-check ×
-  2-event surface preserved unchanged; the new perf job is
+- **CI green on push.** First push lands at T7. Surface for this branch
+  is 12 PR-event checks (not 24) because `chore/*` is outside the
+  `on.push.branches: ["main", "feat/**"]` filter at
+  `.github/workflows/ci.yml:5` — only the `pull_request` event fires;
+  see AC #14. The new `correlation-perf-smoke` job is
   `workflow_dispatch` only and NOT counted toward AC #14.
 - **Final external Codex review (PR-as-diff loop)** per
   `pattern_codex_body_review_loop` + `feedback_codex_iteration` 3-6
