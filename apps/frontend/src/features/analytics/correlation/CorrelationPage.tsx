@@ -1,5 +1,5 @@
 /**
- * Phase 3 Slice 3 D-1 — CorrelationPage T9 implementation.
+ * Phase 3 Slice 3 D-1 — CorrelationPage (T9 base + T11 i18n keys).
  *
  * 4-state render orchestrator (Plan §B8 a):
  *   - `correlation-loading`   — primary fetch in flight

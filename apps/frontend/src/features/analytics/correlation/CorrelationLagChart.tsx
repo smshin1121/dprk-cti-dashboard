@@ -1,5 +1,5 @@
 /**
- * Phase 3 Slice 3 D-1 — CorrelationLagChart T9 implementation.
+ * Phase 3 Slice 3 D-1 — CorrelationLagChart (T9 base + T11 i18n caption).
  *
  * Recharts `LineChart` at fixed 480×240 (Plan §B4 + the same
  * happy-dom + recharts convention used by `TrendChart` /

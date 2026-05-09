@@ -1,5 +1,5 @@
 /**
- * Phase 3 Slice 3 D-1 — CorrelationFilters T9 implementation.
+ * Phase 3 Slice 3 D-1 — CorrelationFilters (T9 base + T11 i18n keys).
  *
  * X / Y series pickers (catalog-driven disclosure dropdowns) and a
  * date-range pair (free-form ISO date inputs). Method toggle lives in
