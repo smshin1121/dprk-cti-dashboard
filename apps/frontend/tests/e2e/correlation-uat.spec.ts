@@ -61,6 +61,28 @@ const CORRELATION_QS =
   `x=${POPULATED_X}&y=${POPULATED_Y}` +
   `&date_from=${POPULATED_DATE_FROM}&date_to=${POPULATED_DATE_TO}`
 
+// UAT 2-specific window. The POPULATED fixture seeds 2018-01..2026-04
+// (100 months); the INSUFFICIENT_422 fixture seeds 2026-01..2026-06
+// (6 months). The two seeds OVERLAP at 2026-01..2026-04 because the BE
+// provider-state handlers do NOT clear prior fixtures (each call appends
+// rows by `url_canonical` keyed on the fixture_label — see
+// `_seed_correlation_dense_window` at `pact_states.py:2014-2076`).
+// Sequential UAT 1 + UAT 2 in the same worker therefore accumulates
+// populated + insufficient rows in the DB; querying the populated
+// window 2018-01..2026-04 finds the populated rows + 4 months of
+// insufficient rows, yielding effective_n ≈ 100 → BE returns 200, NOT
+// 422. The fix is to query a date window covering ONLY the months
+// unique to INSUFFICIENT_422 (2026-05..2026-06), where the populated
+// fixture has zero coverage. This yields effective_n=2 < 30 → BE
+// returns 422 with `value_error.insufficient_sample`. The test asserts
+// the 422 envelope shape + locked en copy, NOT the specific
+// effective_n value, so 2 vs 6 is irrelevant.
+const INSUFFICIENT_DATE_FROM = '2026-05-01'
+const INSUFFICIENT_DATE_TO = '2027-12-31'
+const INSUFFICIENT_QS =
+  `x=${POPULATED_X}&y=${POPULATED_Y}` +
+  `&date_from=${INSUFFICIENT_DATE_FROM}&date_to=${INSUFFICIENT_DATE_TO}`
+
 async function seedAndForwardCookie(
   context: BrowserContext,
   state: string,
@@ -181,11 +203,13 @@ test.describe('D-1 correlation UAT 1-5 (plan §4 T3 / C5 lock)', () => {
   }) => {
     await seedAndForwardCookie(context, INSUFFICIENT_422_STATE)
 
-    // 6-month window from the seeded fixture; effective_n=6 < 30
-    // triggers BE 422 with `value_error.insufficient_sample`. Use the
-    // SAME query window the UAT 1 happy path uses — the 422 fires on
-    // the seeded data shape, not on the request bounds.
-    await page.goto(`/analytics/correlation?${CORRELATION_QS}`)
+    // INSUFFICIENT_QS narrows to 2026-05..2027-12 — the months unique
+    // to the INSUFFICIENT_422 seed (POPULATED ends 2026-04). Without
+    // this narrowing, a worker that ran UAT 1 first would have
+    // accumulated populated rows in the DB and the query window would
+    // pick them up, producing a 200 response with effective_n ≈ 100.
+    // See the INSUFFICIENT_QS docstring above for the full reasoning.
+    await page.goto(`/analytics/correlation?${INSUFFICIENT_QS}`)
 
     const errorBranch = page.getByTestId('correlation-error')
     await expect(errorBranch).toBeVisible()
@@ -323,8 +347,17 @@ test.describe('D-1 correlation UAT 1-5 (plan §4 T3 / C5 lock)', () => {
     await expect(populated).toContainText('effective n')
     await expect(populated).toContainText('period')
 
-    // Toggle to KO. LocaleToggle cycles SUPPORTED_LOCALES (ko, en) so
-    // a single click flips us to ko.
+    // Toggle to KO. LocaleToggle is nested INSIDE the UserMenu Radix
+    // DropdownMenu (see `apps/frontend/src/components/UserMenu.tsx:99`)
+    // so it's only mounted/visible when the menu is open. Click the
+    // `user-menu-trigger` first to open the dropdown, then the
+    // `locale-toggle` becomes visible. Radix auto-closes the menu after
+    // a click inside, so the second toggle below opens it again.
+    // LocaleToggle cycles SUPPORTED_LOCALES (ko, en) so a single click
+    // flips us to ko.
+    const userMenuTrigger = page.getByTestId('user-menu-trigger')
+    await expect(userMenuTrigger).toBeVisible()
+    await userMenuTrigger.click()
     const localeToggle = page.getByTestId('locale-toggle')
     await expect(localeToggle).toBeVisible()
     await localeToggle.click()
@@ -358,7 +391,11 @@ test.describe('D-1 correlation UAT 1-5 (plan §4 T3 / C5 lock)', () => {
 
     // Toggle back to EN to confirm the cycle is reversible (and to
     // leave subsequent tests in the pinned EN state since fullyParallel
-    // is false but workers may reuse storage between describes).
+    // is false but workers may reuse storage between describes). The
+    // first click closed the dropdown; reopen UserMenu before clicking
+    // locale-toggle again.
+    await userMenuTrigger.click()
+    await expect(localeToggle).toBeVisible()
     await localeToggle.click()
     await expect(
       page.getByRole('heading', { name: 'Correlation' }),
