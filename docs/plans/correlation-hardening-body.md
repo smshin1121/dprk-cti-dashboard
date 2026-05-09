@@ -43,7 +43,7 @@ rename to `pr{N}-correlation-hardening.md` at T7 push per
 
 ---
 
-## What lands (8 commits, ~1,680 insertions / ~26 deletions across 15 files at the T6 head; verify with `git diff --shortstat main..HEAD` — current `main..HEAD` reports 14 files / 1,122 insertions / 26 deletions before T6 commits this body file)
+## What lands (9 commits, ~1,680 insertions / ~26 deletions across 15 files at the T6 r2 fold head; verify with `git diff --shortstat main..HEAD` — at T6 base + r1 fold `cddd3b6` the same diff is 15 files / 1,686 insertions / 26 deletions; this T6 r2 fold commit edits only `correlation-hardening-body.md` so file count + deletion count stay flat)
 
 | Commit | Phase | Change |
 |:---|:---|:---|
@@ -54,17 +54,23 @@ rename to `pr{N}-correlation-hardening.md` at T7 push per
 | `176c76f` | T2 base + r1 | feat(correlation-hardening): T2 — Q1 catalog grouping by schema root + r1 fold |
 | `0e5a62c` | T3 base + r1 + r2 | feat(correlation-hardening): T3 — Playwright UAT 1-5 spec + r1+r2 fold |
 | `d5ce424` | T4 base | feat(correlation-hardening): T4 — NFR-1 perf smoke + opt-in marker + workflow_dispatch CI job |
-| _(this commit)_ | T6 | docs: correlation-hardening T6 — PR body draft staged at correlation-hardening-body.md |
+| `cddd3b6` | T6 base + r1 fold | docs(correlation-hardening): T6 — PR body draft + r1 fold (Codex 3 MED + 3 LOW count-narrative drift) |
+| _(this commit)_ | T6 r2 fold | docs(correlation-hardening): T6 r2 fold — Codex 2 LOW (count-narrative + byte-match drift continues) |
 
-11 Codex review rounds across T-1..T4 (T-1=2 [r1 + r2], T1=2 [r1 + r2],
-T2=3 [r1 + r2 + r2bis — r2 was procedural HOLD on untracked-file
-visibility, re-ran as r2bis after staging], T3=3 [r1 + r2 + r3], T4=1
-[r1 CLEAN PROCEED 0 findings on first round]). 1 Codex round per task
-fewer than PR-B's per-task average (median 2 vs 2.5) — within
+11 Codex review rounds across **task gates** T-1..T4 (T-1=2 [r1 + r2],
+T1=2 [r1 + r2], T2=3 [r1 + r2 + r2bis — r2 was procedural HOLD on
+untracked-file visibility, re-ran as r2bis after staging], T3=3 [r1 +
+r2 + r3], T4=1 [r1 CLEAN PROCEED 0 findings on first round]) + the T6
+**PR-body** review loop running on this commit chain
+(see `.codex-review/correlation-hardening-t6-r*.transcript.log` —
+class-of-issue: count-narrative + byte-match drift; folds the body
+toward reviewer-trace fidelity). 1 task-gate round per task fewer than
+PR-B's per-task average (median 2 vs 2.5) — within
 `feedback_codex_iteration` 3-6 band lower edge per umbrella §11 + plan
-§2 C10 lock. Transcripts at
+§2 C10 lock. Task transcripts at
 `.codex-review/correlation-hardening-t{-1..4}-r{1..3,2bis}.transcript.log` —
-glob pattern `r*` matches all (including `r2bis`).
+glob pattern `r*` matches all (including `r2bis`); PR-body transcripts
+under `t6-r*`.
 
 ---
 
@@ -388,7 +394,7 @@ PERF_TEST=1 uv run pytest --collect-only -m perf tests/perf  # expect 1 collecte
 | 11 | Pact contract 26/26 GREEN preserved (no PR-C change to consumer interactions) | ✅ (locally) / 🟡 (CI verify at T7) |
 | 12 | FE production build green (`pnpm run build` exits 0) | ✅ (locally) / 🟡 (CI verify at T7) |
 | 13 | OpenAPI snapshot diff at PR head is empty | ✅ (locally — no BE behavior change) / 🟡 (CI `contract-verify` job at T7) |
-| 14 | Branch CI green on all 12 checks × 2 events (default surface; perf job is workflow_dispatch only and NOT counted toward this AC) | 🟡 (after push) |
+| 14 | Branch CI green on all 12 PR-event checks (default surface). The `chore/p3.s3-correlation-hardening` branch name is OUTSIDE the `on.push.branches: ["main", "feat/**"]` filter at `.github/workflows/ci.yml:5`, so the push event does NOT fire on this branch — only the `pull_request` event runs. PR #36's branch matched `feat/**` and saw the 12 × 2 = 24 surface; PR-C's `chore/*` branch sees the 12 PR-event checks only. The perf job is `workflow_dispatch` only and NOT counted toward this AC. | 🟡 (after push) |
 | 15 | Final external Codex review reports no unresolved CRITICAL/HIGH | 🟡 (PR-as-diff at T7-T8) |
 | 16 | PR body present at `docs/plans/pr{N}-correlation-hardening-body.md`; plan present at `docs/plans/pr{N}-correlation-hardening.md` | 🟡 (T6 body shipping in this commit; rename at T7) |
 
@@ -559,6 +565,6 @@ curl -b "session=<cookie>" 'http://localhost:8000/api/v1/analytics/correlation?x
 - [x] Plan doc (`docs/plans/correlation-hardening.md`) + PR body (`docs/plans/correlation-hardening-body.md`) committed; both rename to `pr{N}-*` at T7 push per `plan_doc_convention`
 - [ ] T5 — Live `pnpm pact:provider` replay 5/5 + legacy 21 verify (user-side, requires Docker stack); transcript captured
 - [ ] T1 — Local Lighthouse 6-target audit run produces `reports/correlation/SUMMARY.md` (informational, optional)
-- [ ] Push DRAFT; CI 12 × 2 = 24 green
+- [ ] Push DRAFT; CI 12 PR-event checks green (push event does NOT fire on `chore/**` branches per `.github/workflows/ci.yml:5` filter — only the `pull_request` event runs, so AC #14's surface is 12 not 24)
 - [ ] First `correlation-perf-smoke` `workflow_dispatch` run captures wall-clock p95 ≤ 500 ms
 - [ ] Final external Codex PR-as-diff review reports no unresolved CRIT/HIGH (per `feedback_codex_iteration`)
