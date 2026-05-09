@@ -726,3 +726,107 @@ jobs:
               assert code in review_responses, f'missing {code} response'
           print('openapi surface ok:', sorted(required))
           "
+
+  # -------------------------------------------------------------------------
+  # correlation-perf-smoke — PR-C T4 (plan `correlation-hardening.md` §4 T4)
+  #
+  # NFR-1 perf smoke: p95 ≤ 500 ms over 50 sequential GETs of the populated
+  # /api/v1/analytics/correlation endpoint against host-hybrid uvicorn.
+  #
+  # Trigger: workflow_dispatch ONLY (manual). Per plan §C4 + §8 Q-C1 default,
+  # this job is excluded from the default PR / push CI surface — perf budgets
+  # measured on cold-start GitHub-hosted runners would flake (`pitfall_pact_v3
+  # _ci_cold_start_race`); the value is in detecting genuine regressions on
+  # demand, not on every push.
+  #
+  # Boot pattern mirrors `frontend-e2e` (postgres + redis + alembic + uvicorn
+  # + healthcheck) but skips the FE preview side — the perf test calls
+  # `/_pact/provider_states` directly to seed the populated fixture and mint
+  # an analyst session cookie; no FE involvement.
+  # -------------------------------------------------------------------------
+  correlation-perf-smoke:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: dprk_cti_perf
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      ALEMBIC_DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/dprk_cti_perf
+      DATABASE_URL: postgresql+psycopg_async://postgres:postgres@localhost:5432/dprk_cti_perf
+      REDIS_URL: redis://localhost:6379/0
+      RATE_LIMIT_STORAGE_URL: redis://localhost:6379/1
+      APP_ENV: dev
+      JWT_SECRET: perf-smoke-secret-at-least-32-chars-long
+      OIDC_CLIENT_ID: dprk-cti
+      OIDC_CLIENT_SECRET: perf-smoke-oidc-secret
+      OIDC_ISSUER_URL: http://keycloak.test/realms/dprk
+      OIDC_REDIRECT_BASE_URL: http://localhost:8000
+      SESSION_SIGNING_KEY: perf-smoke-signing-key-at-least-32-chars-long
+      SESSION_COOKIE_NAME: dprk_cti_session
+      SESSION_COOKIE_SECURE: "false"
+      SESSION_COOKIE_SAMESITE: lax
+      CORS_ORIGINS: http://127.0.0.1:4173
+      PERF_TEST: "1"
+      PERF_API_BASE_URL: http://127.0.0.1:8000
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Sync api dev dependencies
+        working-directory: services/api
+        run: uv sync
+      - name: Alembic upgrade
+        run: uv run --project services/api alembic -c db/alembic.ini upgrade head
+      - name: Start uvicorn
+        working-directory: services/api
+        run: |
+          uv run uvicorn api.main:app --host 127.0.0.1 --port 8000 \
+            --log-level warning > ../../uvicorn-perf.log 2>&1 &
+          echo $! > ../../uvicorn-perf.pid
+      - name: Wait for BE /healthz
+        run: |
+          for i in $(seq 1 40); do
+            if curl -sf http://127.0.0.1:8000/healthz >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 0.5
+          done
+          echo "uvicorn did not come up"
+          cat uvicorn-perf.log || true
+          exit 1
+      - name: Run correlation perf smoke
+        working-directory: services/api
+        run: uv run pytest -m perf tests/perf -v
+      - name: Surface server logs on failure
+        if: failure()
+        run: |
+          echo "=== uvicorn-perf.log ==="
+          cat uvicorn-perf.log || echo "(no log)"
+      - name: Stop background processes
+        if: always()
+        run: |
+          if [ -f uvicorn-perf.pid ]; then
+            kill "$(cat uvicorn-perf.pid)" 2>/dev/null || true
+          fi
