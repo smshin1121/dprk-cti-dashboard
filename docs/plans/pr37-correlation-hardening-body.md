@@ -48,7 +48,7 @@ PR #36's merge).
 
 ---
 
-## What lands (17 commits, 15 files / ~1,800 insertions / 26 deletions at the T7 PR-as-diff r2 fold head; verify with `git diff --shortstat main..HEAD`. Reference-point ladder, each entry verifiable via `git diff --shortstat main..<sha>`: cddd3b6 T6 base+r1 = 1,686; ea6bfb0 T6 r2 = 1,692; 09fecb7 T6 r3 = 1,700; 4fe0ccd T7 push base = 1,702; f917165 T7 fix #1 (UAT 2 + UAT 5 part 1) = 1,739; 55c4929 T7 fix #2 (UAT 5 dropdown-close) = 1,764; 30f87e9 T7 r0 sync = 1,774; 7d6f074 T7 PR-as-diff r1 fold = 1,782. Each T6 fold commit edited only the body; T7 push base renamed plan + body to `pr37-*` (+15 / -13); T7 fix #1 + #2 modified only `correlation-uat.spec.ts` — per-commit deltas are +45 / -8 then +31 / -6 (sum +76 / -14 per-commit; the -14 lines were internal to the chain so the cumulative `git diff main..HEAD` deletion count stays at 26 unchanged from T7 push base). File count stays flat at 15 across the entire chain.)
+## What lands (17 commits ahead of main INCLUDING this T7 PR-as-diff r3 fold itself; verify with `git rev-list --count main..HEAD` AFTER this commit lands — at the previous fold head `16ff2cc` the count was 16). Diff at this T7 PR-as-diff r3 fold head: 15 files / ~1,800 insertions / 26 deletions (verify with `git diff --shortstat main..HEAD`). Reference-point ladder, each entry verifiable via `git diff --shortstat main..<sha>`: cddd3b6 T6 base+r1 = 1,686; ea6bfb0 T6 r2 = 1,692; 09fecb7 T6 r3 = 1,700; 4fe0ccd T7 push base = 1,702; f917165 T7 fix #1 (UAT 2 + UAT 5 part 1) = 1,739; 55c4929 T7 fix #2 (UAT 5 dropdown-close) = 1,764; 30f87e9 T7 r0 sync = 1,774; 7d6f074 T7 PR-as-diff r1 fold = 1,782; 16ff2cc T7 PR-as-diff r2 fold = 1,787. Each T6 fold commit edited only the body; T7 push base renamed plan + body to `pr37-*` (+15 / -13); T7 fix #1 + #2 modified only `correlation-uat.spec.ts` — per-commit deltas are +45 / -8 then +31 / -6 (sum +76 / -14 per-commit; the -14 lines were internal to the chain so the cumulative `git diff main..HEAD` deletion count stays at 26 unchanged from T7 push base). File count stays flat at 15 across the entire chain. **Convention**: every fold commit's body describes its OWN POST-COMMIT state — the count N = total ahead of main INCLUDING this fold itself; tilde-approximation `~1,800` insertions covers within-fold-cycle drift since each fold ticks the stat by single digits.)
 
 | Commit | Phase | Change |
 |:---|:---|:---|
@@ -67,7 +67,8 @@ PR #36's merge).
 | `55c4929` | T7 fix #2 | fix(correlation-hardening): T7 — UAT 5 dropdown-close after locale-toggle (Radix aria-hidden focus-trap) |
 | `30f87e9` | T7 r0 sync | docs(correlation-hardening): T7 r0 — post-CI-green body sync (🟡 → ✅ for UAT 1-5 + AC #11/12/13/14; +2 fix commit rows + stat ladder extended) |
 | `7d6f074` | T7 PR-as-diff r1 fold | docs(correlation-hardening): T7 PR-as-diff r1 fold — Codex 2 LOW (f917165 stat ladder + UAT 2 effective_n comment, count-narrative drift continues) |
-| _(this commit)_ | T7 PR-as-diff r2 fold | docs(correlation-hardening): T7 PR-as-diff r2 fold — Codex 3 LOW (header stat + AC SHA refs + GitHub PR body sync, drift continues at PR-as-diff layer) |
+| `16ff2cc` | T7 PR-as-diff r2 fold | docs(correlation-hardening): T7 PR-as-diff r2 fold — Codex 3 LOW (header stat + AC SHA refs + GitHub PR body sync, drift continues at PR-as-diff layer) |
+| _(this commit)_ | T7 PR-as-diff r3 fold | docs(correlation-hardening): T7 PR-as-diff r3 fold — Codex 3 LOW (commit count convention + remove volatile LoC claims, drift converges to convention-aware framing) |
 
 11 Codex review rounds across **task gates** T-1..T4 (T-1=2 [r1 + r2],
 T1=2 [r1 + r2], T2=3 [r1 + r2 + r2bis — r2 was procedural HOLD on
@@ -90,8 +91,10 @@ under `t6-r*`.
 
 ### New surfaces
 
-- **Playwright spec** `apps/frontend/tests/e2e/correlation-uat.spec.ts`
-  (369 LoC). 5 test cases mapped 1:1 to umbrella spec §3 UAT 1-5:
+- **Playwright spec** `apps/frontend/tests/e2e/correlation-uat.spec.ts`.
+  5 test cases mapped 1:1 to umbrella spec §3 UAT 1-5 (LoC drifts
+  across T7 fix #1 + #2 + r1 fold; verify with `wc -l` at HEAD if
+  needed):
   - UAT 1 — populated render (caveat banner + both method markers + chart
     caption locale-pinned `effective n` / `period` + 2 Recharts
     `recharts-line-curve` paths + Spearman click round-trip).
@@ -180,7 +183,7 @@ under `t6-r*`.
 ### Modified surfaces
 
 - `apps/frontend/src/features/analytics/correlation/CorrelationFilters.tsx`
-  (236 LoC, was 192). `SERIES_ROOTS` literal-tuple drives stable
+  modified for Q1 grouping refactor. `SERIES_ROOTS` literal-tuple drives stable
   `reports.published` → `incidents.reported` group order. Each axis
   renders `<ul role="listbox">` containing per-root `<ul role="group">`
   partitions. Section headers use new testids
