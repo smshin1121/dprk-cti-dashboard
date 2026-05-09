@@ -60,6 +60,7 @@ export function ActorsPage(): JSX.Element {
   return (
     <section
       data-testid="actors-page"
+      data-page-class="analyst-workspace"
       aria-labelledby="actors-heading"
       className="flex flex-col gap-4 p-6"
     >

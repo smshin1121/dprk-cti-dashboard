@@ -5,6 +5,9 @@ import {
   actorListResponseSchema,
   actorReportsResponseSchema,
   attackMatrixResponseSchema,
+  correlationCatalogResponseSchema,
+  correlationCellMethodBlockSchema,
+  correlationResponseSchema,
   currentUserSchema,
   dashboardSummarySchema,
   geoResponseSchema,
@@ -1186,5 +1189,319 @@ describe('searchResponseSchema — BE OpenAPI example parity', () => {
     expect(hit.vector_rank).toBeTypeOf('number')
     expect(Number.isInteger(hit.vector_rank)).toBe(true)
     expect(hit.vector_rank as number).toBeGreaterThanOrEqual(1)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Phase 3 Slice 3 D-1 — Correlation schemas (PR-B T2)
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a populated 49-cell `lag_grid` covering lags `[-24..+24]`
+ * ascending. All cells render the BE happy-path shape: `reason: null`,
+ * non-null metric fields, `significant: true`. Tests that need a
+ * non-populated cell mutate one slot in place after copy.
+ */
+function buildHappyLagGrid(): unknown[] {
+  const cells: unknown[] = []
+  for (let lag = -24; lag <= 24; lag++) {
+    cells.push({
+      lag,
+      pearson: {
+        r: 0.4,
+        p_raw: 0.001,
+        p_adjusted: 0.005,
+        significant: true,
+        effective_n_at_lag: 60,
+        reason: null,
+      },
+      spearman: {
+        r: 0.38,
+        p_raw: 0.002,
+        p_adjusted: 0.006,
+        significant: true,
+        effective_n_at_lag: 60,
+        reason: null,
+      },
+    })
+  }
+  return cells
+}
+
+const happyCorrelationResponse = {
+  x: 'reports.total',
+  y: 'incidents.total',
+  date_from: '2020-01-01',
+  date_to: '2024-12-31',
+  alpha: 0.05,
+  effective_n: 60,
+  lag_grid: buildHappyLagGrid(),
+  interpretation: {
+    caveat: 'Correlation does not imply causation.',
+    methodology_url: '/docs/methodology/correlation',
+    warnings: [
+      {
+        code: 'sparse_window',
+        message: 'Window contains fewer than 36 valid months.',
+        severity: 'info' as const,
+      },
+    ],
+  },
+}
+
+const happyCatalogResponse = {
+  series: [
+    {
+      id: 'reports.total',
+      label_ko: '보고서 총수',
+      label_en: 'Total reports',
+      root: 'reports.published' as const,
+      bucket: 'monthly' as const,
+    },
+    {
+      id: 'incidents.total',
+      label_ko: '사건 총수',
+      label_en: 'Total incidents',
+      root: 'incidents.reported' as const,
+      bucket: 'monthly' as const,
+    },
+  ],
+}
+
+describe('correlationCatalogResponseSchema', () => {
+  it('parses a populated catalog (happy)', () => {
+    const result = correlationCatalogResponseSchema.parse(happyCatalogResponse)
+    expect(result.series).toHaveLength(2)
+    expect(result.series[0].root).toBe('reports.published')
+    expect(result.series[1].root).toBe('incidents.reported')
+  })
+
+  it('parses an empty series list (BE may return zero rows when DB is empty)', () => {
+    const result = correlationCatalogResponseSchema.parse({ series: [] })
+    expect(result.series).toEqual([])
+  })
+
+  it('NEGATIVE 1: rejects an unknown literal for `root` (drift from BE Literal[])', () => {
+    const drifted = {
+      series: [
+        { ...happyCatalogResponse.series[0], root: 'reports.bogus' },
+      ],
+    }
+    expect(() => correlationCatalogResponseSchema.parse(drifted)).toThrow()
+  })
+
+  it('NEGATIVE 2: rejects an unknown literal for `bucket`', () => {
+    const drifted = {
+      series: [
+        { ...happyCatalogResponse.series[0], bucket: 'quarterly' },
+      ],
+    }
+    expect(() => correlationCatalogResponseSchema.parse(drifted)).toThrow()
+  })
+})
+
+describe('correlationResponseSchema', () => {
+  it('parses the happy populated response (49 cells, reason=null on every cell)', () => {
+    const result = correlationResponseSchema.parse(happyCorrelationResponse)
+    expect(result.lag_grid).toHaveLength(49)
+    expect(result.lag_grid[0].lag).toBe(-24)
+    expect(result.lag_grid[48].lag).toBe(24)
+    expect(result.lag_grid[24].lag).toBe(0)
+    expect(result.lag_grid[0].pearson.reason).toBeNull()
+    expect(result.interpretation.warnings).toHaveLength(1)
+  })
+
+  it('parses a response with a typed-reason cell (reason="insufficient_sample_at_lag")', () => {
+    const grid = (happyCorrelationResponse.lag_grid as unknown[]).map((cell, idx) => {
+      if (idx !== 0) return cell
+      return {
+        ...(cell as Record<string, unknown>),
+        pearson: {
+          r: null,
+          p_raw: null,
+          p_adjusted: null,
+          significant: false,
+          effective_n_at_lag: 12,
+          reason: 'insufficient_sample_at_lag',
+        },
+        spearman: {
+          r: null,
+          p_raw: null,
+          p_adjusted: null,
+          significant: false,
+          effective_n_at_lag: 12,
+          reason: 'insufficient_sample_at_lag',
+        },
+      }
+    })
+    const result = correlationResponseSchema.parse({
+      ...happyCorrelationResponse,
+      lag_grid: grid,
+    })
+    expect(result.lag_grid[0].pearson.reason).toBe('insufficient_sample_at_lag')
+    expect(result.lag_grid[0].pearson.r).toBeNull()
+  })
+
+  it('parses an empty warnings array (BE returns [] when no warnings fire)', () => {
+    const result = correlationResponseSchema.parse({
+      ...happyCorrelationResponse,
+      interpretation: {
+        ...happyCorrelationResponse.interpretation,
+        warnings: [],
+      },
+    })
+    expect(result.interpretation.warnings).toEqual([])
+  })
+
+  it('NEGATIVE 3: rejects an extra field on the top-level response (`.strict()` lock)', () => {
+    expect(() =>
+      correlationResponseSchema.parse({
+        ...happyCorrelationResponse,
+        sneaky_field: 'unauthorised drift from BE shape',
+      }),
+    ).toThrow()
+  })
+
+  it('NEGATIVE 4: rejects an extra field on a cell-method-block (`.strict()` lock on nested schema)', () => {
+    const drifted = (happyCorrelationResponse.lag_grid as unknown[]).map((cell, idx) => {
+      if (idx !== 0) return cell
+      const c = cell as Record<string, unknown>
+      const pearson = c.pearson as Record<string, unknown>
+      return {
+        ...c,
+        pearson: { ...pearson, undocumented_metric: 0.1 },
+      }
+    })
+    expect(() =>
+      correlationResponseSchema.parse({ ...happyCorrelationResponse, lag_grid: drifted }),
+    ).toThrow()
+  })
+
+  it('NEGATIVE 5: rejects an unknown literal for `reason` (drift from BE Literal[])', () => {
+    const drifted = (happyCorrelationResponse.lag_grid as unknown[]).map((cell, idx) => {
+      if (idx !== 0) return cell
+      const c = cell as Record<string, unknown>
+      return {
+        ...c,
+        pearson: {
+          r: null,
+          p_raw: null,
+          p_adjusted: null,
+          significant: false,
+          effective_n_at_lag: 12,
+          reason: 'unknown_reason_value',
+        },
+      }
+    })
+    expect(() =>
+      correlationResponseSchema.parse({ ...happyCorrelationResponse, lag_grid: drifted }),
+    ).toThrow()
+  })
+
+  it('NEGATIVE 6: rejects an unknown warning code (drift from BE 6-value enum)', () => {
+    expect(() =>
+      correlationResponseSchema.parse({
+        ...happyCorrelationResponse,
+        interpretation: {
+          ...happyCorrelationResponse.interpretation,
+          warnings: [
+            {
+              code: 'undocumented_warning',
+              message: 'msg',
+              severity: 'info',
+            },
+          ],
+        },
+      }),
+    ).toThrow()
+  })
+
+  it('NEGATIVE 7: rejects null in the non-nullable `significant` field', () => {
+    const drifted = (happyCorrelationResponse.lag_grid as unknown[]).map((cell, idx) => {
+      if (idx !== 0) return cell
+      const c = cell as Record<string, unknown>
+      const pearson = c.pearson as Record<string, unknown>
+      return {
+        ...c,
+        pearson: { ...pearson, significant: null },
+      }
+    })
+    expect(() =>
+      correlationResponseSchema.parse({ ...happyCorrelationResponse, lag_grid: drifted }),
+    ).toThrow()
+  })
+
+  it('rejects a lag_grid of the wrong length (BE locks exactly 49 cells)', () => {
+    expect(() =>
+      correlationResponseSchema.parse({
+        ...happyCorrelationResponse,
+        lag_grid: (happyCorrelationResponse.lag_grid as unknown[]).slice(0, 48),
+      }),
+    ).toThrow()
+  })
+
+  it('rejects a per-cell `lag` outside the [-24, +24] bound', () => {
+    const drifted = (happyCorrelationResponse.lag_grid as unknown[]).map((cell, idx) => {
+      if (idx !== 0) return cell
+      return { ...(cell as Record<string, unknown>), lag: -25 }
+    })
+    expect(() =>
+      correlationResponseSchema.parse({ ...happyCorrelationResponse, lag_grid: drifted }),
+    ).toThrow()
+  })
+
+  it('rejects an alpha at the boundary value 0.0 (BE locks gt=0.0)', () => {
+    expect(() =>
+      correlationResponseSchema.parse({ ...happyCorrelationResponse, alpha: 0.0 }),
+    ).toThrow()
+  })
+
+  it('rejects an alpha at the boundary value 1.0 (BE locks lt=1.0)', () => {
+    expect(() =>
+      correlationResponseSchema.parse({ ...happyCorrelationResponse, alpha: 1.0 }),
+    ).toThrow()
+  })
+})
+
+describe('correlationCellMethodBlockSchema', () => {
+  it('parses a populated cell (reason=null)', () => {
+    const result = correlationCellMethodBlockSchema.parse({
+      r: 0.3,
+      p_raw: 0.01,
+      p_adjusted: 0.04,
+      significant: true,
+      effective_n_at_lag: 50,
+      reason: null,
+    })
+    expect(result.reason).toBeNull()
+    expect(result.r).toBe(0.3)
+  })
+
+  it('parses each of the 3 typed-reason cells (insufficient_sample_at_lag / degenerate / low_count_suppressed)', () => {
+    const reasons = ['insufficient_sample_at_lag', 'degenerate', 'low_count_suppressed'] as const
+    for (const reason of reasons) {
+      const result = correlationCellMethodBlockSchema.parse({
+        r: null,
+        p_raw: null,
+        p_adjusted: null,
+        significant: false,
+        effective_n_at_lag: 0,
+        reason,
+      })
+      expect(result.reason).toBe(reason)
+    }
+  })
+
+  it('rejects a negative effective_n_at_lag', () => {
+    expect(() =>
+      correlationCellMethodBlockSchema.parse({
+        r: null,
+        p_raw: null,
+        p_adjusted: null,
+        significant: false,
+        effective_n_at_lag: -1,
+        reason: 'degenerate',
+      }),
+    ).toThrow()
   })
 })

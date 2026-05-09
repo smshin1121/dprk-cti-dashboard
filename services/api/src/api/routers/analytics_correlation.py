@@ -20,7 +20,7 @@ Positive lag = X leads Y by k months.
 from __future__ import annotations
 
 from datetime import date
-from typing import Annotated
+from typing import Annotated, Awaitable, Callable
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -40,6 +40,38 @@ from ..schemas.correlation import (
     CorrelationCatalogResponse,
     CorrelationResponse,
 )
+
+
+# Indirection layer for `compute_correlation` so the Pact provider-state
+# handler can install a tightly-controlled stub for the
+# `correlation full-reason-enum` interaction (PR-B T13 r1 fold). The
+# default factory returns the real aggregator function unchanged; in
+# `services/api/src/api/routers/pact_states.py` the
+# `seeded correlation full-reason-enum fixture` state replaces this
+# factory via `app.dependency_overrides` so the BE returns a canned
+# 49-cell response that pins `equal(reason)` literals at idx
+# 0/12/18/30/36/48 — a shape the real aggregator cannot produce from
+# real DB rows because its `_safe_pearsonr` / `_safe_spearmanr`
+# decision tree shares X/Y arrays across all 49 lags. See
+# `pattern_pact_dependency_override_via_provider_state` for the
+# pattern. The override is registered on `APP_ENV != prod` only via
+# `pact_states.router` mounting; in production the factory always
+# returns the real `compute_correlation`.
+ComputeCorrelationFn = Callable[
+    ...,
+    Awaitable[dict[str, object]],
+]
+
+
+def get_compute_correlation() -> ComputeCorrelationFn:
+    """Return the active `compute_correlation` implementation.
+
+    The route handler depends on this factory via FastAPI `Depends`;
+    pact_states.py installs a stub by overriding this dependency in
+    `app.dependency_overrides` for the duration of the
+    `correlation full-reason-enum` interaction.
+    """
+    return compute_correlation
 
 
 router = APIRouter()
@@ -201,6 +233,9 @@ async def correlation_endpoint(
     ] = 0.05,
     session: AsyncSession = Depends(get_db),
     _current_user: CurrentUser = Depends(require_role(*_READ_ROLES)),
+    compute_correlation_fn: ComputeCorrelationFn = Depends(
+        get_compute_correlation
+    ),
 ) -> CorrelationResponse:
     # Spec §7.3 + R-15 — identical_series guard before any DB hit.
     if x == y:
@@ -244,7 +279,7 @@ async def correlation_endpoint(
         )
 
     try:
-        raw = await compute_correlation(
+        raw = await compute_correlation_fn(
             session,
             x=x,
             y=y,

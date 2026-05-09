@@ -21,14 +21,18 @@ beforeEach(async () => {
 })
 
 describe('COMMAND_IDS scope lock', () => {
-  it('exposes exactly the 6 IDs locked in plan D3 + Ferrari L1', () => {
+  it('exposes exactly the 7 IDs locked in plan D3 + Ferrari L1 + PR-B T10', () => {
     // Ferrari L1 removed `theme.cycle` (single dark canvas, no theme
-    // toggle). The 6 remaining IDs are the scope lock.
+    // toggle). PR-B T10 added `nav.correlation` alongside the
+    // /analytics/correlation router mount, the Shell nav entry, and
+    // the PAGE_CLASS_BY_ROUTE manifest entry — all four surfaces
+    // stay in sync. The 7 remaining IDs are the scope lock.
     expect(COMMAND_IDS).toEqual([
       'nav.dashboard',
       'nav.reports',
       'nav.incidents',
       'nav.actors',
+      'nav.correlation',
       'filters.clear',
       'auth.logout',
     ])

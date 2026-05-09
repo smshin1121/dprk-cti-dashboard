@@ -7,8 +7,10 @@
  * swaps the placeholder for the real command list while preserving
  * every contract that shell covered.
  *
- * Command set (plan D3 — deliberately narrow):
- *   - Navigate: /dashboard, /reports, /incidents, /actors
+ * Command set (plan D3 — deliberately narrow; PR-B T10 added the
+ * analytics/correlation entry):
+ *   - Navigate: /dashboard, /reports, /incidents, /actors,
+ *               /analytics/correlation
  *   - View:     clear filters
  *   - Session:  sign out
  *
@@ -73,6 +75,7 @@ const NAV_PATHS: Record<
   'nav.reports': '/reports',
   'nav.incidents': '/incidents',
   'nav.actors': '/actors',
+  'nav.correlation': '/analytics/correlation',
 }
 
 export function CommandPaletteButton(): JSX.Element {
@@ -120,6 +123,7 @@ export function CommandPaletteButton(): JSX.Element {
       case 'nav.reports':
       case 'nav.incidents':
       case 'nav.actors':
+      case 'nav.correlation':
         navigate(NAV_PATHS[id])
         return
       case 'filters.clear':

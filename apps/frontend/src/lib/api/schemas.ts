@@ -624,3 +624,163 @@ export type SimilarReportEntry = z.infer<typeof similarReportEntrySchema>
 export type SimilarReportsResponse = z.infer<typeof similarReportsResponseSchema>
 export type SearchHit = z.infer<typeof searchHitSchema>
 export type SearchResponse = z.infer<typeof searchResponseSchema>
+
+// ---------------------------------------------------------------------------
+// Phase 3 Slice 3 D-1 — Correlation (PR-B consumer side, plan T2)
+// ---------------------------------------------------------------------------
+//
+// Mirrors `services/api/src/api/schemas/correlation.py` field-for-field per
+// the consumer-side inventory at
+// `apps/frontend/src/features/analytics/correlation/CONTRACT.md` (local-only
+// per `pattern_local_only_ignore_via_git_info_exclude`). The BE pydantic
+// models declare `ConfigDict(extra="forbid", strict=True)` so each schema
+// here uses `.strict()` to reject unknown keys at parse time.
+//
+// Source of truth: BE pydantic on main@5b42c6e. When the BE shape changes,
+// regenerate the OpenAPI snapshot first; T2 negative tests will fire on
+// drift before T8 Pact runs.
+//
+// Scope boundary — T2 covers exactly the 7 success-response DTOs the plan
+// task table enumerates: catalog item, catalog response, cell-method-block,
+// lag-cell, warning, interpretation, and the top-level primary response.
+// The 422 error-envelope schema (CONTRACT.md §3 — router-authored A/B/C/D
+// + FastAPI default-validation class with `.passthrough()` lenience) is
+// T3's surface (`endpoints.ts`'s `fetchCorrelation` parses errors through
+// it before throwing — plan §4 T3 exit "422 detail surface preserved as
+// throw"). Adding it here would over-extend T2's scope.
+
+/**
+ * 3-value cell-reason literal union — pydantic `CorrelationCellReason`
+ * (`schemas/correlation.py:57-61`). The full FE state space is `reason |
+ * null`; the schema field is `correlationCellReasonSchema.nullable()`,
+ * giving the locked 4-state surface (3 non-null reasons + null populated)
+ * per umbrella §5.2 line 279.
+ */
+export const correlationCellReasonSchema = z.enum([
+  'insufficient_sample_at_lag',
+  'degenerate',
+  'low_count_suppressed',
+])
+
+/**
+ * 6-value warning-code literal union — pydantic `CorrelationWarningCode`
+ * (`schemas/correlation.py:112-119`). Each code maps 1:1 to a T11 i18n key
+ * under `correlation.warnings.<code>` in `ko.json` + `en.json`.
+ */
+export const correlationWarningCodeSchema = z.enum([
+  'non_stationary_suspected',
+  'outlier_influence',
+  'sparse_window',
+  'cross_rooted_pair',
+  'identity_or_containment_suspected',
+  'low_count_suppressed_cells',
+])
+
+/**
+ * Catalog row — `pydantic CorrelationSeriesItem` (`schemas/correlation.py:30-43`).
+ *
+ * `id` is OPAQUE per spec R-9; the FE renders via `label_ko` / `label_en`
+ * and never parses the id structure. `root` is a 2-value literal mirroring
+ * the BE; `bucket` is currently single-valued at `'monthly'` (future
+ * granularities are umbrella §10.2, out of scope for slice 3).
+ */
+export const correlationSeriesItemSchema = z
+  .object({
+    id: z.string(),
+    label_ko: z.string(),
+    label_en: z.string(),
+    root: z.enum(['reports.published', 'incidents.reported']),
+    bucket: z.literal('monthly'),
+  })
+  .strict()
+
+export const correlationCatalogResponseSchema = z
+  .object({
+    series: z.array(correlationSeriesItemSchema),
+  })
+  .strict()
+
+/**
+ * Homogeneous 6-field per-method block — pydantic
+ * `CorrelationCellMethodBlock` (`schemas/correlation.py:64-96`).
+ *
+ * Locked invariant (BE-side `model_validator`):
+ *   - `reason !== null`  → `r`/`p_raw`/`p_adjusted` are null AND `significant === false`.
+ *   - `reason === null`  → `r`/`p_raw`/`p_adjusted` are non-null (`significant` may be true or false).
+ *
+ * The FE schema mirrors *types only* — pydantic enforces the invariant
+ * server-side and any FE re-assertion risks drifting from the BE source
+ * of truth (CONTRACT.md §2 T2 zod implication). T9 `CorrelationLagChart`
+ * branches on `reason` first and chooses the display path.
+ */
+export const correlationCellMethodBlockSchema = z
+  .object({
+    r: z.number().nullable(),
+    p_raw: z.number().nullable(),
+    p_adjusted: z.number().nullable(),
+    significant: z.boolean(),
+    effective_n_at_lag: z.number().int().gte(0),
+    reason: correlationCellReasonSchema.nullable(),
+  })
+  .strict()
+
+export const correlationLagCellSchema = z
+  .object({
+    lag: z.number().int().gte(-24).lte(24),
+    pearson: correlationCellMethodBlockSchema,
+    spearman: correlationCellMethodBlockSchema,
+  })
+  .strict()
+
+export const correlationWarningSchema = z
+  .object({
+    code: correlationWarningCodeSchema,
+    message: z.string(),
+    severity: z.enum(['info', 'warn']),
+  })
+  .strict()
+
+export const correlationInterpretationSchema = z
+  .object({
+    caveat: z.string(),
+    methodology_url: z.string(),
+    warnings: z.array(correlationWarningSchema),
+  })
+  .strict()
+
+/**
+ * Top-level 200 response — pydantic `CorrelationResponse`
+ * (`schemas/correlation.py:149-180`).
+ *
+ * `lag_grid` is pinned to exactly 49 elements (BE `min_length=49,
+ * max_length=49` plus a `model_validator` asserting the lags are the
+ * ascending sequence `[-24..+24]`). The exact-sequence invariant doesn't
+ * need FE re-assertion per CONTRACT.md §2; the per-cell `lag` range
+ * narrows enough on the FE side.
+ *
+ * `date_from` / `date_to` are JSON-serialised pydantic dates (`YYYY-MM-DD`
+ * strings); the schema keeps them as `z.string()` rather than coercing to
+ * `Date` because happy-dom drops timezone bits on parse.
+ */
+export const correlationResponseSchema = z
+  .object({
+    x: z.string(),
+    y: z.string(),
+    date_from: z.string(),
+    date_to: z.string(),
+    alpha: z.number().gt(0).lt(1),
+    effective_n: z.number().int().gte(0),
+    lag_grid: z.array(correlationLagCellSchema).length(49),
+    interpretation: correlationInterpretationSchema,
+  })
+  .strict()
+
+export type CorrelationCellReason = z.infer<typeof correlationCellReasonSchema>
+export type CorrelationWarningCode = z.infer<typeof correlationWarningCodeSchema>
+export type CorrelationSeriesItem = z.infer<typeof correlationSeriesItemSchema>
+export type CorrelationCatalogResponse = z.infer<typeof correlationCatalogResponseSchema>
+export type CorrelationCellMethodBlock = z.infer<typeof correlationCellMethodBlockSchema>
+export type CorrelationLagCell = z.infer<typeof correlationLagCellSchema>
+export type CorrelationWarning = z.infer<typeof correlationWarningSchema>
+export type CorrelationInterpretation = z.infer<typeof correlationInterpretationSchema>
+export type CorrelationResponse = z.infer<typeof correlationResponseSchema>

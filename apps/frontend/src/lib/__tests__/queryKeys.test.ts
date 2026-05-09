@@ -400,3 +400,301 @@ describe('queryKeys.searchHits — PR #17 Group D', () => {
     )
   })
 })
+
+// ---------------------------------------------------------------------------
+// Phase 3 Slice 3 D-1 — Correlation cache keys (PR-B T4)
+// ---------------------------------------------------------------------------
+//
+// Key shape lock (CONTRACT.md §1 + plan §B5):
+//   - catalog: ['analytics', 'correlation', 'series']        (no params)
+//   - primary: ['analytics', 'correlation', x, y, dateFrom, dateTo, alpha]
+//
+// The primary tuple is isomorphic to the BE Redis cache key
+//   correlation:v1:{x}:{y}:{date_from}:{date_to}:{alpha}
+// so changing any of the 5 user inputs opens a new cache slot on both
+// sides. `null` dates are preserved as literal nulls (not stripped, not
+// substituted with today()/Date.now()/Math.min) so the empty-date URL
+// state is stable across renders (B5 URL state contract).
+//
+// `method` (URL state) is NOT in the key — chart toggles between Pearson
+// and Spearman views of the same response. Pinned indirectly by T7's
+// "exactly one fetch across method-toggle clicks" test
+// (`pattern_shared_query_cache_multi_subscriber`); the runtime check
+// here is that no cache key carries any method marker.
+
+describe('queryKeys.analyticsCorrelationCatalog (PR-B T4)', () => {
+  it('uses the documented ["analytics", "correlation", "series"] shape', () => {
+    const key = queryKeys.analyticsCorrelationCatalog()
+    expect(key).toEqual(['analytics', 'correlation', 'series'])
+  })
+
+  it('is structurally equal across calls (single shared cache slot)', () => {
+    expect(queryKeys.analyticsCorrelationCatalog()).toEqual(
+      queryKeys.analyticsCorrelationCatalog(),
+    )
+  })
+
+  it('does not collide with the analyticsCorrelation primary key', () => {
+    expect(queryKeys.analyticsCorrelationCatalog()).not.toEqual(
+      queryKeys.analyticsCorrelation(
+        'reports.total',
+        'incidents.total',
+        null,
+        null,
+        0.05,
+      ),
+    )
+  })
+})
+
+describe('queryKeys.analyticsCorrelation (PR-B T4)', () => {
+  it('uses the documented ["analytics", "correlation", x, y, dateFrom, dateTo, alpha] shape', () => {
+    const key = queryKeys.analyticsCorrelation(
+      'reports.total',
+      'incidents.total',
+      '2024-01-01',
+      '2024-12-31',
+      0.05,
+    )
+    expect(key).toEqual([
+      'analytics',
+      'correlation',
+      'reports.total',
+      'incidents.total',
+      '2024-01-01',
+      '2024-12-31',
+      0.05,
+    ])
+  })
+
+  it('identical inputs produce structurally equal keys (cache slot reuse)', () => {
+    const a = queryKeys.analyticsCorrelation(
+      'reports.total',
+      'incidents.total',
+      null,
+      null,
+      0.05,
+    )
+    const b = queryKeys.analyticsCorrelation(
+      'reports.total',
+      'incidents.total',
+      null,
+      null,
+      0.05,
+    )
+    expect(a).toEqual(b)
+  })
+
+  // BE Redis cache key isomorphism — every component of the BE key must
+  // open a fresh cache slot on the FE side (umbrella §7.5 line 576).
+  it('different x produces a different cache slot', () => {
+    expect(
+      queryKeys.analyticsCorrelation(
+        'reports.total',
+        'incidents.total',
+        null,
+        null,
+        0.05,
+      ),
+    ).not.toEqual(
+      queryKeys.analyticsCorrelation(
+        'reports.lazarus',
+        'incidents.total',
+        null,
+        null,
+        0.05,
+      ),
+    )
+  })
+
+  it('different y produces a different cache slot', () => {
+    expect(
+      queryKeys.analyticsCorrelation(
+        'reports.total',
+        'incidents.total',
+        null,
+        null,
+        0.05,
+      ),
+    ).not.toEqual(
+      queryKeys.analyticsCorrelation(
+        'reports.total',
+        'incidents.lazarus',
+        null,
+        null,
+        0.05,
+      ),
+    )
+  })
+
+  it('different dateFrom produces a different cache slot', () => {
+    expect(
+      queryKeys.analyticsCorrelation(
+        'reports.total',
+        'incidents.total',
+        '2024-01-01',
+        null,
+        0.05,
+      ),
+    ).not.toEqual(
+      queryKeys.analyticsCorrelation(
+        'reports.total',
+        'incidents.total',
+        '2024-06-01',
+        null,
+        0.05,
+      ),
+    )
+  })
+
+  it('different dateTo produces a different cache slot', () => {
+    expect(
+      queryKeys.analyticsCorrelation(
+        'reports.total',
+        'incidents.total',
+        null,
+        '2024-06-30',
+        0.05,
+      ),
+    ).not.toEqual(
+      queryKeys.analyticsCorrelation(
+        'reports.total',
+        'incidents.total',
+        null,
+        '2024-12-31',
+        0.05,
+      ),
+    )
+  })
+
+  // CONTRACT.md §1 + umbrella §7.5 line 576 — alpha participates in the
+  // BE Redis cache key, so changing alpha (e.g. via a future
+  // power-user surface) MUST open a fresh FE cache slot too.
+  it('different alpha produces a different cache slot (BE Redis key isomorphism)', () => {
+    expect(
+      queryKeys.analyticsCorrelation(
+        'reports.total',
+        'incidents.total',
+        null,
+        null,
+        0.05,
+      ),
+    ).not.toEqual(
+      queryKeys.analyticsCorrelation(
+        'reports.total',
+        'incidents.total',
+        null,
+        null,
+        0.01,
+      ),
+    )
+  })
+
+  // CONTRACT.md §1 — null literal preserved (NOT stripped, NOT
+  // replaced with `undefined` or today()/Date.now() substitution).
+  // Two calls with the same null pattern share the cache slot;
+  // null vs "2024-01-01" opens a different slot.
+  it('null dates preserved as literal nulls in the tuple (no substitution)', () => {
+    const key = queryKeys.analyticsCorrelation(
+      'reports.total',
+      'incidents.total',
+      null,
+      null,
+      0.05,
+    )
+    expect(key[4]).toBeNull()
+    expect(key[5]).toBeNull()
+  })
+
+  it('null dates differ from explicit ISO date in cache slot', () => {
+    expect(
+      queryKeys.analyticsCorrelation(
+        'reports.total',
+        'incidents.total',
+        null,
+        null,
+        0.05,
+      ),
+    ).not.toEqual(
+      queryKeys.analyticsCorrelation(
+        'reports.total',
+        'incidents.total',
+        '2020-01-01',
+        '2024-12-31',
+        0.05,
+      ),
+    )
+  })
+
+  // B5 URL-state has 5 keys (x, y, date_from, date_to, method). `method`
+  // is purely visual — toggling Pearson↔Spearman MUST NOT invalidate the
+  // cache. The cache key has no method slot at all; this regression
+  // pins that no method marker leaks into the JSON form via a future
+  // edit.
+  it('cache key JSON contains no method marker (Pearson/Spearman visual toggle)', () => {
+    const key = queryKeys.analyticsCorrelation(
+      'reports.total',
+      'incidents.total',
+      '2024-01-01',
+      '2024-12-31',
+      0.05,
+    )
+    const json = JSON.stringify(key).toLowerCase()
+    expect(json).not.toContain('method')
+    expect(json).not.toContain('pearson')
+    expect(json).not.toContain('spearman')
+  })
+
+  // D5 cache-key TLP / group isolation — correlation does not accept
+  // group_id at all (CONTRACT.md §1 says only x/y/date_from/date_to/
+  // alpha are query params), so no FilterBar TLP / group toggle can
+  // ever invalidate this cache. Defensive belt against a future edit
+  // wiring the shared `AnalyticsFilters` shape into this key.
+  it('cache key JSON contains no tlp / group markers', () => {
+    const key = queryKeys.analyticsCorrelation(
+      'reports.total',
+      'incidents.total',
+      '2024-01-01',
+      '2024-12-31',
+      0.05,
+    )
+    const json = JSON.stringify(key).toLowerCase()
+    expect(json).not.toContain('tlp')
+    expect(json).not.toContain('group_id')
+    expect(json).not.toContain('groupids')
+  })
+
+  it('does not collide with analyticsAttackMatrix key for same date range', () => {
+    expect(
+      queryKeys.analyticsCorrelation(
+        'reports.total',
+        'incidents.total',
+        '2024-01-01',
+        '2024-12-31',
+        0.05,
+      ),
+    ).not.toEqual(
+      queryKeys.analyticsAttackMatrix({
+        date_from: '2024-01-01',
+        date_to: '2024-12-31',
+      }),
+    )
+  })
+
+  it('does not collide with analyticsTrend key for same date range', () => {
+    expect(
+      queryKeys.analyticsCorrelation(
+        'reports.total',
+        'incidents.total',
+        '2024-01-01',
+        '2024-12-31',
+        0.05,
+      ),
+    ).not.toEqual(
+      queryKeys.analyticsTrend({
+        date_from: '2024-01-01',
+        date_to: '2024-12-31',
+      }),
+    )
+  })
+})

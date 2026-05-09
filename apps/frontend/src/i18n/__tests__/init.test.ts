@@ -37,6 +37,7 @@ describe('i18n bootstrap', () => {
       'nav.reports',
       'nav.incidents',
       'nav.actors',
+      'nav.correlation',
       'filters.clear',
       'auth.logout',
     ] as const
@@ -96,6 +97,77 @@ describe('i18n bootstrap', () => {
         // The invariant: pill copy is "Phase 4" in BOTH locales.
         expect(ko, `${key} should be "Phase 4" invariant in ko`).toBe('Phase 4')
         expect(en, `${key} should be "Phase 4" invariant in en`).toBe('Phase 4')
+      } else {
+        expect(
+          ko,
+          `${key} should differ between ko and en (copy-paste guard)`,
+        ).not.toBe(en)
+      }
+    }
+  })
+
+  it('translates every Phase 3 Slice 3 D-1 correlation key in both locales (T11 contract)', () => {
+    // Per `docs/plans/correlation-fe.md` §4 T11 (i18n keys for the 5
+    // correlation components) + memory `pattern_cross_locale_parity_with_invariant_allowlist`.
+    //
+    // Cross-locale parity: most correlation keys MUST resolve to
+    // visually distinct copy in ko vs en (a copy-paste regression
+    // would silently ship English-only Korean for the analyst flow).
+    // The allowlisted exceptions are universal scientific names
+    // (Pearson / Spearman are romanised identically by Korean
+    // technical UIs that surface them as a method label) and the
+    // ISO 8601 date placeholder which is a literal format token,
+    // not a translatable string.
+    const CORRELATION_INVARIANT_KEYS = new Set([
+      'correlation.method.pearson',
+      'correlation.method.spearman',
+      'correlation.filters.datePlaceholder',
+    ])
+    const INVARIANT_VALUES: Record<string, string> = {
+      'correlation.method.pearson': 'Pearson',
+      'correlation.method.spearman': 'Spearman',
+      'correlation.filters.datePlaceholder': 'YYYY-MM-DD',
+    }
+    const keys = [
+      'correlation.page.heading',
+      'correlation.methodToggle.ariaLabel',
+      'correlation.method.pearson',
+      'correlation.method.spearman',
+      'correlation.state.emptyPickXY',
+      'correlation.state.loading',
+      'correlation.state.errorInsufficientSample',
+      'correlation.state.errorIdenticalSeries',
+      'correlation.state.errorUnknown',
+      'correlation.filters.xSeriesLabel',
+      'correlation.filters.ySeriesLabel',
+      'correlation.filters.xPickerPlaceholder',
+      'correlation.filters.yPickerPlaceholder',
+      'correlation.filters.dateFromLabel',
+      'correlation.filters.dateToLabel',
+      'correlation.filters.datePlaceholder',
+      'correlation.caveat.title',
+      'correlation.caveat.body',
+      'correlation.caveat.dismiss',
+      'correlation.chart.caption',
+      'correlation.warnings.ariaLabel',
+      'correlation.warnings.non_stationary_suspected',
+      'correlation.warnings.outlier_influence',
+      'correlation.warnings.sparse_window',
+      'correlation.warnings.cross_rooted_pair',
+      'correlation.warnings.identity_or_containment_suspected',
+      'correlation.warnings.low_count_suppressed_cells',
+    ] as const
+    for (const key of keys) {
+      const ko = i18n.getResource('ko', 'translation', key)
+      const en = i18n.getResource('en', 'translation', key)
+      expect(typeof ko, `ko missing ${key}`).toBe('string')
+      expect(ko.length, `ko empty ${key}`).toBeGreaterThan(0)
+      expect(typeof en, `en missing ${key}`).toBe('string')
+      expect(en.length, `en empty ${key}`).toBeGreaterThan(0)
+      if (CORRELATION_INVARIANT_KEYS.has(key)) {
+        const expected = INVARIANT_VALUES[key]
+        expect(ko, `${key} should be "${expected}" invariant in ko`).toBe(expected)
+        expect(en, `${key} should be "${expected}" invariant in en`).toBe(expected)
       } else {
         expect(
           ko,

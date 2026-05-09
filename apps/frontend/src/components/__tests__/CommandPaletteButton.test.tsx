@@ -36,6 +36,7 @@ function renderPalette(extraChildren?: ReactNode) {
       { path: '/reports', element: <LocationProbe /> },
       { path: '/incidents', element: <LocationProbe /> },
       { path: '/actors', element: <LocationProbe /> },
+      { path: '/analytics/correlation', element: <LocationProbe /> },
       { path: '/login', element: <LocationProbe /> },
     ],
     { initialEntries: ['/'] },
@@ -115,7 +116,7 @@ describe('CommandPaletteButton', () => {
   // ---- PR #13 Group D — command list content ----
 
   describe('command list (plan D3 scope)', () => {
-    it('renders exactly the 6 commands locked in plan D3 + Ferrari L1', async () => {
+    it('renders exactly the 7 commands locked in plan D3 + Ferrari L1 + PR-B T10', async () => {
       const user = userEvent.setup()
       renderPalette()
       await user.click(screen.getByTestId('cmdk-trigger'))
@@ -124,11 +125,15 @@ describe('CommandPaletteButton', () => {
       // edit adds a "search reports" or "create incident" item, this
       // test fails loud and forces a scope-lock review.
       // theme.cycle was removed in Ferrari L1 (single dark canvas).
+      // PR-B T10 added nav.correlation alongside the router mount,
+      // Shell nav entry, and PAGE_CLASS_BY_ROUTE manifest entry — all
+      // four surfaces stay in sync.
       const expected = [
         'cmdk-item-nav.dashboard',
         'cmdk-item-nav.reports',
         'cmdk-item-nav.incidents',
         'cmdk-item-nav.actors',
+        'cmdk-item-nav.correlation',
         'cmdk-item-filters.clear',
         'cmdk-item-auth.logout',
       ]
@@ -161,6 +166,7 @@ describe('CommandPaletteButton', () => {
       ['nav.reports', '/reports'],
       ['nav.incidents', '/incidents'],
       ['nav.actors', '/actors'],
+      ['nav.correlation', '/analytics/correlation'],
     ] as const)(
       '%s navigates to %s and closes the dialog',
       async (id, path) => {

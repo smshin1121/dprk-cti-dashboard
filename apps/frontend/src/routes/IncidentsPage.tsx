@@ -78,6 +78,7 @@ export function IncidentsPage(): JSX.Element {
   return (
     <section
       data-testid="incidents-page"
+      data-page-class="analyst-workspace"
       aria-labelledby="incidents-heading"
       className="flex flex-col gap-4 p-6"
     >

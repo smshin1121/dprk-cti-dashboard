@@ -67,6 +67,7 @@ export function ActorDetailPage(): JSX.Element {
   return (
     <section
       data-testid="actor-detail-page"
+      data-page-class="analyst-workspace"
       data-actor-id={actor.id}
       aria-labelledby="actor-detail-heading"
       className="editorial-band-light flex flex-col gap-6 bg-app p-6 text-ink"

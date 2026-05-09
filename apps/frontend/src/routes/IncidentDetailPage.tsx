@@ -54,6 +54,7 @@ export function IncidentDetailPage(): JSX.Element {
   return (
     <section
       data-testid="incident-detail-page"
+      data-page-class="analyst-workspace"
       data-incident-id={incident.id}
       aria-labelledby="incident-detail-heading"
       className="editorial-band-light flex flex-col gap-6 bg-app p-6 text-ink"

@@ -4,7 +4,8 @@
       "dashboard": "대시보드",
       "reports": "보고서",
       "incidents": "사건",
-      "actors": "조직"
+      "actors": "조직",
+      "correlation": "상관관계"
     },
     "brand": "DPRK CTI",
     "search": {
@@ -29,6 +30,7 @@
     "nav.reports": "보고서로 이동",
     "nav.incidents": "사건으로 이동",
     "nav.actors": "조직으로 이동",
+    "nav.correlation": "상관관계로 이동",
     "filters.clear": "모든 필터 초기화",
     "auth.logout": "로그아웃"
   },
@@ -119,6 +121,51 @@
       "title": "행위자 네트워크 · 공동 발생",
       "plannedEmptyState": "예정 · 데이터 없음",
       "capBreachedNotice": "필터 선택이 기본 상한을 초과 — 선택된 모든 행위자가 표시됩니다."
+    }
+  },
+  "correlation": {
+    "page": {
+      "heading": "상관관계"
+    },
+    "methodToggle": {
+      "ariaLabel": "상관관계 방법"
+    },
+    "method": {
+      "pearson": "Pearson",
+      "spearman": "Spearman"
+    },
+    "state": {
+      "emptyPickXY": "X와 Y 시계열을 선택하면 상관관계 분석이 시작됩니다.",
+      "loading": "상관관계를 불러오는 중…",
+      "errorInsufficientSample": "표본이 부족합니다 (최소 30개월 필요).",
+      "errorIdenticalSeries": "X와 Y는 서로 다른 시계열이어야 합니다.",
+      "errorUnknown": "데이터를 불러올 수 없습니다."
+    },
+    "filters": {
+      "xSeriesLabel": "X 시계열",
+      "ySeriesLabel": "Y 시계열",
+      "xPickerPlaceholder": "X 선택…",
+      "yPickerPlaceholder": "Y 선택…",
+      "dateFromLabel": "시작일",
+      "dateToLabel": "종료일",
+      "datePlaceholder": "YYYY-MM-DD"
+    },
+    "caveat": {
+      "title": "상관관계 ≠ 인과관계",
+      "body": "높은 시차 상관관계는 여러 신호 중 하나에 불과합니다. 인과 결론을 내리기 전에 운영 맥락에서 검증하십시오.",
+      "dismiss": "닫기"
+    },
+    "chart": {
+      "caption": "α = {{alpha}} · 유효 n = {{n}} · 기간 {{from}} – {{to}}"
+    },
+    "warnings": {
+      "ariaLabel": "상관관계 경고",
+      "non_stationary_suspected": "비정상 시계열 의심 — 해석에 주의가 필요합니다.",
+      "outlier_influence": "이상치 영향 감지 — 결과가 극값에 민감합니다.",
+      "sparse_window": "표본 창이 희박합니다 — 관측치가 기대보다 적습니다.",
+      "cross_rooted_pair": "서로 다른 데이터 출처 — X와 Y가 서로 다른 루트에서 옵니다.",
+      "identity_or_containment_suspected": "동일 또는 포함 관계 의심.",
+      "low_count_suppressed_cells": "저빈도 셀 억제됨 (프라이버시 보호)."
     }
   }
 }

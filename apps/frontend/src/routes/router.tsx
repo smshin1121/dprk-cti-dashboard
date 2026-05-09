@@ -12,6 +12,7 @@
  *       /incidents/:id            incident detail (PR #14 Group E)
  *       /actors                   list (PR #12)
  *       /actors/:id               actor detail (PR #14 Group E)
+ *       /analytics/correlation    Phase 3 Slice 3 D-1 correlation FE (PR-B T10)
  *       *                         404 (inline, no global redirect)
  *
  * D11 policy: each protected route carries the `RouteErrorBoundary`
@@ -26,6 +27,7 @@ import {
   createBrowserRouter,
 } from 'react-router-dom'
 
+import { CorrelationPage } from '../features/analytics/correlation/CorrelationPage'
 import { RouteErrorBoundary } from '../layout/RouteErrorBoundary'
 import { RouteGate } from '../layout/RouteGate'
 import { Shell } from '../layout/Shell'
@@ -98,6 +100,11 @@ export function buildRouter(factory: RouterFactory = createBrowserRouter) {
               errorElement: <RouteErrorBoundary />,
             },
             {
+              path: 'analytics/correlation',
+              element: <CorrelationPage />,
+              errorElement: <RouteErrorBoundary />,
+            },
+            {
               path: '*',
               element: <NotFound />,
             },
@@ -112,7 +119,10 @@ export const router = buildRouter()
 
 function NotFound(): JSX.Element {
   return (
-    <section className="m-6 rounded-none border border-border-card bg-surface p-5">
+    <section
+      data-page-class="system-page"
+      className="m-6 rounded-none border border-border-card bg-surface p-5"
+    >
       <h1 className="text-lg font-semibold">Not found</h1>
       <p className="mt-2 text-sm text-ink-muted">
         This route doesn&apos;t exist. Pick an entry from the nav above.

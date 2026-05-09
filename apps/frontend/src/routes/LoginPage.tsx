@@ -65,6 +65,7 @@ export function LoginPage(): JSX.Element {
     <main
       className="flex min-h-screen items-center justify-center bg-app text-ink"
       data-testid="login-page"
+      data-page-class="auth-page"
     >
       <section className="w-full max-w-md rounded-none border border-border-card bg-surface p-8">
         <p className="text-xs font-cta uppercase tracking-caption text-signal">

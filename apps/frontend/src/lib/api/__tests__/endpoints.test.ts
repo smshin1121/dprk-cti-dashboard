@@ -1,8 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import {
+  correlationErrorEnvelopeSchema,
   getActorDetail,
   getActorReports,
+  getCorrelation,
+  getCorrelationCatalog,
   getDashboardSummary,
   getIncidentDetail,
   getIncidentsTrend,
@@ -505,5 +508,378 @@ describe('getActorReports', () => {
     )
     const url = new URL(String(fetchSpy.mock.calls[0][0]))
     expect(url.search).toBe('')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Phase 3 Slice 3 D-1 — Correlation endpoint helpers (PR-B T3)
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a populated 49-cell `lag_grid` covering lags `[-24..+24]`
+ * ascending. Mirrors `schemas.test.ts::buildHappyLagGrid`; intentionally
+ * duplicated here to keep these endpoint-layer tests independent of the
+ * schema-layer test file (per project convention — endpoints.test.ts
+ * never reaches into other test files).
+ */
+function buildHappyLagGrid(): unknown[] {
+  const cells: unknown[] = []
+  for (let lag = -24; lag <= 24; lag++) {
+    cells.push({
+      lag,
+      pearson: {
+        r: 0.4,
+        p_raw: 0.001,
+        p_adjusted: 0.005,
+        significant: true,
+        effective_n_at_lag: 60,
+        reason: null,
+      },
+      spearman: {
+        r: 0.38,
+        p_raw: 0.002,
+        p_adjusted: 0.006,
+        significant: true,
+        effective_n_at_lag: 60,
+        reason: null,
+      },
+    })
+  }
+  return cells
+}
+
+const happyCatalog = {
+  series: [
+    {
+      id: 'reports.total',
+      label_ko: '보고서 총수',
+      label_en: 'Total reports',
+      root: 'reports.published',
+      bucket: 'monthly',
+    },
+    {
+      id: 'incidents.total',
+      label_ko: '사건 총수',
+      label_en: 'Total incidents',
+      root: 'incidents.reported',
+      bucket: 'monthly',
+    },
+  ],
+}
+
+const happyCorrelation = {
+  x: 'reports.total',
+  y: 'incidents.total',
+  date_from: '2020-01-01',
+  date_to: '2024-12-31',
+  alpha: 0.05,
+  effective_n: 60,
+  lag_grid: buildHappyLagGrid(),
+  interpretation: {
+    caveat: 'Correlation does not imply causation.',
+    methodology_url: '/docs/methodology/correlation',
+    warnings: [],
+  },
+}
+
+describe('getCorrelationCatalog', () => {
+  it('GETs /api/v1/analytics/correlation/series with no querystring', async () => {
+    const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify(happyCatalog), { status: 200 }),
+    )
+    const result = await getCorrelationCatalog()
+    expect(result.series).toHaveLength(2)
+    expect(result.series[0].id).toBe('reports.total')
+
+    const url = new URL(String(fetchSpy.mock.calls[0][0]))
+    expect(url.pathname).toBe('/api/v1/analytics/correlation/series')
+    expect(url.search).toBe('')
+  })
+
+  it('forwards the abort signal to fetch', async () => {
+    const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify(happyCatalog), { status: 200 }),
+    )
+    const controller = new AbortController()
+    await getCorrelationCatalog(controller.signal)
+    const [, init] = fetchSpy.mock.calls[0]
+    expect(init!.signal).toBe(controller.signal)
+  })
+
+  it('parses an empty series list (BE returns zero rows when DB is empty)', async () => {
+    vi.spyOn(global, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ series: [] }), { status: 200 }),
+    )
+    const result = await getCorrelationCatalog()
+    expect(result.series).toEqual([])
+  })
+})
+
+describe('getCorrelation', () => {
+  it('GETs /api/v1/analytics/correlation with x/y/date_from/date_to/alpha', async () => {
+    const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify(happyCorrelation), { status: 200 }),
+    )
+    await getCorrelation(
+      'reports.total',
+      'incidents.total',
+      '2024-01-01',
+      '2024-12-31',
+      0.05,
+    )
+    const url = new URL(String(fetchSpy.mock.calls[0][0]))
+    expect(url.pathname).toBe('/api/v1/analytics/correlation')
+    expect(url.searchParams.get('x')).toBe('reports.total')
+    expect(url.searchParams.get('y')).toBe('incidents.total')
+    expect(url.searchParams.get('date_from')).toBe('2024-01-01')
+    expect(url.searchParams.get('date_to')).toBe('2024-12-31')
+    expect(url.searchParams.get('alpha')).toBe('0.05')
+  })
+
+  it('omits date_from / date_to from the wire when null (BE resolves default window)', async () => {
+    const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify(happyCorrelation), { status: 200 }),
+    )
+    await getCorrelation('reports.total', 'incidents.total', null, null, 0.05)
+    const url = new URL(String(fetchSpy.mock.calls[0][0]))
+    expect(url.searchParams.has('date_from')).toBe(false)
+    expect(url.searchParams.has('date_to')).toBe(false)
+    // alpha is always emitted (BE Redis cache key isomorphism — umbrella §7.5)
+    expect(url.searchParams.get('alpha')).toBe('0.05')
+  })
+
+  it('parses the BE-resolved date echo from the 200 response body', async () => {
+    vi.spyOn(global, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify(happyCorrelation), { status: 200 }),
+    )
+    const result = await getCorrelation(
+      'reports.total',
+      'incidents.total',
+      null,
+      null,
+      0.05,
+    )
+    expect(result.date_from).toBe('2020-01-01')
+    expect(result.date_to).toBe('2024-12-31')
+    expect(result.lag_grid).toHaveLength(49)
+  })
+
+  it('forwards the abort signal to fetch', async () => {
+    const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify(happyCorrelation), { status: 200 }),
+    )
+    const controller = new AbortController()
+    await getCorrelation(
+      'reports.total',
+      'incidents.total',
+      null,
+      null,
+      0.05,
+      controller.signal,
+    )
+    const [, init] = fetchSpy.mock.calls[0]
+    expect(init!.signal).toBe(controller.signal)
+  })
+
+  // ---------------------------------------------------------------------
+  // 422 surface preserved as throw — plan §4 T3 row exit. Detail parsed
+  // through `correlationErrorEnvelopeSchema` for typed B10 copy paths.
+  // ---------------------------------------------------------------------
+
+  it('422 Case A — value_error.identical_series throws ApiError with typed detail', async () => {
+    const envelope = {
+      detail: [
+        {
+          loc: ['query', 'y'],
+          msg: 'x and y must be different series IDs',
+          type: 'value_error.identical_series',
+          ctx: { x: 'reports.total', y: 'reports.total' },
+        },
+      ],
+    }
+    vi.spyOn(global, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify(envelope), { status: 422 }),
+    )
+    try {
+      await getCorrelation('reports.total', 'reports.total', null, null, 0.05)
+      expect.fail('expected getCorrelation() to throw on 422')
+    } catch (err) {
+      const { ApiError } = await import('../../api')
+      expect(err).toBeInstanceOf(ApiError)
+      const apiErr = err as InstanceType<typeof ApiError>
+      expect(apiErr.status).toBe(422)
+      const parsed = correlationErrorEnvelopeSchema.parse(apiErr.detail)
+      expect(parsed.detail[0].type).toBe('value_error.identical_series')
+      expect(parsed.detail[0].ctx).toEqual({
+        x: 'reports.total',
+        y: 'reports.total',
+      })
+    }
+  })
+
+  it('422 Case B — value_error.insufficient_sample preserves ctx.effective_n / minimum_n', async () => {
+    const envelope = {
+      detail: [
+        {
+          loc: ['body', 'correlation'],
+          msg: 'Minimum 30 valid months required after no_data exclusion; got 12',
+          type: 'value_error.insufficient_sample',
+          ctx: { effective_n: 12, minimum_n: 30 },
+        },
+      ],
+    }
+    vi.spyOn(global, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify(envelope), { status: 422 }),
+    )
+    try {
+      await getCorrelation('reports.total', 'incidents.total', null, null, 0.05)
+      expect.fail('expected getCorrelation() to throw on 422')
+    } catch (err) {
+      const { ApiError } = await import('../../api')
+      const apiErr = err as InstanceType<typeof ApiError>
+      expect(apiErr.status).toBe(422)
+      const parsed = correlationErrorEnvelopeSchema.parse(apiErr.detail)
+      expect(parsed.detail[0].type).toBe('value_error.insufficient_sample')
+      expect(parsed.detail[0].ctx).toEqual({ effective_n: 12, minimum_n: 30 })
+    }
+  })
+
+  it('422 Case C — series_not_found has no `ctx` key (only loc distinguishes x vs y)', async () => {
+    const envelope = {
+      detail: [
+        {
+          loc: ['query', 'x'],
+          msg: "series id 'reports.bogus' not in catalog",
+          type: 'value_error',
+        },
+      ],
+    }
+    vi.spyOn(global, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify(envelope), { status: 422 }),
+    )
+    try {
+      await getCorrelation('reports.bogus', 'incidents.total', null, null, 0.05)
+      expect.fail('expected getCorrelation() to throw on 422')
+    } catch (err) {
+      const { ApiError } = await import('../../api')
+      const apiErr = err as InstanceType<typeof ApiError>
+      expect(apiErr.status).toBe(422)
+      const parsed = correlationErrorEnvelopeSchema.parse(apiErr.detail)
+      expect(parsed.detail[0].type).toBe('value_error')
+      expect(parsed.detail[0].loc).toEqual(['query', 'x'])
+      // No `ctx` on this variant — schema makes ctx optional so parse succeeds.
+      expect(parsed.detail[0].ctx).toBeUndefined()
+    }
+  })
+
+  it('422 Case D — date_to_before_date_from carries ctx with both ISO dates', async () => {
+    const envelope = {
+      detail: [
+        {
+          loc: ['query', 'date_to'],
+          msg: 'date_to must be on or after date_from',
+          type: 'value_error',
+          ctx: { date_from: '2024-12-31', date_to: '2024-01-01' },
+        },
+      ],
+    }
+    vi.spyOn(global, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify(envelope), { status: 422 }),
+    )
+    try {
+      await getCorrelation(
+        'reports.total',
+        'incidents.total',
+        '2024-12-31',
+        '2024-01-01',
+        0.05,
+      )
+      expect.fail('expected getCorrelation() to throw on 422')
+    } catch (err) {
+      const { ApiError } = await import('../../api')
+      const apiErr = err as InstanceType<typeof ApiError>
+      expect(apiErr.status).toBe(422)
+      const parsed = correlationErrorEnvelopeSchema.parse(apiErr.detail)
+      expect(parsed.detail[0].ctx).toEqual({
+        date_from: '2024-12-31',
+        date_to: '2024-01-01',
+      })
+    }
+  })
+
+  it('422 FastAPI default-validation — tolerates numeric loc indices + extra `input` key + dotted `type`', async () => {
+    // Stock pydantic-error shape — what FastAPI emits when a required
+    // query param is missing or fails its native validator (e.g. alpha
+    // out of range, malformed ISO date). Carries `input` (echo of the
+    // bad value) + a longer dotted `type` like `value_error.float.not_lt`.
+    // The envelope schema's `.passthrough()` on the detail entry lets
+    // these extras flow without rejecting the parse.
+    const envelope = {
+      detail: [
+        {
+          loc: ['query', 'alpha'],
+          msg: 'ensure this value is less than 1.0',
+          type: 'value_error.float.not_lt',
+          ctx: { limit_value: 1.0 },
+          input: 1.5,
+          url: 'https://errors.pydantic.dev/2.0/v/float_not_lt',
+        },
+      ],
+    }
+    vi.spyOn(global, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify(envelope), { status: 422 }),
+    )
+    try {
+      await getCorrelation('reports.total', 'incidents.total', null, null, 1.5)
+      expect.fail('expected getCorrelation() to throw on 422')
+    } catch (err) {
+      const { ApiError } = await import('../../api')
+      const apiErr = err as InstanceType<typeof ApiError>
+      expect(apiErr.status).toBe(422)
+      const parsed = correlationErrorEnvelopeSchema.parse(apiErr.detail)
+      expect(parsed.detail[0].type).toBe('value_error.float.not_lt')
+      expect(parsed.detail[0].loc).toEqual(['query', 'alpha'])
+      expect(parsed.detail[0].ctx).toEqual({ limit_value: 1.0 })
+    }
+  })
+
+  it('422 envelope drift — payload missing `detail` key falls through to original untyped throw', async () => {
+    // Hypothetical drift: BE responds with `{error: "..."}` instead of
+    // the FastAPI `{detail: [...]}` envelope. The strict outer schema
+    // rejects this; the helper rethrows the original ApiError with the
+    // raw `unknown` detail so B10 can fall back to "Unable to load
+    // data" copy.
+    const driftedBody = { error: 'unexpected', message: 'drift' }
+    vi.spyOn(global, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify(driftedBody), { status: 422 }),
+    )
+    try {
+      await getCorrelation('reports.total', 'incidents.total', null, null, 0.05)
+      expect.fail('expected getCorrelation() to throw on 422')
+    } catch (err) {
+      const { ApiError } = await import('../../api')
+      const apiErr = err as InstanceType<typeof ApiError>
+      expect(apiErr.status).toBe(422)
+      // Detail is the raw drifted body (NOT a `correlationErrorEnvelopeSchema`
+      // shape), and the envelope parse fails — that's the falls-through path.
+      expect(apiErr.detail).toEqual(driftedBody)
+      const parseAttempt = correlationErrorEnvelopeSchema.safeParse(apiErr.detail)
+      expect(parseAttempt.success).toBe(false)
+    }
+  })
+
+  it('non-422 errors (e.g. 500) bypass envelope parsing and rethrow as-is', async () => {
+    vi.spyOn(global, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ error: 'internal' }), { status: 500 }),
+    )
+    try {
+      await getCorrelation('reports.total', 'incidents.total', null, null, 0.05)
+      expect.fail('expected getCorrelation() to throw on 500')
+    } catch (err) {
+      const { ApiError } = await import('../../api')
+      const apiErr = err as InstanceType<typeof ApiError>
+      expect(apiErr.status).toBe(500)
+      expect(apiErr.detail).toEqual({ error: 'internal' })
+    }
   })
 })

@@ -107,6 +107,7 @@ export function ReportsPage(): JSX.Element {
   return (
     <section
       data-testid="reports-page"
+      data-page-class="analyst-workspace"
       aria-labelledby="reports-heading"
       className="flex flex-col gap-4 p-6"
     >

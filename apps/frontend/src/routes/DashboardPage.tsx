@@ -81,6 +81,7 @@ export function DashboardPage(): JSX.Element {
   return (
     <section
       data-testid="dashboard-page"
+      data-page-class="analyst-workspace"
       aria-labelledby="dashboard-heading"
       className="flex min-h-screen flex-col lg:flex-row"
     >

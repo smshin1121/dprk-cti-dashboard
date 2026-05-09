@@ -108,6 +108,55 @@ describe('Router tree — protected route mounts', () => {
     expect(await screen.findByText(/Not found/i)).toBeInTheDocument()
     expect(screen.getByTestId('shell-topnav')).toBeInTheDocument()
   })
+
+  // PR-B T10 r1 fold (Codex CRITICAL). The /analytics/correlation
+  // route mounts under <Shell>, which runs `useFilterUrlSync`. The
+  // global URL sync emits a search string built from the filter
+  // store's keys ONLY (date_from / date_to / group_id / view / tab)
+  // — without the route-scope short-circuit added in this fold, a
+  // deep link like /analytics/correlation?x=A&y=B&method=spearman
+  // would survive the initial paint but get stripped by the global
+  // sync's first non-mount emit (filter store updates from the
+  // hydrate effect would trigger emit; emit would write a URL that
+  // loses x / y / method). This test pins the post-fold contract.
+  it('correlation deep link survives Shell hydration — page-local URL state preserved', async () => {
+    mockAuthed()
+    // Mock fetch so the catalog and primary endpoints don't hit the
+    // network. The page itself rendering populated isn't the point
+    // — the URL preservation invariant is the test target.
+    vi.spyOn(global, 'fetch').mockImplementation((input) => {
+      const url = String(input)
+      if (url.includes('/api/v1/analytics/correlation/series')) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ series: [] }), { status: 200 }),
+        )
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify({ detail: [] }), { status: 422 }),
+      )
+    })
+    renderRouterAt(
+      '/analytics/correlation?x=reports.total&y=incidents.total&method=spearman',
+    )
+    expect(await screen.findByTestId('correlation-page')).toBeInTheDocument()
+    // Wait for the global URL sync's first non-mount emit to settle —
+    // any effect flush after mount must NOT have stripped page-local
+    // params. Inspect the in-memory router's location instead of
+    // `window.location` because createMemoryRouter writes there.
+    await waitFor(() => {
+      const probe = screen
+        .getByTestId('correlation-page')
+        .closest('[data-page-class="analyst-workspace"]')
+      expect(probe).not.toBeNull()
+    })
+    // The CorrelationPage's own initial render runs `readUrlState`
+    // off the router-tracked `location.search` value. If the global
+    // sync had clobbered it, the page would have rendered the empty
+    // branch (no x / y means `correlation-empty` testid). Asserting
+    // that the populated / loading / error branch shows up — i.e.
+    // anything but `correlation-empty` — proves x / y survived.
+    expect(screen.queryByTestId('correlation-empty')).not.toBeInTheDocument()
+  })
 })
 
 describe('Router tree — unauthenticated redirect flow', () => {

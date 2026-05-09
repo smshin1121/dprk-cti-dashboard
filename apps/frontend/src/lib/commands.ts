@@ -18,8 +18,10 @@
  *     `useTranslation`) which re-resolves labels.
  *
  * Scope (plan D3 + Ferrari L1 — theme cycle removed when theme model
- * collapsed to single dark canvas):
+ * collapsed to single dark canvas; PR-B T10 added the analytics
+ * correlation entry):
  *   Navigate: /dashboard /reports /incidents /actors
+ *             /analytics/correlation
  *   View:     clear filters
  *   Session:  sign out
  *
@@ -45,6 +47,7 @@ export const COMMAND_IDS = [
   'nav.reports',
   'nav.incidents',
   'nav.actors',
+  'nav.correlation',
   'filters.clear',
   'auth.logout',
 ] as const
@@ -65,6 +68,7 @@ const KEYWORDS: Record<CommandId, string[]> = {
   'nav.reports': ['navigate', 'go', 'list', 'intel'],
   'nav.incidents': ['navigate', 'go', 'list', 'attacks'],
   'nav.actors': ['navigate', 'go', 'list', 'groups', 'apt'],
+  'nav.correlation': ['navigate', 'go', 'analytics', 'correlation', 'lag', 'pearson', 'spearman'],
   'filters.clear': ['reset', 'clear', 'filters', 'date', 'group'],
   'auth.logout': ['logout', 'sign out', 'exit', 'session'],
 }

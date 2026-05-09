@@ -236,17 +236,18 @@ describe('SearchResultsSection — 4-state contract', () => {
 // matches the post-Ferrari L1 lock.
 // -----------------------------------------------------------------------
 
-describe('CommandPaletteButton — D3 + Ferrari L1 6-command set preservation', () => {
+describe('CommandPaletteButton — D3 + Ferrari L1 + PR-B T10 7-command set preservation', () => {
   const STATIC_COMMAND_TESTIDS = [
     'cmdk-item-nav.dashboard',
     'cmdk-item-nav.reports',
     'cmdk-item-nav.incidents',
     'cmdk-item-nav.actors',
+    'cmdk-item-nav.correlation',
     'cmdk-item-filters.clear',
     'cmdk-item-auth.logout',
   ]
 
-  it('all 6 commands render with no q entered (post-Ferrari L1 baseline)', async () => {
+  it('all 7 commands render with no q entered (post-PR-B T10 baseline)', async () => {
     const user = userEvent.setup()
     renderPalette()
     await user.click(screen.getByTestId('cmdk-trigger'))
@@ -258,13 +259,14 @@ describe('CommandPaletteButton — D3 + Ferrari L1 6-command set preservation', 
     expect(screen.queryByTestId('search-results-section')).not.toBeInTheDocument()
   })
 
-  it('COMMAND_IDS constant matches the post-Ferrari L1 scope lock', async () => {
+  it('COMMAND_IDS constant matches the post-PR-B T10 scope lock', async () => {
     const { COMMAND_IDS } = await import('../../../lib/commands')
     expect([...COMMAND_IDS]).toEqual([
       'nav.dashboard',
       'nav.reports',
       'nav.incidents',
       'nav.actors',
+      'nav.correlation',
       'filters.clear',
       'auth.logout',
     ])
