@@ -201,7 +201,15 @@ async def run_taxii_ingest(
             try:
                 await sink.write(list(dq_results))
             except Exception:
-                pass
+                # Per-sink failure must not abort other sinks (the
+                # iteration is fan-out, not all-or-nothing). The
+                # warning surfaces the swallowed exception so a sink
+                # outage does not silently lose DQ events.
+                logger.warning(
+                    "DQ sink write failed (other sinks continue): %s",
+                    type(sink).__name__,
+                    exc_info=True,
+                )
 
     # Audit: taxii_run_completed or taxii_run_failed
     if audit_meta is not None:
@@ -474,4 +482,15 @@ async def _update_state_failure(
             reset_failures=False,
         )
     except Exception:
-        pass
+        # Defensive: this is the failure-recovery path itself. If we
+        # can't even record the failure (e.g. DB connectivity lost),
+        # don't escalate — the original collection-fetch error is what
+        # the caller cares about. Warning surfaces the secondary
+        # failure so operators can correlate with the primary.
+        logger.warning(
+            "taxii_state failure-recovery upsert failed for slug=%s "
+            "(original error: %s)",
+            col.slug,
+            error,
+            exc_info=True,
+        )
