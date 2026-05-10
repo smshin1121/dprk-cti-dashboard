@@ -89,6 +89,52 @@ async def test_load_returns_none_for_garbage_cookie(session_store):
     assert result is None
 
 
+async def test_load_returns_none_when_redis_payload_has_unknown_role(
+    session_store, fake_redis, test_signer
+):
+    """A Redis blob with an unknown role fails ``SessionData`` validation.
+
+    Defense-in-depth check after the P1.1 deferral closure that narrowed
+    ``SessionData.roles`` to ``list[KnownRole]``: if an attacker (or
+    bit-rot) injects a session blob carrying an unknown role into Redis,
+    ``model_validate_json`` raises ``ValidationError``. The
+    ``except Exception`` branch in ``SessionStore.load`` then returns
+    None, which the ``verify_token`` dependency translates to 401.
+
+    Pins the gate-moved-up contract: unknown roles can never reach
+    ``require_role`` at the route layer, regardless of how they got
+    into Redis.
+    """
+    # Mint a valid signed cookie pointing at an sid we control.
+    valid_data = _make_session_data()
+    cookie = await session_store.create(valid_data)
+    sid = test_signer.loads(cookie, max_age=3600)
+
+    # Overwrite the Redis payload with a JSON document that satisfies
+    # SessionData's STRUCTURE but carries an unknown role. The signed
+    # cookie remains valid (sid hasn't changed); only the stored blob
+    # is corrupt-by-injection.
+    poisoned_payload = json.dumps(
+        {
+            "sub": "u",
+            "email": "u@test.com",
+            "name": "U",
+            "roles": ["sudo"],  # unknown — fails Literal validation
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "last_activity": datetime.now(timezone.utc).isoformat(),
+        }
+    )
+    await fake_redis.set(f"session:{sid}", poisoned_payload)
+
+    result = await session_store.load(cookie)
+
+    assert result is None, (
+        "load() must return None when the Redis payload fails pydantic "
+        "validation — the verify_token dependency then issues 401, "
+        "not 403, and unknown roles never reach require_role."
+    )
+
+
 async def test_load_returns_none_for_expired_cookie(fake_redis, test_signer):
     """load() returns None when the cookie signature has exceeded max_age."""
     # Build a store with a very short TTL (1 second) so we can expire it

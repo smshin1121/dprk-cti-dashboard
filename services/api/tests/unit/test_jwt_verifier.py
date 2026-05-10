@@ -155,10 +155,18 @@ def _patch_discovery_and_jwks(jwks_document):
 # ---------------------------------------------------------------------------
 
 def test_extract_roles_filters_to_known_set():
-    """extract_roles() keeps only analyst/admin/policy, drops unknown roles."""
-    claims = {"realm_access": {"roles": ["analyst", "admin", "superuser", "unknown"]}}
+    """extract_roles() keeps only ``KnownRole`` values, drops unknown ones.
+
+    Canonical set: analyst / admin / policy / researcher / soc (see
+    ``api.auth.schemas.KnownRole``).
+    """
+    claims = {
+        "realm_access": {
+            "roles": ["analyst", "admin", "researcher", "soc", "superuser", "unknown"]
+        }
+    }
     result = extract_roles(claims)
-    assert set(result) == {"analyst", "admin"}
+    assert set(result) == {"analyst", "admin", "researcher", "soc"}
     assert "superuser" not in result
     assert "unknown" not in result
 

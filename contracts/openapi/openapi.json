@@ -825,6 +825,13 @@
           },
           "roles": {
             "items": {
+              "enum": [
+                "analyst",
+                "admin",
+                "policy",
+                "researcher",
+                "soc"
+              ],
               "type": "string"
             },
             "title": "Roles",

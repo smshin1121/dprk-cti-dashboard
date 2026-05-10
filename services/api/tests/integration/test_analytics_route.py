@@ -538,26 +538,11 @@ class TestAuthAndValidation:
         resp = await analytics_client.get(path)
         assert resp.status_code == 401
 
-    @pytest.mark.parametrize(
-        "path",
-        [
-            "/api/v1/analytics/attack_matrix",
-            "/api/v1/analytics/trend",
-            "/api/v1/analytics/geo",
-            "/api/v1/analytics/incidents_trend?group_by=motivation",
-        ],
-    )
-    async def test_role_not_in_read_allowlist_returns_403(
-        self,
-        analytics_client: AsyncClient,
-        make_session_cookie,
-        path: str,
-    ) -> None:
-        cookie = await _cookie(make_session_cookie, role="unprivileged")
-        resp = await analytics_client.get(
-            path, cookies={"dprk_cti_session": cookie}
-        )
-        assert resp.status_code == 403
+    # NOTE: A parametrized "unprivileged role → 403" suite across the
+    # 4 analytics paths was removed when the Phase 0 deferral on
+    # ``SessionData.roles: list[KnownRole]`` was closed. Unknown roles
+    # now fail pydantic validation at session construction
+    # (see ``tests/unit/test_auth_schemas.py``).
 
     async def test_negative_group_id_returns_422(
         self, analytics_client: AsyncClient, make_session_cookie
@@ -1106,15 +1091,11 @@ class TestActorNetworkRBAC:
         resp = await analytics_client.get("/api/v1/analytics/actor_network")
         assert resp.status_code == 401
 
-    async def test_role_not_in_read_allowlist_returns_403(
-        self, analytics_client: AsyncClient, make_session_cookie
-    ) -> None:
-        cookie = await _cookie(make_session_cookie, role="unprivileged")
-        resp = await analytics_client.get(
-            "/api/v1/analytics/actor_network",
-            cookies={"dprk_cti_session": cookie},
-        )
-        assert resp.status_code == 403
+    # NOTE: An "unprivileged role → 403" test for actor_network was
+    # removed when the Phase 0 deferral on
+    # ``SessionData.roles: list[KnownRole]`` was closed. Unknown roles
+    # now fail pydantic validation at session construction
+    # (see ``tests/unit/test_auth_schemas.py``).
 
 
 # ---------------------------------------------------------------------------

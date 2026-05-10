@@ -208,6 +208,14 @@ def make_session_cookie(session_store, test_signer):
         email: str = "analyst@example.com",
         name: str = "Test User",
         roles: list[str] | None = None,
+        # Note: ``roles`` is loosely typed as ``list[str]`` so unit tests
+        # can deliberately exercise the strict narrowing on
+        # ``SessionData.roles: list[KnownRole]`` (e.g. asserting that
+        # an unknown role like ``"viewer"`` or ``"tester"`` raises
+        # ``ValidationError`` at the factory). Production code
+        # constructs ``SessionData`` only via ``extract_roles`` which
+        # already filters to KnownRole. Note: ``soc`` is a canonical
+        # KnownRole and will NOT raise.
     ) -> str:
         now = datetime.now(timezone.utc)
         data = SessionData(

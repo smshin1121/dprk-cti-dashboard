@@ -22,7 +22,7 @@ from typing import Any
 import httpx
 from fastapi import Depends, HTTPException, Request, Response
 
-from .auth.schemas import CurrentUser
+from .auth.schemas import CurrentUser, KnownRole
 from .auth.session import SessionStore, get_session_store, set_session_cookie
 from .config import get_settings
 from .embedding_client import LlmProxyEmbeddingClient
@@ -67,7 +67,7 @@ async def verify_token(
 
 
 def require_role(
-    *allowed_roles: str,
+    *allowed_roles: KnownRole,
 ) -> Callable[[CurrentUser], Coroutine[Any, Any, CurrentUser]]:
     """Dependency factory enforcing that the current user holds at least one
     of ``allowed_roles``. Used at the endpoint level for RBAC checks.
@@ -77,7 +77,10 @@ def require_role(
     request scope, pairing this with a router-level ``verify_token`` is
     safe — ``verify_token`` runs exactly once per request.
 
-    Known realm roles (see §9.3): ``analyst``, ``admin``, ``policy``.
+    Known realm roles (see ``KnownRole`` in ``api.auth.schemas`` for the
+    canonical literal): ``analyst``, ``admin``, ``policy``, ``researcher``,
+    ``soc``. Adding a role to that ``Literal`` automatically extends the
+    runtime ``KNOWN_ROLES`` filter via ``typing.get_args``.
 
         @router.post("/rules", dependencies=[Depends(require_role("admin"))])
         async def create_rule(...): ...

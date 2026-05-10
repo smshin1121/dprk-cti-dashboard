@@ -12,7 +12,7 @@ The verifier:
 from __future__ import annotations
 
 import time
-from typing import Any
+from typing import Any, TypeGuard, get_args
 
 import httpx
 from authlib.jose import JsonWebKey, jwt
@@ -27,9 +27,12 @@ from cachetools import TTLCache
 
 from ..config import get_settings
 from .oidc_client import discover_metadata
+from .schemas import KnownRole
 
-# Roles defined in the Keycloak realm import. Anything else is ignored.
-KNOWN_ROLES: frozenset[str] = frozenset({"analyst", "admin", "policy"})
+# Runtime filter for realm roles. Derived from the ``KnownRole`` Literal
+# in ``schemas.py`` so the type system + runtime stay in lockstep — adding
+# a role to the Literal automatically extends this filter.
+KNOWN_ROLES: frozenset[KnownRole] = frozenset(get_args(KnownRole))
 
 # JWKS cache: a single key ("jwks") with a 5-minute TTL.
 _jwks_cache: TTLCache[str, dict[str, Any]] = TTLCache(maxsize=1, ttl=300)
@@ -163,11 +166,16 @@ async def verify_token(token: str) -> dict[str, Any]:
     return dict(claims)
 
 
-def extract_roles(claims: dict[str, Any]) -> list[str]:
+def _is_known_role(role: object) -> TypeGuard[KnownRole]:
+    """``TypeGuard`` so the comprehension below narrows ``str`` → ``KnownRole``."""
+    return isinstance(role, str) and role in KNOWN_ROLES
+
+
+def extract_roles(claims: dict[str, Any]) -> list[KnownRole]:
     """Return the subset of realm roles we recognise."""
     realm_access = claims.get("realm_access") or {}
     raw_roles = realm_access.get("roles") or []
-    return [r for r in raw_roles if r in KNOWN_ROLES]
+    return [r for r in raw_roles if _is_known_role(r)]
 
 
 def extract_identity(claims: dict[str, Any]) -> tuple[str, str, str]:
