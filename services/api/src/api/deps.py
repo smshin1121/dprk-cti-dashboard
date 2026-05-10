@@ -77,7 +77,10 @@ def require_role(
     request scope, pairing this with a router-level ``verify_token`` is
     safe — ``verify_token`` runs exactly once per request.
 
-    Known realm roles (see §9.3): ``analyst``, ``admin``, ``policy``.
+    Known realm roles (see ``KnownRole`` in ``api.auth.schemas`` for the
+    canonical literal): ``analyst``, ``admin``, ``policy``, ``researcher``,
+    ``soc``. Adding a role to that ``Literal`` automatically extends the
+    runtime ``KNOWN_ROLES`` filter via ``typing.get_args``.
 
         @router.post("/rules", dependencies=[Depends(require_role("admin"))])
         async def create_rule(...): ...

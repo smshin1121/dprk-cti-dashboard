@@ -326,14 +326,10 @@ class TestRBAC:
         )
         assert resp.status_code == 200
 
-    async def test_unknown_role_403(
-        self, actors_client: AsyncClient, make_session_cookie
-    ) -> None:
-        cookie = await _cookie(make_session_cookie, role="unknown_role")
-        resp = await actors_client.get(
-            "/api/v1/actors", cookies={"dprk_cti_session": cookie}
-        )
-        assert resp.status_code == 403
+    # NOTE: An "unknown role → 403" per-route test was removed when the
+    # Phase 0 deferral on ``SessionData.roles: list[KnownRole]`` was
+    # closed. Unknown roles now fail pydantic validation at session
+    # construction (see ``tests/unit/test_auth_schemas.py``).
 
 
 # ---------------------------------------------------------------------------

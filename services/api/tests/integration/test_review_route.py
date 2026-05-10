@@ -155,27 +155,27 @@ class TestRBAC:
         )
         assert resp.status_code == 403
 
-    async def test_soc_role_rejected_403(
-        self, review_client: AsyncClient, make_session_cookie
+    @pytest.mark.parametrize("unknown_role", ["viewer", "tester"])
+    async def test_unknown_role_rejected_at_session_construction(
+        self, make_session_cookie, unknown_role: str
     ) -> None:
-        cookie = await make_session_cookie(roles=["soc"])
-        resp = await review_client.post(
-            REVIEW_URL.format(staging_id=1),
-            cookies={"dprk_cti_session": cookie},
-            json={"decision": "approve"},
-        )
-        assert resp.status_code == 403
+        """Unknown realm roles fail ``SessionData`` validation upstream of RBAC.
 
-    async def test_unknown_role_rejected_403(
-        self, review_client: AsyncClient, make_session_cookie
-    ) -> None:
-        cookie = await make_session_cookie(roles=["viewer"])
-        resp = await review_client.post(
-            REVIEW_URL.format(staging_id=1),
-            cookies={"dprk_cti_session": cookie},
-            json={"decision": "approve"},
-        )
-        assert resp.status_code == 403
+        Replaces the prior ``test_soc_role_rejected_403`` /
+        ``test_unknown_role_rejected_403`` assertions: with the Phase 0
+        roles-narrowing deferral closed, ``SessionData.roles`` is
+        ``list[KnownRole]`` and pydantic rejects unknowns at construction.
+        The RBAC layer therefore never observes a session bearing an
+        unknown role — the gate moved up the stack.
+
+        ``soc`` was removed from this parametrize because the canonical
+        ``KnownRole`` literal includes it (it sits on ``_READ_ROLES``);
+        ``viewer`` and ``tester`` remain genuinely-unknown placeholders.
+        """
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            await make_session_cookie(roles=[unknown_role])
 
     @pytest.mark.parametrize("role", ["analyst", "researcher", "admin"])
     async def test_allowed_roles_reach_handler(
