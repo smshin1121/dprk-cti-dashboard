@@ -19,12 +19,15 @@ metrics and emits them through the standard DQ sink fan-out.
 
 from __future__ import annotations
 
+import logging
 import uuid
 from dataclasses import dataclass
 from typing import Any
 
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
+
+logger = logging.getLogger(__name__)
 
 from worker.bootstrap.aliases import AliasDictionary
 from worker.bootstrap.normalize import (
@@ -131,7 +134,14 @@ async def run_taxii_ingest(
                     session, action=TAXII_RUN_STARTED, meta=audit_meta,
                 )
         except Exception:
-            pass
+            # Savepoint isolates the audit-write failure from the
+            # outer transaction so the run can still proceed (PR #9
+            # carry of Codex P2). The warning surfaces the swallowed
+            # exception to operators rather than hiding it.
+            logger.warning(
+                "taxii_run_started audit write failed (run continues)",
+                exc_info=True,
+            )
 
     collection_results: list[CollectionResult] = []
     all_inserted_ids: list[int] = []
@@ -210,7 +220,12 @@ async def run_taxii_ingest(
                     session, action=action, meta=audit_meta, detail=detail,
                 )
         except Exception:
-            pass
+            # Savepoint isolates the audit-write failure (PR #9 Codex
+            # P2 carry). See sibling taxii_run_started block above.
+            logger.warning(
+                "taxii_run_completed/failed audit write failed (run continues)",
+                exc_info=True,
+            )
 
     return TaxiiRunOutcome(
         run_id=run_id,
@@ -355,7 +370,14 @@ async def _process_collection(
                             staging_id=sid, url_canonical=url_c,
                         )
                 except Exception:
-                    pass
+                    # Savepoint isolates per-row audit-write failure.
+                    # See sibling taxii_run_started block for rationale.
+                    logger.warning(
+                        "taxii staging_insert audit write failed for "
+                        "staging_id=%s (insert proceeds)",
+                        sid,
+                        exc_info=True,
+                    )
 
     # P2 Codex R7: count empty descriptions only for actually inserted
     # rows (not overlap duplicates) to avoid inflated/impossible rates.
