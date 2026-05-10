@@ -55,7 +55,6 @@ _ENV = {
     "APP_ENV": "test",
     "DATABASE_URL": "postgresql+psycopg://postgres:CHANGE_ME@localhost:5434/dprk_cti",
     "REDIS_URL": "redis://localhost:6379/0",
-    "JWT_SECRET": "pr10-manual-verification-secret-32chars",
     "OIDC_CLIENT_ID": "dprk-cti",
     "OIDC_CLIENT_SECRET": "manual-verification-placeholder",
     "OIDC_ISSUER_URL": "http://keycloak.test/realms/dprk",

@@ -53,7 +53,6 @@ def _stub_settings(
         oidc_trusted_issuers=[],
         database_url="postgresql+psycopg://x",
         redis_url=redis_url,
-        jwt_secret="x" * 32,
         oidc_client_id="x",
         oidc_client_secret="x",
         oidc_issuer_url="http://x",

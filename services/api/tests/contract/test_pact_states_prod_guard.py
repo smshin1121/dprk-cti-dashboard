@@ -35,7 +35,6 @@ def _base_env() -> dict[str, str]:
     return {
         "DATABASE_URL": "postgresql+psycopg://test@localhost/test",
         "REDIS_URL": "redis://localhost:6379/0",
-        "JWT_SECRET": "ci-openapi-check-secret-at-least-32-chars",
         "OIDC_CLIENT_ID": "dprk-cti",
         "OIDC_CLIENT_SECRET": "ci-openapi-check",
         "OIDC_ISSUER_URL": "http://keycloak.test/realms/dprk",
