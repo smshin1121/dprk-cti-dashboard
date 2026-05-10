@@ -1,69 +1,16 @@
-"""Unit tests for api.telemetry redaction hooks (H-2s) + OTLP insecure env reader.
+"""Unit tests for ``worker.telemetry._otlp_insecure_from_env``.
 
-These tests don't exercise the full OTel pipeline — they only verify that
-``_redact_httpx_request`` / ``_redact_httpx_response`` replace sensitive
-header attributes on a recording span with ``[REDACTED]``, and that
-``_otlp_insecure_from_env`` parses the OTEL_EXPORTER_OTLP_INSECURE env
-var as documented.
+The worker's telemetry module exposes a tiny env-driven helper for the
+OTLP exporter ``insecure`` flag (previously hardcoded ``True``). These
+tests pin the parser contract documented in the env templates so a
+future refactor cannot quietly flip the default or stop honoring an
+operator override.
 """
 from __future__ import annotations
 
-from unittest.mock import MagicMock
-
 import pytest
 
-from api.telemetry import (
-    _otlp_insecure_from_env,
-    _redact_httpx_request,
-    _redact_httpx_response,
-)
-
-
-def _recording_span() -> MagicMock:
-    span = MagicMock()
-    span.is_recording.return_value = True
-    return span
-
-
-def test_redact_httpx_request_replaces_sensitive_headers():
-    span = _recording_span()
-
-    _redact_httpx_request(span, request=MagicMock())
-
-    recorded = {
-        call.args[0]: call.args[1] for call in span.set_attribute.call_args_list
-    }
-    assert recorded.get("http.request.header.authorization") == "[REDACTED]"
-    assert recorded.get("http.request.header.cookie") == "[REDACTED]"
-    assert recorded.get("http.request.header.x-internal-token") == "[REDACTED]"
-
-
-def test_redact_httpx_response_replaces_sensitive_headers():
-    span = _recording_span()
-
-    _redact_httpx_response(span, request=MagicMock(), response=MagicMock())
-
-    recorded = {
-        call.args[0]: call.args[1] for call in span.set_attribute.call_args_list
-    }
-    assert recorded.get("http.response.header.set-cookie") == "[REDACTED]"
-    assert recorded.get("http.response.header.www-authenticate") == "[REDACTED]"
-
-
-def test_redact_hooks_no_op_on_non_recording_span():
-    span = MagicMock()
-    span.is_recording.return_value = False
-
-    _redact_httpx_request(span, request=MagicMock())
-    _redact_httpx_response(span, request=MagicMock(), response=MagicMock())
-
-    span.set_attribute.assert_not_called()
-
-
-def test_redact_hooks_handle_none_span():
-    # Must not raise on a None span — some instrumentation paths pass None.
-    _redact_httpx_request(None, request=MagicMock())
-    _redact_httpx_response(None, request=MagicMock(), response=MagicMock())
+from worker.telemetry import _otlp_insecure_from_env
 
 
 def test_otlp_insecure_default_is_true(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -91,7 +38,7 @@ def test_otlp_insecure_truthy_or_empty_values_return_true_quietly(
     warning — only operator typos should trigger that path.
     """
     monkeypatch.setenv("OTEL_EXPORTER_OTLP_INSECURE", raw)
-    with caplog.at_level("WARNING", logger="api.telemetry"):
+    with caplog.at_level("WARNING", logger="worker.telemetry"):
         assert _otlp_insecure_from_env() is True
     assert all(
         "unrecognized value" not in record.message for record in caplog.records
@@ -108,7 +55,7 @@ def test_otlp_insecure_unrecognized_value_returns_true_with_warning(
     silently keep cleartext transport when TLS was the intent.
     """
     monkeypatch.setenv("OTEL_EXPORTER_OTLP_INSECURE", raw)
-    with caplog.at_level("WARNING", logger="api.telemetry"):
+    with caplog.at_level("WARNING", logger="worker.telemetry"):
         assert _otlp_insecure_from_env() is True
     matching = [
         r for r in caplog.records if "unrecognized value" in r.message
