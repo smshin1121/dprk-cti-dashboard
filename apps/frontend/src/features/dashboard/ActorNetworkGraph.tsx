@@ -37,6 +37,8 @@ import {
   forceLink,
   forceManyBody,
   forceSimulation,
+  type SimulationLinkDatum,
+  type SimulationNodeDatum,
 } from 'd3'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -51,15 +53,33 @@ const SVG_WIDTH = 600
 const SVG_HEIGHT = 360
 const MIN_RADIUS = 4
 const MAX_RADIUS = 16
-const EDGE_STROKE = '#94a3b8'
 
-// Distinct stroke per kind (DESIGN.md actor-network vocabulary). The
-// stroke ATTRIBUTE — not a class — so the T4 distinct-stroke
-// assertion can read `getAttribute('stroke')` directly.
+// Stroke values resolve to DESIGN.md tokens via the
+// `apps/frontend/src/styles/tokens.css` HSL CSS variable layer
+// (`--muted-soft`, `--status-warning|info|success`). SVG `stroke`
+// accepts `hsl(...)` directly, so the T4 distinct-stroke assertion
+// can still read `getAttribute('stroke')` and compare distinctness;
+// the exact RGB value is owned by the token layer.
+const EDGE_STROKE = 'hsl(var(--muted-soft))'
+
+// Distinct stroke per kind (DESIGN.md categorical → Ferrari status
+// palette mapping per `tokens.css` §"Status palette"):
+//   actor  → status-warning  (#f13a2c — warning red, was #ef4444)
+//   tool   → status-info     (#4c98b9 — info blue,    was #3b82f6)
+//   sector → status-success  (#03904a — success green, was #10b981)
 const KIND_STROKE: Record<ActorNetworkNode['kind'], string> = {
-  actor: '#ef4444',
-  tool: '#3b82f6',
-  sector: '#10b981',
+  actor: 'hsl(var(--status-warning))',
+  tool: 'hsl(var(--status-info))',
+  sector: 'hsl(var(--status-success))',
+}
+
+// Concrete simulation-node shape: d3-force's SimulationNodeDatum
+// declares `x`/`y` as optional, but our `layoutPositions` writes
+// concrete numbers at init. Extending it keeps `id` typed and lets
+// the generics on forceSimulation / forceLink replace the prior
+// `as never` + `as unknown as { id: string }` casts (Codex r9 L3).
+interface SimNode extends SimulationNodeDatum {
+  id: string
 }
 
 function topologySignature(
@@ -110,28 +130,28 @@ function layoutPositions(
   // layout, and keeping them out of the memo prevents Codex r9 M1's
   // stale-render hazard (a refetch with identical topology but
   // changed label/kind/degree must STILL render fresh values).
-  const simNodes = nodes.map((n) => ({
+  const simNodes: SimNode[] = nodes.map((n) => ({
     id: n.id,
     x: SVG_WIDTH / 2 + hashId(n.id) * 120,
     y: SVG_HEIGHT / 2 + hashId(`${n.id}:y`) * 80,
   }))
-  const simEdges = edges.map((e) => ({
+  const simEdges: SimulationLinkDatum<SimNode>[] = edges.map((e) => ({
     source: e.source_id,
     target: e.target_id,
   }))
 
-  // d3-force types declare a permissive `SimulationNodeDatum` for
-  // `forceLink.id`; cast through `unknown` to thread our concrete
-  // node shape. The simulation mutates `x`/`y` in place after each
-  // tick.
-  const simulation = forceSimulation(simNodes as never)
+  // Generics on forceSimulation + forceLink thread the concrete
+  // `SimNode` shape through, so `.id((d) => d.id)` resolves without
+  // the prior `as unknown as { id: string }` cast. The simulation
+  // mutates `x`/`y` in place after each tick.
+  const simulation = forceSimulation<SimNode>(simNodes)
     .force(
       'link',
-      forceLink(simEdges as never)
-        .id((d) => (d as unknown as { id: string }).id)
+      forceLink<SimNode, SimulationLinkDatum<SimNode>>(simEdges)
+        .id((d) => d.id)
         .distance(80),
     )
-    .force('charge', forceManyBody().strength(-150))
+    .force('charge', forceManyBody<SimNode>().strength(-150))
     .force('center', forceCenter(SVG_WIDTH / 2, SVG_HEIGHT / 2))
     .stop()
 
