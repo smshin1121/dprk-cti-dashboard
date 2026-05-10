@@ -24,15 +24,33 @@ logger = logging.getLogger(__name__)
 _initialized = False
 
 
+_OTLP_INSECURE_TRUTHY = frozenset({"true", "1", "yes"})
+_OTLP_INSECURE_FALSY = frozenset({"false", "0", "no"})
+
+
 def _otlp_insecure_from_env() -> bool:
     """Resolve the OTLP exporter ``insecure`` flag from env.
 
     Reads ``OTEL_EXPORTER_OTLP_INSECURE``; defaults to ``True`` for
     backwards-compatibility with the previous hardcoded value. Operators
     deploying behind a TLS-terminating collector set the var to ``false``.
+
+    Unrecognized values fall through to ``True`` and emit a
+    ``logger.warning`` so an operator typo (e.g. ``"falze"``, ``"off"``)
+    does not silently keep cleartext transport when TLS was intended.
     """
     raw = os.getenv("OTEL_EXPORTER_OTLP_INSECURE", "true").strip().lower()
-    return raw not in ("false", "0", "no")
+    if raw in _OTLP_INSECURE_FALSY:
+        return False
+    if raw not in _OTLP_INSECURE_TRUTHY and raw != "":
+        logger.warning(
+            "OTEL_EXPORTER_OTLP_INSECURE unrecognized value %r; "
+            "defaulting to insecure=True. Recognized: %s (truthy), %s (falsy).",
+            raw,
+            sorted(_OTLP_INSECURE_TRUTHY),
+            sorted(_OTLP_INSECURE_FALSY),
+        )
+    return True
 
 
 def setup_telemetry(app) -> None:
