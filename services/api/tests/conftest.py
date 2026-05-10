@@ -27,7 +27,6 @@ def _inject_env_vars() -> None:
         "APP_ENV": "test",
         "DATABASE_URL": "postgresql+psycopg://test:test@localhost:5432/testdb",
         "REDIS_URL": "redis://localhost:6379/0",
-        "JWT_SECRET": "test-jwt-secret-at-least-32-chars-long",
         "OIDC_CLIENT_ID": "dprk-cti",
         "OIDC_CLIENT_SECRET": "test-oidc-secret",
         "OIDC_ISSUER_URL": "http://keycloak.test/realms/dprk",

@@ -55,11 +55,6 @@ class Settings(BaseSettings):
     # CRITICAL: no fallback values — startup fails if these are absent from env
     database_url: str = Field(...)
     redis_url: str = Field(...)
-    # TODO(P1.x): remove jwt_secret. Keycloak now issues + signs the JWT, the
-    # API only ever verifies it via JWKS, so the platform no longer needs a
-    # local symmetric secret. Kept for one release to avoid a breaking env
-    # change.
-    jwt_secret: str = Field(...)
     oidc_client_id: str = Field(...)
     oidc_client_secret: str = Field(...)
     oidc_issuer_url: str = Field(...)

@@ -69,7 +69,6 @@ jobs:
       REDIS_URL: redis://localhost:6379/0
       RATE_LIMIT_STORAGE_URL: redis://localhost:6379/1
       APP_ENV: dev
-      JWT_SECRET: e2e-secret-at-least-32-chars-long-abc
       OIDC_CLIENT_ID: dprk-cti
       OIDC_CLIENT_SECRET: e2e-oidc-secret
       OIDC_ISSUER_URL: http://keycloak.test/realms/dprk
@@ -570,7 +569,6 @@ jobs:
       # corpus-wide embedding coverage is low in the shared verifier DB.
       HYBRID_SEARCH_COVERAGE_THRESHOLD: "0.0"
       APP_ENV: dev
-      JWT_SECRET: pact-verify-secret-at-least-32-chars-long
       OIDC_CLIENT_ID: dprk-cti
       OIDC_CLIENT_SECRET: pact-verify-oidc-secret
       OIDC_ISSUER_URL: http://keycloak.test/realms/dprk
@@ -698,7 +696,6 @@ jobs:
           APP_ENV: dev  # openapi_url is None in prod; only dev exposes it
           DATABASE_URL: ${{ env.ALEMBIC_DATABASE_URL }}
           REDIS_URL: redis://localhost:6379/0
-          JWT_SECRET: ci-openapi-check-secret-at-least-32-chars
           OIDC_CLIENT_ID: dprk-cti
           OIDC_CLIENT_SECRET: ci-openapi-check
           OIDC_ISSUER_URL: http://keycloak.test/realms/dprk
@@ -776,7 +773,6 @@ jobs:
       REDIS_URL: redis://localhost:6379/0
       RATE_LIMIT_STORAGE_URL: redis://localhost:6379/1
       APP_ENV: dev
-      JWT_SECRET: perf-smoke-secret-at-least-32-chars-long
       OIDC_CLIENT_ID: dprk-cti
       OIDC_CLIENT_SECRET: perf-smoke-oidc-secret
       OIDC_ISSUER_URL: http://keycloak.test/realms/dprk
