@@ -117,6 +117,8 @@ export interface Resources {
       dateFromLabel: string
       dateToLabel: string
       datePlaceholder: string
+      groupReports: string
+      groupIncidents: string
     }
     caveat: { title: string; body: string; dismiss: string }
     chart: { caption: string }

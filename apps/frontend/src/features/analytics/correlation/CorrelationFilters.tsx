@@ -58,6 +58,22 @@ interface SeriesPickerProps {
   onPick: (id: string) => void
 }
 
+// Q1 catalog grouping (PR-C C6 lock): items partition by their schema
+// `root` field (2-value enum from `lib/api/schemas.ts:692`), NOT by an
+// `id` prefix — `id` is opaque per umbrella §2.2.
+const SERIES_ROOTS = ['reports.published', 'incidents.reported'] as const
+type SeriesRoot = (typeof SERIES_ROOTS)[number]
+
+const ROOT_TESTID_SUFFIX: Record<SeriesRoot, 'reports' | 'incidents'> = {
+  'reports.published': 'reports',
+  'incidents.reported': 'incidents',
+}
+
+const ROOT_HEADER_KEY: Record<SeriesRoot, 'groupReports' | 'groupIncidents'> = {
+  'reports.published': 'groupReports',
+  'incidents.reported': 'groupIncidents',
+}
+
 function SeriesPicker({ axis, selected, catalog, onPick }: SeriesPickerProps): JSX.Element {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
@@ -91,21 +107,48 @@ function SeriesPicker({ axis, selected, catalog, onPick }: SeriesPickerProps): J
           role="listbox"
           className="absolute top-full z-10 mt-1 flex flex-col rounded-none border border-border-card bg-surface shadow"
         >
-          {catalog.map((s) => (
-            <li key={s.id}>
-              <button
-                type="button"
-                data-testid={`correlation-filter-${axis}-option-${s.id}`}
-                onClick={() => {
-                  onPick(s.id)
-                  setOpen(false)
-                }}
-                className="block w-full px-3 py-1.5 text-left text-sm text-ink hover:bg-app focus:outline-none focus:ring-2 focus:ring-ring"
-              >
-                {s.label_en}
-              </button>
-            </li>
-          ))}
+          {SERIES_ROOTS.map((root) => {
+            const groupItems = catalog.filter((s) => s.root === root)
+            if (groupItems.length === 0) {
+              return null
+            }
+            const suffix = ROOT_TESTID_SUFFIX[root]
+            return (
+              <li key={root}>
+                <ul
+                  role="group"
+                  data-testid={`correlation-filter-${axis}-group-${suffix}-list`}
+                  aria-labelledby={`correlation-filter-${axis}-group-${suffix}`}
+                  className="flex flex-col"
+                >
+                  <li>
+                    <span
+                      id={`correlation-filter-${axis}-group-${suffix}`}
+                      data-testid={`correlation-filter-${axis}-group-${suffix}`}
+                      className="block px-3 pt-2 pb-1 text-xs font-cta uppercase tracking-caption text-ink-muted"
+                    >
+                      {t(`correlation.filters.${ROOT_HEADER_KEY[root]}`)}
+                    </span>
+                  </li>
+                  {groupItems.map((s) => (
+                    <li key={s.id}>
+                      <button
+                        type="button"
+                        data-testid={`correlation-filter-${axis}-option-${s.id}`}
+                        onClick={() => {
+                          onPick(s.id)
+                          setOpen(false)
+                        }}
+                        className="block w-full px-3 py-1.5 text-left text-sm text-ink hover:bg-app focus:outline-none focus:ring-2 focus:ring-ring"
+                      >
+                        {s.label_en}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </li>
+            )
+          })}
         </ul>
       ) : null}
     </div>

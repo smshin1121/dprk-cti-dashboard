@@ -51,6 +51,7 @@ regressions.
 | Incident detail              | `/incidents/999002`         | `seeded incident detail fixture and an authenticated analyst session`              | 999002                          | PR #14 Group H  |
 | Actor detail (empty panel)   | `/actors/999003`            | `seeded actor detail fixture and an authenticated analyst session`                 | 999003                          | PR #14 Group H  |
 | Actor detail with linked reports | `/actors/999003`        | `seeded actor with linked reports fixture and an authenticated analyst session`    | 999003 + 999050 / 999051 / 999052 | PR #15 Group G  |
+| Correlation (populated)      | `/analytics/correlation?x=reports.total&y=incidents.total` | `seeded correlation populated fixture and an authenticated analyst session`        | — (date-range seed: 100 months 2018-01..2026-04) | PR-C T1 (slice 3 hardening) |
 
 The PR #15 target reuses the **same path** `/actors/999003` as
 the PR #14 row but runs against a **different provider state**.
@@ -103,6 +104,7 @@ for detail + similar + actor-reports paths".
      "seeded incident detail fixture and an authenticated analyst session"
      "seeded actor detail fixture and an authenticated analyst session"
      "seeded actor with linked reports fixture and an authenticated analyst session"
+     "seeded correlation populated fixture and an authenticated analyst session"
    )
    for state in "${STATES[@]}"; do
      curl -sS -X POST http://127.0.0.1:8000/_pact/provider_states \
@@ -112,11 +114,15 @@ for detail + similar + actor-reports paths".
    done
    ```
 
-   All five states are idempotent on the DB; the fifth state
-   (PR #15 Group C) overlaps the fourth's actor seed by design — it
-   reuses `ACTOR_DETAIL_FIXTURE_ID=999003` and only ADDS the three
-   `report_codenames` links, so seeding both in one session is
-   safe and leaves the cookie jar intact.
+   All six states are idempotent on the DB. Two overlap notes:
+   the fifth state (PR #15 Group C) overlaps the fourth's actor seed
+   by design — it reuses `ACTOR_DETAIL_FIXTURE_ID=999003` and only
+   ADDS the three `report_codenames` links, so seeding both in one
+   session is safe and leaves the cookie jar intact. The sixth
+   state (PR-C T1) seeds 100 months of `reports` + `incidents` rows
+   in the date range 2018-01..2026-04 used by the populated
+   correlation fixture; it touches different rows than the first
+   five, so no overlap concerns.
 
    Then import `session.cookies` into the browser profile used by
    the headless Chrome the audit launches OR attach it via a
@@ -134,13 +140,19 @@ pnpm --filter @dprk-cti/frontend run lighthouse:audit
 
 Writes to `reports/`. Useful for a `/dashboard`-only smoke.
 
-### All targets (PR #14 Group H + PR #15 Group G)
+### All targets (PR #14 Group H + PR #15 Group G + PR-C T1)
 
-Loop over the five targets; each invocation lands in its own
+Loop over the six targets; each invocation lands in its own
 sub-directory so `SUMMARY.md` + per-theme JSONs don't overwrite.
 The two `/actors/999003` targets share a path but not a subdir —
 the reviewer sees both the empty-panel (PR #14) and the populated-
-panel (PR #15) audits side by side.
+panel (PR #15) audits side by side. The new `correlation` target
+(PR-C T1) carries query-string state (`?x=reports.total&
+y=incidents.total`) which the FE's `useState` initializer hydrates
+synchronously, so the audit measures the populated chart-render
+state rather than the empty-state branch (per
+`pattern_page_local_url_state_route_gate` from PR #36 — URL params
+survive Shell hydration on this route).
 
 ```bash
 TARGETS=(
@@ -149,6 +161,7 @@ TARGETS=(
   "incidents-999002:/incidents/999002"
   "actors-999003:/actors/999003"
   "actors-999003-linked-reports:/actors/999003"
+  "correlation:/analytics/correlation?x=reports.total&y=incidents.total"
 )
 for entry in "${TARGETS[@]}"; do
   subdir="${entry%%:*}"
@@ -178,7 +191,8 @@ apps/frontend/lighthouse/reports/
 ├── reports-999001/   … same shape
 ├── incidents-999002/ … same shape
 ├── actors-999003/    … same shape (empty panel state)
-└── actors-999003-linked-reports/ … same shape (populated panel state)
+├── actors-999003-linked-reports/ … same shape (populated panel state)
+└── correlation/      … same shape (populated chart state via URL hydration)
 ```
 
 ### Env overrides
