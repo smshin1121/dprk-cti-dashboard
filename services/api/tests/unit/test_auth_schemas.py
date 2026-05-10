@@ -1,10 +1,11 @@
 """Unit tests for ``api.auth.schemas`` — KnownRole narrowing contract.
 
-Pins the type-narrowing change introduced when the Phase 0 deferral
-on ``SessionData.roles`` / ``CurrentUser.roles`` was closed. The fields
-are now ``list[KnownRole]`` (a ``Literal["analyst","admin","policy"]``)
-instead of plain ``list[str]``, so pydantic rejects any unknown role
-at construction.
+Pins the type-narrowing change introduced when the P1.1 deferral on
+``SessionData.roles`` / ``CurrentUser.roles`` was closed. The fields
+are now ``list[KnownRole]`` (a ``Literal["analyst","admin","policy",
+"researcher","soc"]``) instead of plain ``list[str]``, so pydantic
+rejects any unknown role at construction. The canonical 5-role set
+matches the router-level RBAC allowlists in ``api.routers.*``.
 
 These tests pin three contracts:
 
