@@ -116,6 +116,7 @@ _LLM_PROXY_INTERNAL_TOKEN_ENV_VAR = "LLM_PROXY_INTERNAL_TOKEN"
 _LLM_PROXY_TIMEOUT_ENV_VAR = "LLM_PROXY_EMBEDDING_TIMEOUT_SECONDS"
 
 _embed_logger = logging.getLogger("worker.bootstrap.cli.embedding")
+logger = logging.getLogger(__name__)
 
 
 def _default_aliases_path() -> Path:
@@ -390,7 +391,13 @@ async def run_bootstrap(
             # outer transaction is clean. Continue without the
             # etl_run_started record; later run-level writes may or
             # may not succeed but the body will proceed either way.
-            pass
+            # Warning surfaces the swallowed exception so operators can
+            # diagnose audit-infrastructure faults instead of silently
+            # losing the run-started record (PR #7 Group B carry).
+            logger.warning(
+                "etl_run_started audit write failed (run continues)",
+                exc_info=True,
+            )
 
     etl_savepoint = await session.begin_nested()
     audit_buffer: AuditBuffer | None = (
@@ -482,7 +489,10 @@ async def run_bootstrap(
                 # Same savepoint isolation as RUN_STARTED: on pg a
                 # failed audit INSERT would leave the outer tx in an
                 # aborted state and the final session.commit() below
-                # would raise (Codex round 1 P2).
+                # would raise (Codex round 1 P2). Warning surfaces
+                # the swallowed exception to operators (PR #7 Group B
+                # carry — silent swallow previously hid audit infra
+                # bugs).
                 try:
                     async with session.begin_nested():
                         await write_run_audit(
@@ -492,7 +502,11 @@ async def run_bootstrap(
                             detail=completion_detail,
                         )
                 except Exception:
-                    pass
+                    logger.warning(
+                        "%s audit write failed (run completed)",
+                        completion_action,
+                        exc_info=True,
+                    )
             if not caller_owns_outer and session.in_transaction():
                 await session.commit()
     except Exception as exc:
@@ -522,7 +536,15 @@ async def run_bootstrap(
                         },
                     )
             except Exception:
-                pass
+                # Warning surfaces the swallowed audit-write exception
+                # to operators while preserving the original ETL
+                # error path (PR #7 Group B carry).
+                logger.warning(
+                    "etl_run_failed audit write failed "
+                    "(original ETL error: %s)",
+                    type(exc).__name__,
+                    exc_info=True,
+                )
             if not caller_owns_outer:
                 # Commit the outer so etl_run_started + etl_run_failed
                 # persist even though the body was rolled back. This
