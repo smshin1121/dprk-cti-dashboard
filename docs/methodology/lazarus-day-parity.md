@@ -68,25 +68,39 @@ verifications). They must be excluded when computing
 production-shape parity numbers.
 
 Filter patterns for the `dprk_cti` development database (post
-PR #36 + PR #37 fixture catalog):
+PR #36 + PR #37 fixture catalog), verified against actual fixture
+shape on `main @ a7d78e8`:
 
 ```sql
--- groups: real = NOT pact fixture
+-- groups: real = NOT pact-prefix-named fixture
+-- Caveat: assumes the dev DB has been bootstrapped from the v1.0
+-- workbook before any pact run. pact_states.py:975/:1206 call
+-- _ensure_full_group(name="Lazarus Group", ...) and other handlers
+-- upsert real-named canonical rows; in a bootstrapped DB the row
+-- pre-exists and the upsert is idempotent, but in a fresh-pact-only
+-- DB this filter would yield a phantom "real" row from pact-seeded
+-- canonical names. Re-bootstrap before audit if in doubt.
 WHERE name NOT LIKE 'pact-%' AND name NOT LIKE 'Pact %'
 
--- reports: real = NOT pact-prefixed urn
-WHERE NOT (url LIKE 'urn:pact-%' OR url LIKE 'urn:fixture%'
+-- reports: real = NOT pact-test-host fixture URL
+-- Pact fixtures use the canonical https://pact.test/... host (see
+-- pact_states.py:586/597/607/etc.). Earlier drafts of this filter
+-- cited urn:pact-% / urn:fixture% schemes that match zero real
+-- rows; the title ILIKE clause is kept as a defensive secondary
+-- match for any fixture without a pact.test URL.
+WHERE NOT (url LIKE 'https://pact.test/%'
            OR title ILIKE '%pact%fixture%')
 
 -- incidents: real = NOT 'pact' or 'fixture' in title (NULL-safe)
+-- incidents.title is NOT NULL per services/api alembic schema, so
+-- the COALESCE guard on title is technically redundant. The guard
+-- pattern matters when filters extend to incidents.description
+-- (nullable) — a previous draft using `description ILIKE ...`
+-- silently dropped real rows because `NOT (a OR NULL)` evaluates
+-- to NULL, excluding the row from the count.
 WHERE COALESCE(title,'') NOT ILIKE '%pact%'
   AND COALESCE(title,'') NOT ILIKE '%fixture%'
 ```
-
-The `COALESCE(...,'')` guard on incidents is mandatory — a previous
-audit silently dropped 215 real rows because `description ILIKE ...`
-evaluated to `NULL` (not `FALSE`) on rows with `description IS NULL`,
-and `NOT (a OR NULL)` is `NULL`, which excludes the row from the count.
 
 ---
 
@@ -122,7 +136,7 @@ DPRK threat groups via the `report_codenames` junction**:
 | Metric | Count | % |
 |:---|---:|---:|
 | Real reports total | 3,438 | 100% |
-| Reports attributed to a real group via `codenames` | 1,135 | **33%** |
+| Reports attributed to a real group via the `report_codenames` junction | 1,135 | **33%** |
 | Reports unattributed (no `report_codenames` entry) | 2,320 | 67% |
 
 A 33% attribution rate is consistent with the ingest pipeline's
@@ -158,9 +172,16 @@ roadmap discussion. **Not a 2026-05-10 follow-up commitment.**
 
 Junction-table attribution coverage on the 215 real incidents:
 
-| Junction table | Distinct incidents covered | % of 215 real |
+Each row reports `COUNT(DISTINCT incident_id)` against the unfiltered
+junction table; the % column normalizes against the **filtered** count
+of 215 real incidents. Junction rows on pact-fixture incidents leak
+into the unfiltered numerator (the +5 noted on `incident_motivations`)
+without a join to `incidents` to apply the §2 filter, hence "≥ 97%
+real" rather than a precise percentage on that row only.
+
+| Junction table | Distinct incidents covered (unfiltered) | % of 215 real |
 |:---|---:|---:|
-| `incident_motivations` | 220 (incl. 5 fixture-side) | ≥ 97% real |
+| `incident_motivations` | 220 (~5 fixture-side) | ≥ 97% real |
 | `incident_sectors` | 214 | 99% |
 | `incident_countries` | 207 | 96% |
 | `incident_sources` | **3** | **1.4%** |
@@ -201,7 +222,7 @@ To refresh this document with a new dated section in §3:
    SELECT 'groups_real', COUNT(*) FROM groups
      WHERE name NOT LIKE 'pact-%' AND name NOT LIKE 'Pact %'
    UNION ALL SELECT 'reports_real', COUNT(*) FROM reports
-     WHERE NOT (url LIKE 'urn:pact-%' OR url LIKE 'urn:fixture%'
+     WHERE NOT (url LIKE 'https://pact.test/%'
                 OR title ILIKE '%pact%fixture%')
    UNION ALL SELECT 'incidents_real', COUNT(*) FROM incidents
      WHERE COALESCE(title,'') NOT ILIKE '%pact%'
