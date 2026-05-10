@@ -2,7 +2,7 @@ import json
 from functools import lru_cache
 from typing import Annotated
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
@@ -63,9 +63,14 @@ class Settings(BaseSettings):
     # callback URL we hand to Keycloak (e.g. http://localhost:8000).
     oidc_redirect_base_url: str = Field(...)
 
-    # Session cookie + Redis-backed session store
+    # Session cookie + Redis-backed session store.
+    # `session_cookie_secure` defaults to True so production deployments
+    # that don't explicitly set the env var still get the secure-by-default
+    # `Secure` cookie attribute (browser only sends the cookie over HTTPS).
+    # Dev/CI explicitly override to False via envs/api.env.example +
+    # services/api/tests/conftest.py because the dev compose serves HTTP.
     session_cookie_name: str = "dprk_cti_session"
-    session_cookie_secure: bool = False
+    session_cookie_secure: bool = True
     session_cookie_samesite: str = "lax"
     session_signing_key: str = Field(...)
     session_ttl_seconds: int = 3600
@@ -138,6 +143,32 @@ class Settings(BaseSettings):
                 f"got {v}"
             )
         return v
+
+    @model_validator(mode="after")
+    def _enforce_session_cookie_secure_in_prod(self) -> "Settings":
+        """Fail-closed when prod ships session cookies without ``Secure``.
+
+        Mirrors the ``rate_limit_storage_url`` policy on this same Settings
+        class: ``app_env=="prod"`` MUST refuse to boot if a critical
+        security-default has been turned off. The Phase 0 deferral that
+        flipped the field default to ``True`` covers operators who never
+        set the env var; this validator covers the remaining case where
+        an operator explicitly sets ``SESSION_COOKIE_SECURE=false`` in
+        prod (e.g. via a stale config copied from dev).
+
+        Dev / test / CI / staging are unaffected — only ``app_env=="prod"``
+        triggers the fail-closed branch.
+        """
+        if self.app_env == "prod" and not self.session_cookie_secure:
+            raise ValueError(
+                "session_cookie_secure must be True when app_env='prod'. "
+                "Setting SESSION_COOKIE_SECURE=false in production would "
+                "issue session cookies without the Secure attribute, "
+                "exposing them to network interception over HTTP. Either "
+                "leave SESSION_COOKIE_SECURE unset (default True) or set "
+                "it to true."
+            )
+        return self
 
 
 @lru_cache(maxsize=1)
