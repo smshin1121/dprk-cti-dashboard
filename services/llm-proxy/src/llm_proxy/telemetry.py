@@ -24,6 +24,17 @@ logger = logging.getLogger(__name__)
 _initialized = False
 
 
+def _otlp_insecure_from_env() -> bool:
+    """Resolve the OTLP exporter ``insecure`` flag from env.
+
+    Reads ``OTEL_EXPORTER_OTLP_INSECURE``; defaults to ``True`` for
+    backwards-compatibility with the previous hardcoded value. Operators
+    deploying behind a TLS-terminating collector set the var to ``false``.
+    """
+    raw = os.getenv("OTEL_EXPORTER_OTLP_INSECURE", "true").strip().lower()
+    return raw not in ("false", "0", "no")
+
+
 def setup_telemetry(app) -> None:
     """Configure OTLP tracing and FastAPI auto-instrumentation.
 
@@ -50,7 +61,7 @@ def setup_telemetry(app) -> None:
     )
 
     provider = TracerProvider(resource=resource)
-    exporter = OTLPSpanExporter(endpoint=endpoint, insecure=True)
+    exporter = OTLPSpanExporter(endpoint=endpoint, insecure=_otlp_insecure_from_env())
     provider.add_span_processor(BatchSpanProcessor(exporter))
     trace.set_tracer_provider(provider)
 

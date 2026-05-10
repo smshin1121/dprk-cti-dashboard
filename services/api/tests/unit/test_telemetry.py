@@ -1,14 +1,22 @@
-"""Unit tests for api.telemetry redaction hooks (H-2s).
+"""Unit tests for api.telemetry redaction hooks (H-2s) + OTLP insecure env reader.
 
 These tests don't exercise the full OTel pipeline — they only verify that
 ``_redact_httpx_request`` / ``_redact_httpx_response`` replace sensitive
-header attributes on a recording span with ``[REDACTED]``.
+header attributes on a recording span with ``[REDACTED]``, and that
+``_otlp_insecure_from_env`` parses the OTEL_EXPORTER_OTLP_INSECURE env
+var as documented.
 """
 from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from api.telemetry import _redact_httpx_request, _redact_httpx_response
+import pytest
+
+from api.telemetry import (
+    _otlp_insecure_from_env,
+    _redact_httpx_request,
+    _redact_httpx_response,
+)
 
 
 def _recording_span() -> MagicMock:
@@ -56,3 +64,27 @@ def test_redact_hooks_handle_none_span():
     # Must not raise on a None span — some instrumentation paths pass None.
     _redact_httpx_request(None, request=MagicMock())
     _redact_httpx_response(None, request=MagicMock(), response=MagicMock())
+
+
+def test_otlp_insecure_default_is_true(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Unset env var defaults to True — preserves the previous hardcoded value."""
+    monkeypatch.delenv("OTEL_EXPORTER_OTLP_INSECURE", raising=False)
+    assert _otlp_insecure_from_env() is True
+
+
+@pytest.mark.parametrize("raw", ["false", "FALSE", "False", "0", "no", "NO", " false "])
+def test_otlp_insecure_falsy_values_return_false(
+    monkeypatch: pytest.MonkeyPatch, raw: str
+) -> None:
+    """Documented falsy spellings flip the flag to False (TLS-terminating collector)."""
+    monkeypatch.setenv("OTEL_EXPORTER_OTLP_INSECURE", raw)
+    assert _otlp_insecure_from_env() is False
+
+
+@pytest.mark.parametrize("raw", ["true", "TRUE", "1", "yes", ""])
+def test_otlp_insecure_truthy_or_unknown_values_return_true(
+    monkeypatch: pytest.MonkeyPatch, raw: str
+) -> None:
+    """Truthy spellings + empty string return True (backwards-compat default)."""
+    monkeypatch.setenv("OTEL_EXPORTER_OTLP_INSECURE", raw)
+    assert _otlp_insecure_from_env() is True

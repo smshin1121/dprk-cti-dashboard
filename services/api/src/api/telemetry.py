@@ -45,6 +45,17 @@ _SENSITIVE_RESPONSE_HEADER_KEYS = (
 )
 
 
+def _otlp_insecure_from_env() -> bool:
+    """Resolve the OTLP exporter ``insecure`` flag from env.
+
+    Reads ``OTEL_EXPORTER_OTLP_INSECURE``; defaults to ``True`` for
+    backwards-compatibility with the previous hardcoded value. Operators
+    deploying behind a TLS-terminating collector set the var to ``false``.
+    """
+    raw = os.getenv("OTEL_EXPORTER_OTLP_INSECURE", "true").strip().lower()
+    return raw not in ("false", "0", "no")
+
+
 def _redact_httpx_request(span, request) -> None:
     """Remove sensitive headers from outgoing HTTPX spans."""
     if span is None or not getattr(span, "is_recording", lambda: False)():
@@ -93,7 +104,7 @@ def setup_telemetry(app, *, engine=None) -> None:
     )
 
     provider = TracerProvider(resource=resource)
-    exporter = OTLPSpanExporter(endpoint=endpoint, insecure=True)
+    exporter = OTLPSpanExporter(endpoint=endpoint, insecure=_otlp_insecure_from_env())
     provider.add_span_processor(BatchSpanProcessor(exporter))
     trace.set_tracer_provider(provider)
 
