@@ -40,7 +40,12 @@ def _base_env() -> dict[str, str]:
         "OIDC_ISSUER_URL": "http://keycloak.test/realms/dprk",
         "OIDC_REDIRECT_BASE_URL": "http://localhost:8000",
         "SESSION_SIGNING_KEY": "ci-openapi-check-signing-key-32chars",
-        "SESSION_COOKIE_NAME": "dprk_cti_session",
+        # `__Host-` prefix required by the prod fail-closed validator
+        # on Settings (see `_enforce_session_cookie_host_prefix_in_prod`).
+        # The pact-state guard test reimports with `APP_ENV=prod`, which
+        # exercises the validator — give it a value that satisfies it
+        # so we isolate the router-registration assertion.
+        "SESSION_COOKIE_NAME": "__Host-dprk_cti_session",
         "SESSION_COOKIE_SECURE": "true",
         "SESSION_COOKIE_SAMESITE": "lax",
         "CORS_ORIGINS": "http://localhost:3000",

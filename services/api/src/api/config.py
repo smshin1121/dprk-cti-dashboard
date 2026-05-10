@@ -64,12 +64,25 @@ class Settings(BaseSettings):
     oidc_redirect_base_url: str = Field(...)
 
     # Session cookie + Redis-backed session store.
+    #
     # `session_cookie_secure` defaults to True so production deployments
     # that don't explicitly set the env var still get the secure-by-default
     # `Secure` cookie attribute (browser only sends the cookie over HTTPS).
     # Dev/CI explicitly override to False via envs/api.env.example +
     # services/api/tests/conftest.py because the dev compose serves HTTP.
-    session_cookie_name: str = "dprk_cti_session"
+    #
+    # `session_cookie_name` defaults to the ``__Host-`` prefixed form,
+    # which the browser enforces as: must have Secure attribute, must
+    # have Path=/, must NOT have Domain attribute. The session helpers
+    # (``set_session_cookie`` / ``clear_session_cookie``) already meet
+    # these requirements unconditionally, so the prefix is a strict
+    # tightening at the browser layer with no server-side change. Dev
+    # serves HTTP so it cannot satisfy the browser's Secure check —
+    # envs/api.env.example + conftest.py override to the bare name for
+    # local development. The ``_enforce_session_cookie_host_prefix_in_prod``
+    # validator below mirrors ``_enforce_session_cookie_secure_in_prod``:
+    # prod refuses to boot if the override drops the prefix.
+    session_cookie_name: str = "__Host-dprk_cti_session"
     session_cookie_secure: bool = True
     session_cookie_samesite: str = "lax"
     session_signing_key: str = Field(...)
@@ -143,6 +156,33 @@ class Settings(BaseSettings):
                 f"got {v}"
             )
         return v
+
+    @model_validator(mode="after")
+    def _enforce_session_cookie_host_prefix_in_prod(self) -> "Settings":
+        """Fail-closed when prod ships the session cookie without ``__Host-``.
+
+        Mirrors ``_enforce_session_cookie_secure_in_prod``. Browser-side
+        enforcement of the ``__Host-`` prefix ensures the cookie is
+        scoped to exactly this host (no Domain attribute), at the root
+        path, and only sent over HTTPS — closing
+        cookie-fixation / subdomain-injection vectors that
+        ``Secure=True`` alone does not. Dev / test / CI / staging are
+        unaffected — only ``app_env=="prod"`` triggers the fail-closed
+        branch.
+        """
+        if self.app_env == "prod" and not self.session_cookie_name.startswith(
+            "__Host-"
+        ):
+            raise ValueError(
+                "session_cookie_name must start with '__Host-' when "
+                "app_env='prod'. The __Host- prefix forces browser-side "
+                "checks (Secure, Path=/, no Domain) that close "
+                "cookie-fixation and subdomain-injection vectors. Either "
+                "leave SESSION_COOKIE_NAME unset (default "
+                "'__Host-dprk_cti_session') or set it to a value that "
+                "starts with '__Host-'."
+            )
+        return self
 
     @model_validator(mode="after")
     def _enforce_session_cookie_secure_in_prod(self) -> "Settings":
