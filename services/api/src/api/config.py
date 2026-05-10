@@ -63,9 +63,14 @@ class Settings(BaseSettings):
     # callback URL we hand to Keycloak (e.g. http://localhost:8000).
     oidc_redirect_base_url: str = Field(...)
 
-    # Session cookie + Redis-backed session store
+    # Session cookie + Redis-backed session store.
+    # `session_cookie_secure` defaults to True so production deployments
+    # that don't explicitly set the env var still get the secure-by-default
+    # `Secure` cookie attribute (browser only sends the cookie over HTTPS).
+    # Dev/CI explicitly override to False via envs/api.env.example +
+    # services/api/tests/conftest.py because the dev compose serves HTTP.
     session_cookie_name: str = "dprk_cti_session"
-    session_cookie_secure: bool = False
+    session_cookie_secure: bool = True
     session_cookie_samesite: str = "lax"
     session_signing_key: str = Field(...)
     session_ttl_seconds: int = 3600
