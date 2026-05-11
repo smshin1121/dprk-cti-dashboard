@@ -2,10 +2,23 @@
 
 This mirror is the API-side counterpart to
 ``services/worker/src/worker/bootstrap/tables.py`` — both trace to the
-same Alembic-managed production schema
-(``db/migrations/versions/0001`` through ``0008``). They are kept as
+same Alembic-managed production schema in
+``db/migrations/versions/0001`` through ``0009``. They are kept as
 separate modules so neither service takes a cross-service import
 dependency on the other.
+
+Migration coverage (API-side):
+
+  - ``0001`` — initial schema (sources, groups, codenames, reports,
+    tags + joins, techniques, incidents + joins, audit_log)
+  - ``0002`` — staging table + indexes
+  - ``0003`` — audit_log.entity nullable
+  - ``0004`` — BIGINT PK widen across most tables
+  - ``0005`` — dq_events (worker-only — NOT mirrored here)
+  - ``0006`` — rss_feed_state (worker-only — NOT mirrored here)
+  - ``0007`` — taxii_collection_state (worker-only — NOT mirrored)
+  - ``0008`` — staging.decision_reason (API touches via PR #10 review/promote)
+  - ``0009`` — correlation_coverage (API-only — Phase 3 Slice 3 D-1)
 
 **Production never calls ``metadata.create_all`` against this module.**
 The real schema comes from Alembic migrations. This metadata instance
@@ -18,6 +31,11 @@ file in lock-step with the worker mirror and the changing migration.
 Drift between this mirror and the canonical schema is invisible to
 unit tests (they all pass against the mirror) but surfaces
 immediately in the Group H real-PG integration job.
+
+``services/api/tests/unit/test_tables_docstring.py`` pins the migration
+range claim above — a new migration in ``db/migrations/versions/`` will
+fail that test until this docstring is updated, preventing silent
+drift between code and documentation.
 
 Scope limitation: this module carries only the columns the API code
 paths touch. Full schema coverage is not a goal — adding unused
