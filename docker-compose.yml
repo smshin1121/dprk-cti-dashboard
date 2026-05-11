@@ -154,7 +154,31 @@ services:
       - sh
       - -euc
       - |
-        # `|` delimiter avoids escaping issues with `/` in passwords.
+        # `|` is the sed delimiter (avoids escaping `/` in passwords). But sed's
+        # REPLACEMENT side has 3 more special chars that produce SILENT
+        # corruption if they appear in the env var values: `&` (matched-text
+        # backreference), `\` (escape lead-in), and `|` itself (delimiter).
+        # The defaults `test1234` / `dev-secret-rotate-in-prod` contain none
+        # of these — but contributor overrides could. Refuse to proceed with
+        # a loud error rather than render a corrupted realm-export.json that
+        # would have a wrong-but-not-obviously-wrong password (R1 fold per
+        # PR #50 convergent reviewer MED: code-reviewer MED + security-reviewer
+        # LOW, same finding). Busybox `ash` `case` pattern-match keeps this
+        # POSIX-portable (no bash parameter-substitution dependency).
+        check_safe() {
+          # Reject sed-replacement-side metacharacters (\, &, |). `grep -q`
+          # with a bracket-expression keeps this POSIX-portable across
+          # busybox ash, dash, and bash without relying on glob `\` quoting
+          # semantics that differ between shells.
+          if printf '%s' "$2" | grep -q '[\\&|]'; then
+            echo "keycloak-init: ERROR — $1 contains an unsupported character (\\, &, or |)." >&2
+            echo "  These are sed REPLACEMENT-side metacharacters; rendering would silently corrupt the credential." >&2
+            echo "  Use only alphanumerics + common punctuation (-_.,#%!?*@$()[]{}) in the dev password / secret." >&2
+            exit 1
+          fi
+        }
+        check_safe DPRK_DEV_USER_PASSWORD "$DPRK_DEV_USER_PASSWORD"
+        check_safe DPRK_DEV_CLIENT_SECRET "$DPRK_DEV_CLIENT_SECRET"
         sed -e "s|__DPRK_DEV_USER_PASSWORD__|${DPRK_DEV_USER_PASSWORD}|g" \
             -e "s|__DPRK_DEV_CLIENT_SECRET__|${DPRK_DEV_CLIENT_SECRET}|g" \
             /in/realm-export.template.json \
