@@ -826,3 +826,54 @@ jobs:
           if [ -f uvicorn-perf.pid ]; then
             kill "$(cat uvicorn-perf.pid)" 2>/dev/null || true
           fi
+
+  # -------------------------------------------------------------------------
+  # dockerfile-digest-resolve — PR #49 (closes PR #48 security-reviewer R0 MED)
+  #
+  # The per-service `test_dockerfile_digest_pin.py` + FE
+  # `dockerfile-digest-pin.test.ts` suites (added in PR #48) enforce the
+  # FORMAT of every FROM line — they assert each carries `@sha256:<64-hex>`
+  # but cannot validate that the digest actually exists in the upstream
+  # registry. A contributor who typos a digest or copy-pastes from a
+  # sibling image would pass the unit-test layer with a non-resolvable
+  # reference. This job closes that gap.
+  #
+  # Walks every `Dockerfile` tracked by git, parses its `FROM` directives,
+  # and runs `docker manifest inspect` against each fully-qualified
+  # reference (image:tag@sha256:...). A typo'd digest fails with
+  # "manifest unknown" / "no such manifest" — the job exits non-zero.
+  #
+  # The check is registry-roundtrip only (no `docker build`, no layer
+  # download) so it stays fast (~5s) and adds no meaningful CI cost.
+  # The `scratch` pseudo-image is excluded — it has no pullable manifest.
+  # -------------------------------------------------------------------------
+  dockerfile-digest-resolve:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Resolve every pinned digest against its registry
+        run: |
+          set -euo pipefail
+          FAIL=0
+          # Walk every Dockerfile tracked by git so a future service Dockerfile
+          # is picked up automatically without a workflow edit.
+          while IFS= read -r dockerfile; do
+            while IFS= read -r raw; do
+              # Strip optional leading "--platform=..." flag(s) and trailing
+              # "AS <stage>" suffix so what's left is the bare image ref.
+              ref="$(printf '%s\n' "$raw" \
+                | sed -E 's/^FROM[[:space:]]+//I' \
+                | sed -E 's/^(--[^[:space:]]+[[:space:]]+)+//' \
+                | sed -E 's/[[:space:]]+AS[[:space:]]+[A-Za-z0-9_-]+[[:space:]]*$//I' \
+                | sed -E 's/[[:space:]]+$//')"
+              if [ -z "$ref" ] || [ "$ref" = "scratch" ]; then
+                continue
+              fi
+              echo ">>> $dockerfile: $ref"
+              if ! docker manifest inspect "$ref" >/dev/null 2>&1; then
+                echo "FAIL: docker manifest inspect rejected $ref"
+                FAIL=1
+              fi
+            done < <(grep -E '^[[:space:]]*FROM[[:space:]]' "$dockerfile")
+          done < <(git ls-files -- '**/Dockerfile' 'Dockerfile')
+          exit "$FAIL"
