@@ -3,8 +3,13 @@
 # =============================================================================
 # Stage 1: builder — install deps and run vite build
 # =============================================================================
-# TODO: pin to @sha256:<digest> before production
-FROM node:22-alpine AS builder
+# Base image digest-pinned for supply-chain integrity (PR #48).
+# Tag retained for human-readable provenance; CI gate
+# `apps/frontend/tests/unit/dockerfile-digest-pin.test.ts` enforces every
+# FROM line carries an `@sha256:` pin so future bumps can't silently drop it.
+# Refresh procedure: `docker pull node:22-alpine` → copy the printed Digest
+# line → replace below + bump the tag in lockstep if the upstream tag moves.
+FROM node:22-alpine@sha256:8ea2348b068a9544dae7317b4f3aafcdc032df1647bb7d768a05a5cad1a7683f AS builder
 
 RUN corepack enable && corepack prepare pnpm@9 --activate
 
@@ -24,8 +29,10 @@ RUN pnpm --filter @dprk-cti/frontend run build
 # =============================================================================
 # Stage 2: runtime — nginx serving static assets, non-root
 # =============================================================================
-# TODO: pin to @sha256:<digest> before production
-FROM nginx:1.27-alpine AS runtime
+# Base image digest-pinned for supply-chain integrity (PR #48).
+# Refresh procedure: `docker pull nginx:1.27-alpine` → copy the printed Digest
+# line → replace below + bump the tag in lockstep if the upstream tag moves.
+FROM nginx:1.27-alpine@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10 AS runtime
 
 RUN addgroup -g 1001 -S app && adduser -u 1001 -S app -G app
 
