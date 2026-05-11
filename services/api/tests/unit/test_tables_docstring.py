@@ -16,13 +16,23 @@ allows the docstring to either:
 
 Either way the migration must be mentioned. Forgetting it entirely is
 what this test prevents.
+
+Known limitation (acceptable trade-off, per `pattern_service_local_duplication_over_shared`
+review note): the ``\\b\\d{4}\\b`` regex matches ANY 4-digit number in
+the docstring, not only migration prefixes. A future docstring that
+mentions an unrelated 4-digit value (a year like ``2026``, a port
+number, etc.) could mask a forgotten migration if that unrelated
+number is >= the actual migration max. Current docstrings contain no
+such matches, but contributors should keep migration mentions
+canonical (``NNNN`` form) and avoid bare 4-digit decoration when
+editing. A future test could tighten this with a ``NNNN_`` underscore
+suffix or a fenced "Migrations covered:" section, but the leniency
+is preferred today.
 """
 from __future__ import annotations
 
 import re
 from pathlib import Path
-
-import pytest
 
 from api import tables as api_tables
 
