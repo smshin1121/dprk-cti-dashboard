@@ -130,6 +130,63 @@ services:
     depends_on: [prometheus]
     restart: unless-stopped
 
+  # PR #50 — render the Keycloak realm-export template at startup so the
+  # committed JSON carries no plaintext dev credentials. The init container
+  # reads the placeholder-bearing template, substitutes 2 env-var values
+  # (DPRK_DEV_USER_PASSWORD + DPRK_DEV_CLIENT_SECRET), and writes the
+  # rendered file to a shared volume that the keycloak service then
+  # mounts read-only for `--import-realm`.
+  #
+  # Why `sed` not `envsubst`: busybox ships `sed` by default; `envsubst`
+  # is in the `gettext` package on Alpine (requires apk install). `sed`
+  # against `__PLACEHOLDER__` markers (no `$` chars) is also immune to
+  # shell expansion surprises if a password legitimately contains `$`.
+  keycloak-init:
+    image: busybox:1.36
+    container_name: cti-keycloak-init
+    environment:
+      DPRK_DEV_USER_PASSWORD: ${DPRK_DEV_USER_PASSWORD:?DPRK_DEV_USER_PASSWORD is required}
+      DPRK_DEV_CLIENT_SECRET: ${DPRK_DEV_CLIENT_SECRET:?DPRK_DEV_CLIENT_SECRET is required}
+    volumes:
+      - ./infra/keycloak/realm-export.template.json:/in/realm-export.template.json:ro
+      - keycloak_realm_rendered:/out
+    command:
+      - sh
+      - -euc
+      - |
+        # `|` is the sed delimiter (avoids escaping `/` in passwords). But sed's
+        # REPLACEMENT side has 3 more special chars that produce SILENT
+        # corruption if they appear in the env var values: `&` (matched-text
+        # backreference), `\` (escape lead-in), and `|` itself (delimiter).
+        # The defaults `test1234` / `dev-secret-rotate-in-prod` contain none
+        # of these — but contributor overrides could. Refuse to proceed with
+        # a loud error rather than render a corrupted realm-export.json that
+        # would have a wrong-but-not-obviously-wrong password (R1 fold per
+        # PR #50 convergent reviewer MED: code-reviewer MED + security-reviewer
+        # LOW, same finding). Busybox `ash` `case` pattern-match keeps this
+        # POSIX-portable (no bash parameter-substitution dependency).
+        check_safe() {
+          # Reject sed-replacement-side metacharacters (\, &, |). `grep -q`
+          # with a bracket-expression keeps this POSIX-portable across
+          # busybox ash, dash, and bash without relying on glob `\` quoting
+          # semantics that differ between shells.
+          if printf '%s' "$2" | grep -q '[\\&|]'; then
+            echo "keycloak-init: ERROR — $1 contains an unsupported character (\\, &, or |)." >&2
+            echo "  These are sed REPLACEMENT-side metacharacters; rendering would silently corrupt the credential." >&2
+            echo "  Use only alphanumerics + common punctuation (-_.,#%!?*@$()[]{}) in the dev password / secret." >&2
+            exit 1
+          fi
+        }
+        check_safe DPRK_DEV_USER_PASSWORD "$DPRK_DEV_USER_PASSWORD"
+        check_safe DPRK_DEV_CLIENT_SECRET "$DPRK_DEV_CLIENT_SECRET"
+        sed -e "s|__DPRK_DEV_USER_PASSWORD__|${DPRK_DEV_USER_PASSWORD}|g" \
+            -e "s|__DPRK_DEV_CLIENT_SECRET__|${DPRK_DEV_CLIENT_SECRET}|g" \
+            /in/realm-export.template.json \
+            > /out/realm-export.json
+        echo "keycloak-init: rendered $(wc -c < /out/realm-export.json) bytes to /out/realm-export.json"
+    networks: [backend]
+    restart: "no"
+
   keycloak:
     image: quay.io/keycloak/keycloak:25.0
     container_name: cti-keycloak
@@ -151,10 +208,17 @@ services:
       KC_HOSTNAME: http://localhost:${KEYCLOAK_PORT:-8081}
       KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
     volumes:
-      - ./infra/keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
+      # Mount the rendered file written by `keycloak-init` rather than
+      # the committed template — the template carries `__PLACEHOLDER__`
+      # markers that Keycloak would otherwise import verbatim as
+      # passwords (PR #50 closes Phase 0 plaintext-creds deferral).
+      - keycloak_realm_rendered:/opt/keycloak/data/import:ro
     ports:
       - "${KEYCLOAK_PORT:-8081}:8080"
     networks: [backend]
+    depends_on:
+      keycloak-init:
+        condition: service_completed_successfully
     healthcheck:
       # Keycloak 25 image is distroless (no curl/wget/bash). Probe the
       # management port (9000) /health/ready endpoint via the JVM-launched
@@ -175,6 +239,7 @@ volumes:
   pgdata:
   prometheus_data:
   grafana_data:
+  keycloak_realm_rendered:
 
 networks:
   backend:

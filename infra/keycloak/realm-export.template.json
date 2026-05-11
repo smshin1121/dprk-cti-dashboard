@@ -51,7 +51,7 @@
       "enabled": true,
       "protocol": "openid-connect",
       "publicClient": false,
-      "secret": "dev-secret-rotate-in-prod",
+      "secret": "__DPRK_DEV_CLIENT_SECRET__",
       "clientAuthenticatorType": "client-secret",
       "redirectUris": [
         "http://localhost:8000/api/v1/auth/callback",
@@ -98,7 +98,7 @@
       "credentials": [
         {
           "type": "password",
-          "value": "test1234",
+          "value": "__DPRK_DEV_USER_PASSWORD__",
           "temporary": false
         }
       ],
@@ -116,7 +116,7 @@
       "credentials": [
         {
           "type": "password",
-          "value": "test1234",
+          "value": "__DPRK_DEV_USER_PASSWORD__",
           "temporary": false
         }
       ],
@@ -135,7 +135,7 @@
       "credentials": [
         {
           "type": "password",
-          "value": "test1234",
+          "value": "__DPRK_DEV_USER_PASSWORD__",
           "temporary": false
         }
       ],
