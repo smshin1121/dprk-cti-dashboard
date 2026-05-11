@@ -874,6 +874,8 @@ jobs:
                 echo "FAIL: docker manifest inspect rejected $ref"
                 FAIL=1
               fi
-            done < <(grep -E '^[[:space:]]*FROM[[:space:]]' "$dockerfile")
+            # `-i` matches the sed `/I` flags below so a lowercase `from`
+            # line (legal per the Dockerfile spec) is not silently skipped.
+            done < <(grep -iE '^[[:space:]]*FROM[[:space:]]' "$dockerfile")
           done < <(git ls-files -- '**/Dockerfile' 'Dockerfile')
           exit "$FAIL"
