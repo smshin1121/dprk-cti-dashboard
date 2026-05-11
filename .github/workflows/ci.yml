@@ -879,3 +879,52 @@ jobs:
             done < <(grep -iE '^[[:space:]]*FROM[[:space:]]' "$dockerfile")
           done < <(git ls-files -- '**/Dockerfile' 'Dockerfile')
           exit "$FAIL"
+
+  # -------------------------------------------------------------------------
+  # compose-image-digest-resolve — PR #51
+  #
+  # Sibling to `dockerfile-digest-resolve` (PR #49). The per-service
+  # `test_compose_image_digest_pin.py` enforces the FORMAT of every
+  # `image:` line in `docker-compose*.yml` — `@sha256:<64-hex>` must be
+  # present. This job closes the existence-gate: a typo'd or withdrawn
+  # digest passes the static-source test but fails `docker manifest
+  # inspect` here.
+  #
+  # Walks every `docker-compose*.yml` / `docker-compose*.yaml` tracked
+  # by git, parses each top-level `image:` mapping, and runs
+  # `docker manifest inspect` against the referenced image. A typo'd
+  # digest fails with "manifest unknown" — the job exits non-zero.
+  #
+  # Cost: registry-roundtrip only (no `docker compose up`, no `docker
+  # pull` of layer blobs) so ~5-10s wall-clock on a fresh runner.
+  # The `scratch` pseudo-image is excluded — it has no pullable manifest.
+  # -------------------------------------------------------------------------
+  compose-image-digest-resolve:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Resolve every pinned compose-image digest against its registry
+        run: |
+          set -euo pipefail
+          FAIL=0
+          # Walk every compose file tracked by git so a future overlay
+          # (e.g. docker-compose.prod.yml) is picked up automatically.
+          while IFS= read -r compose_file; do
+            while IFS= read -r raw; do
+              # Strip the leading `<whitespace>image:<whitespace>` and any
+              # trailing whitespace so what's left is the bare image ref.
+              ref="$(printf '%s\n' "$raw" \
+                | sed -E 's/^[[:space:]]*image:[[:space:]]*//' \
+                | sed -E 's/[[:space:]]+$//' \
+                | sed -E 's/^["'\'']//; s/["'\'']$//')"
+              if [ -z "$ref" ] || [ "$ref" = "scratch" ]; then
+                continue
+              fi
+              echo ">>> $compose_file: $ref"
+              if ! docker manifest inspect "$ref" >/dev/null 2>&1; then
+                echo "FAIL: docker manifest inspect rejected $ref"
+                FAIL=1
+              fi
+            done < <(grep -E '^[[:space:]]+image:' "$compose_file")
+          done < <(git ls-files -- 'docker-compose*.yml' 'docker-compose*.yaml')
+          exit "$FAIL"
