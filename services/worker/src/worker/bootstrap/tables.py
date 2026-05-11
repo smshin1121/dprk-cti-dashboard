@@ -13,6 +13,13 @@ specific columns (pgvector embeddings, ARRAY aliases) that sqlite-
 memory cannot represent, so unit tests can run the same upsert code
 against an in-memory database.
 
+Migration ``0009_correlation_coverage.py`` is **intentionally not
+mirrored here** because the worker does not aggregate correlation data —
+the ``correlation_coverage`` table is API-only and lives in
+``services/api/src/api/tables.py``. If a future migration adds a
+worker-touched column to that table, mirror it here too and update the
+range above in lock-step.
+
 Production deployments never call ``metadata.create_all`` against this
 module — the real schema comes from Alembic migrations. This metadata
 instance is used only by the worker's unit tests via the
@@ -21,6 +28,12 @@ instance is used only by the worker's unit tests via the
 When the real migration schema changes, update this file in lock-step
 and confirm the unit tests still exercise the upsert paths against a
 schema that matches production's column names and constraint shape.
+
+``services/worker/tests/unit/test_tables_docstring.py`` pins the
+migration range claim above — a new migration in
+``db/migrations/versions/`` will fail that test until this docstring
+is updated (or explicitly notes the migration as out-of-scope, like
+``0009`` above), preventing silent drift between code and docs.
 """
 
 from __future__ import annotations
