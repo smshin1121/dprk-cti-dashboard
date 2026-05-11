@@ -42,7 +42,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: pgvector/pgvector:pg16
+        image: pgvector/pgvector:pg16@sha256:7d400e340efb42f4d8c9c12c6427adb253f726881a9985d2a471bf0eed824dff
         env:
           POSTGRES_DB: dprk_cti_e2e
           POSTGRES_USER: postgres
@@ -55,7 +55,7 @@ jobs:
           --health-timeout 5s
           --health-retries 10
       redis:
-        image: redis:7-alpine
+        image: redis:7-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99
         ports:
           - 6379:6379
         options: >-
@@ -381,7 +381,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: pgvector/pgvector:pg16
+        image: pgvector/pgvector:pg16@sha256:7d400e340efb42f4d8c9c12c6427adb253f726881a9985d2a471bf0eed824dff
         env:
           POSTGRES_DB: dprk_cti_test
           POSTGRES_USER: postgres
@@ -450,7 +450,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: pgvector/pgvector:pg16
+        image: pgvector/pgvector:pg16@sha256:7d400e340efb42f4d8c9c12c6427adb253f726881a9985d2a471bf0eed824dff
         env:
           POSTGRES_DB: dprk_cti_test
           POSTGRES_USER: postgres
@@ -536,7 +536,7 @@ jobs:
     # tests/contract/test_pact_states_prod_guard.py).
     services:
       postgres:
-        image: pgvector/pgvector:pg16
+        image: pgvector/pgvector:pg16@sha256:7d400e340efb42f4d8c9c12c6427adb253f726881a9985d2a471bf0eed824dff
         env:
           POSTGRES_DB: dprk_cti_pact
           POSTGRES_USER: postgres
@@ -549,7 +549,7 @@ jobs:
           --health-timeout 5s
           --health-retries 10
       redis:
-        image: redis:7-alpine
+        image: redis:7-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99
         ports:
           - 6379:6379
         options: >-
@@ -659,7 +659,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: pgvector/pgvector:pg16
+        image: pgvector/pgvector:pg16@sha256:7d400e340efb42f4d8c9c12c6427adb253f726881a9985d2a471bf0eed824dff
         env:
           POSTGRES_DB: dprk_cti_test
           POSTGRES_USER: postgres
@@ -746,7 +746,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: pgvector/pgvector:pg16
+        image: pgvector/pgvector:pg16@sha256:7d400e340efb42f4d8c9c12c6427adb253f726881a9985d2a471bf0eed824dff
         env:
           POSTGRES_DB: dprk_cti_perf
           POSTGRES_USER: postgres
@@ -759,7 +759,7 @@ jobs:
           --health-timeout 5s
           --health-retries 10
       redis:
-        image: redis:7-alpine
+        image: redis:7-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99
         ports:
           - 6379:6379
         options: >-
@@ -927,4 +927,90 @@ jobs:
               fi
             done < <(grep -E '^[[:space:]]+image:' "$compose_file")
           done < <(git ls-files -- 'docker-compose*.yml' 'docker-compose*.yaml')
+          exit "$FAIL"
+
+  # -------------------------------------------------------------------------
+  # gha-services-image-digest-resolve — supply-chain hardening sweep follow-up
+  #
+  # Sibling to `dockerfile-digest-resolve` (PR #49) and
+  # `compose-image-digest-resolve` (PR #51). The new
+  # `test_gha_services_image_digest_pin.py` enforces the FORMAT of every
+  # `image:` line under a `services:` block in `.github/workflows/*.yml`
+  # — `@sha256:<64-hex>` must be present. This job closes the existence
+  # gate: a typo'd or withdrawn digest passes the static-source test but
+  # fails `docker manifest inspect` here.
+  #
+  # YAML-walk extraction (vs the sibling jobs' pure-grep) because
+  # `image:` can appear at three places in a workflow YAML —
+  # `jobs.<job>.services.<svc>.image` (in scope), `jobs.<job>.container.image`
+  # (out of scope today, would extend trivially), and inside step
+  # `with:` blocks for actions like `docker/build-push-action` (false
+  # positive). Walking the YAML structurally avoids false positives and
+  # makes future additions explicit.
+  #
+  # Cost: registry-roundtrip only (no `docker compose up`, no
+  # `docker pull` of layer blobs) so ~5-10s wall-clock on a fresh
+  # runner. The `scratch` pseudo-image is excluded — it has no pullable
+  # manifest.
+  #
+  # Fail-loud guard: if the YAML walk returns zero refs (e.g. someone
+  # deletes the last `services:` block, or the walk regex breaks), the
+  # job exits non-zero with a "delete this job or fix the walk" hint
+  # instead of silently passing.
+  # -------------------------------------------------------------------------
+  gha-services-image-digest-resolve:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install PyYAML
+        # Version-pinned to match the project's transitive PyYAML pin
+        # in services/api/uv.lock (6.0.3) so a CI gate dependency does
+        # not silently drift independently of the application services.
+        run: pip install "pyyaml==6.0.3"
+      - name: Resolve every pinned GHA services image digest against its registry
+        run: |
+          set -euo pipefail
+          FAIL=0
+          SCANNED=0
+          while IFS=' ' read -r workflow job_id svc_name ref; do
+            if [ -z "$ref" ] || [ "$ref" = "scratch" ]; then
+              continue
+            fi
+            SCANNED=$((SCANNED + 1))
+            echo ">>> $workflow ($job_id/$svc_name): $ref"
+            if ! docker manifest inspect "$ref" >/dev/null 2>&1; then
+              echo "FAIL: docker manifest inspect rejected $ref"
+              FAIL=1
+            fi
+          done < <(python3 - <<'PY'
+          from pathlib import Path
+          import yaml
+          workflows = sorted(Path('.github/workflows').glob('*.yml')) + sorted(
+              Path('.github/workflows').glob('*.yaml')
+          )
+          for wf in workflows:
+              data = yaml.safe_load(wf.read_text(encoding='utf-8')) or {}
+              for job_id, job in (data.get('jobs') or {}).items():
+                  if not isinstance(job, dict):
+                      continue
+                  services = job.get('services') or {}
+                  if not isinstance(services, dict):
+                      continue
+                  for svc_name, svc in services.items():
+                      if not isinstance(svc, dict):
+                          continue
+                      img = svc.get('image')
+                      if isinstance(img, str) and img.strip():
+                          print(f"{wf.name} {job_id} {svc_name} {img.strip()}")
+          PY
+          )
+          if [ "$SCANNED" -eq 0 ]; then
+            echo "FAIL: extracted zero services-image refs from .github/workflows/."
+            echo "Either every workflow legitimately stopped using a services: block"
+            echo "(in which case delete this job) or the YAML walk is broken."
+            exit 1
+          fi
           exit "$FAIL"
