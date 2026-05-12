@@ -1171,9 +1171,12 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
-      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444  # v5
-        with:
-          node-version: "20"
+      # Note: deliberately skip actions/setup-node here. Setup-node@v5 auto-
+      # detects `packageManager: pnpm@...` in the repo's apps/frontend/
+      # package.json and tries to enable corepack for cache restoration,
+      # which fails because pnpm is not pre-installed on ubuntu-latest. The
+      # ubuntu-latest runner image already includes Node 20 + npm/npx by
+      # default; that is sufficient for npx-only invocation.
       - name: Validate renovate.json
         # Major-version-pinned to renovate@43 (current line at adoption time);
         # validator API is stable across renovate majors. A pyyaml-style hash
