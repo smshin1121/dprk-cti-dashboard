@@ -1,0 +1,61 @@
+name: Renovate
+
+on:
+  schedule:
+    # Sunday 03:00 UTC = Monday 12:00 KST (early Monday morning local time)
+    - cron: '0 3 * * 0'
+  workflow_dispatch:
+    inputs:
+      logLevel:
+        # NOTE: `debug` includes verbose HTTP request/response metadata
+        # (header keys, API endpoints, partial auth context). On a PUBLIC
+        # repo, GHA logs are world-readable and `debug` may surface
+        # token-adjacent diagnostics. This repo is currently PRIVATE so
+        # all log readers are already trusted collaborators; if the repo
+        # is ever made public, narrow this choice list to ['info', 'warn',
+        # 'error'] or gate `debug` behind a separate elevated workflow.
+        description: 'Renovate log level (use debug sparingly on public repos)'
+        required: false
+        default: 'info'
+        type: choice
+        options:
+          - debug
+          - info
+          - warn
+          - error
+
+permissions:
+  # Required: Renovate creates a feature branch and pushes commits to it
+  # before opening the PR. `contents: read` is insufficient — branch
+  # creation requires write. Renovate does NOT push to default branches
+  # directly (every change is gated through a PR).
+  contents: write
+  # Required: opens the dependency-update PRs.
+  pull-requests: write
+  # Required: creates / updates the single dependencyDashboard tracking
+  # issue (renovate.json has `dependencyDashboard: true`).
+  issues: write
+
+concurrency:
+  group: renovate
+  cancel-in-progress: false
+
+jobs:
+  renovate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
+      - name: Run Renovate
+        uses: renovatebot/github-action@693b9ef15eec82123529a37c782242f091365961  # v46.1.14
+        with:
+          configurationFile: renovate.json
+          token: ${{ secrets.GITHUB_TOKEN }}
+        env:
+          LOG_LEVEL: ${{ inputs.logLevel || 'info' }}
+          # NOTE: GITHUB_TOKEN-created PRs do NOT trigger other workflows
+          # by default. CI must be re-run manually OR via the
+          # `workflow_dispatch` event after a Renovate PR is opened. To
+          # enable automatic CI on Renovate PRs in the future, configure
+          # a GitHub App token via actions/create-github-app-token and
+          # replace the `token:` input above.
