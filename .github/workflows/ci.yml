@@ -1155,3 +1155,27 @@ jobs:
             exit 1
           fi
           exit "$FAIL"
+
+  # -------------------------------------------------------------------------
+  # Existence gate for renovate.json (paired with services/api/tests/unit/
+  # test_renovate_config.py per pattern_two_layer_defense_for_addressable_refs).
+  # Runs the official renovate-config-validator on every push that touches
+  # renovate.json so a broken config surfaces immediately rather than waiting
+  # until the next scheduled Sunday renovate run. Sibling to gha-action-
+  # digest-resolve / gha-services-image-digest-resolve / compose-image-digest-
+  # resolve / dockerfile-digest-resolve.
+  # -------------------------------------------------------------------------
+  renovate-config-resolve:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444  # v5
+        with:
+          node-version: "20"
+      - name: Validate renovate.json
+        # Major-version-pinned to renovate@43 (current line at adoption time);
+        # validator API is stable across renovate majors. A pyyaml-style hash
+        # pin via npm-shrinkwrap is the deferred renovate-adoption follow-up.
+        run: npx --yes --package renovate@43 -- renovate-config-validator renovate.json
