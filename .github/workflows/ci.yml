@@ -10,11 +10,11 @@ jobs:
   frontend:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: pnpm/action-setup@v5
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320  # v5
         with:
           version: 9.15.9
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444  # v5
         with:
           node-version: "22"
           cache: "pnpm"
@@ -81,16 +81,16 @@ jobs:
       E2E_BASE_URL: http://127.0.0.1:4173
       E2E_API_BASE_URL: http://127.0.0.1:8000
     steps:
-      - uses: actions/checkout@v5
-      - uses: pnpm/action-setup@v5
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320  # v5
         with:
           version: 9.15.9
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444  # v5
         with:
           node-version: "22"
           cache: "pnpm"
-      - uses: astral-sh/setup-uv@v5
-      - uses: actions/setup-python@v6
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86  # v5
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6
         with:
           python-version: "3.12"
       - run: pnpm install
@@ -148,7 +148,7 @@ jobs:
         run: pnpm test:e2e
       - name: Upload Playwright artifacts on failure
         if: failure()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4  # v5
         with:
           name: playwright-report
           path: |
@@ -177,9 +177,9 @@ jobs:
       matrix:
         service: [api, worker, llm-proxy]
     steps:
-      - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86  # v5
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6
         with:
           python-version: "3.12"
       - run: uv sync --project services/${{ matrix.service }} --no-install-project
@@ -201,9 +201,9 @@ jobs:
   api-tests:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86  # v5
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6
         with:
           python-version: "3.12"
       - name: Sync api dev dependencies
@@ -224,7 +224,7 @@ jobs:
             --cov-fail-under=70
       - name: Upload coverage report
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4  # v5
         with:
           name: api-coverage-xml
           path: services/api/coverage.xml
@@ -253,9 +253,9 @@ jobs:
   worker-tests:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86  # v5
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6
         with:
           python-version: "3.12"
       - name: Sync worker dev dependencies
@@ -303,7 +303,7 @@ jobs:
           "
       - name: Upload coverage report
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4  # v5
         with:
           name: worker-coverage-xml
           path: services/worker/coverage.xml
@@ -350,9 +350,9 @@ jobs:
       # failure surface for a test run).
       APP_ENV: test
     steps:
-      - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86  # v5
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6
         with:
           python-version: "3.12"
       - name: Sync llm-proxy dev dependencies
@@ -371,7 +371,7 @@ jobs:
             --cov-fail-under=80
       - name: Upload coverage report
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4  # v5
         with:
           name: llm-proxy-coverage-xml
           path: services/llm-proxy/coverage.xml
@@ -394,11 +394,11 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6
         with:
           python-version: "3.12"
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86  # v5
       - name: Install alembic deps from services/api
         run: uv sync --project services/api --no-install-project
       - name: Run alembic upgrade head
@@ -465,11 +465,11 @@ jobs:
     env:
       DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/dprk_cti_test
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6
         with:
           python-version: "3.12"
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86  # v5
       - name: Sync worker dev dependencies
         working-directory: services/worker
         run: uv sync
@@ -503,7 +503,7 @@ jobs:
             --report-path "${GITHUB_WORKSPACE}/artifacts/dq_report.jsonl"
       - name: Upload dq_report.jsonl artifact
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4  # v5
         with:
           name: dq-report-jsonl
           path: artifacts/dq_report.jsonl
@@ -579,9 +579,9 @@ jobs:
       SESSION_COOKIE_SAMESITE: lax
       CORS_ORIGINS: http://localhost:3000
     steps:
-      - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86  # v5
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6
         with:
           python-version: "3.12"
       - name: Sync api dev dependencies (includes pact-python)
@@ -677,11 +677,11 @@ jobs:
       # Async URL for the pytest integration run — switches driver to psycopg_async.
       POSTGRES_TEST_URL: postgresql+psycopg_async://postgres:postgres@localhost:5432/dprk_cti_test
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6
         with:
           python-version: "3.12"
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86  # v5
       - name: Sync api dev dependencies
         working-directory: services/api
         run: uv sync
@@ -785,9 +785,9 @@ jobs:
       PERF_TEST: "1"
       PERF_API_BASE_URL: http://127.0.0.1:8000
     steps:
-      - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86  # v5
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6
         with:
           python-version: "3.12"
       - name: Sync api dev dependencies
@@ -849,8 +849,14 @@ jobs:
   # -------------------------------------------------------------------------
   dockerfile-digest-resolve:
     runs-on: ubuntu-latest
+    permissions:
+      # Least privilege: only `actions/checkout` needs `contents: read`;
+      # `docker manifest inspect` against public registries is anonymous.
+      # Folded in PR #53 alongside `gha-action-digest-resolve` for
+      # cross-job consistency.
+      contents: read
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
       - name: Resolve every pinned digest against its registry
         run: |
           set -euo pipefail
@@ -901,8 +907,14 @@ jobs:
   # -------------------------------------------------------------------------
   compose-image-digest-resolve:
     runs-on: ubuntu-latest
+    permissions:
+      # Least privilege: only `actions/checkout` needs `contents: read`;
+      # `docker manifest inspect` against public registries is anonymous.
+      # Folded in PR #53 alongside `gha-action-digest-resolve` for
+      # cross-job consistency.
+      contents: read
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
       - name: Resolve every pinned compose-image digest against its registry
         run: |
           set -euo pipefail
@@ -960,9 +972,15 @@ jobs:
   # -------------------------------------------------------------------------
   gha-services-image-digest-resolve:
     runs-on: ubuntu-latest
+    permissions:
+      # Least privilege: only `actions/checkout` needs `contents: read`;
+      # `docker manifest inspect` against public registries is anonymous.
+      # Folded in PR #53 alongside `gha-action-digest-resolve` for
+      # cross-job consistency.
+      contents: read
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6
         with:
           python-version: "3.12"
       - name: Install PyYAML
@@ -1011,6 +1029,129 @@ jobs:
             echo "FAIL: extracted zero services-image refs from .github/workflows/."
             echo "Either every workflow legitimately stopped using a services: block"
             echo "(in which case delete this job) or the YAML walk is broken."
+            exit 1
+          fi
+          exit "$FAIL"
+
+  # -------------------------------------------------------------------------
+  # gha-action-digest-resolve — supply-chain hardening sweep follow-up
+  #
+  # Sibling to `dockerfile-digest-resolve` (PR #49),
+  # `compose-image-digest-resolve` (PR #51), and
+  # `gha-services-image-digest-resolve` (PR #52). The new
+  # `test_gha_action_digest_pin.py` enforces the FORMAT of every
+  # `uses:` ref in `.github/workflows/*.yml` — a 40-char lowercase-hex
+  # commit SHA must be present after `@`. This job closes the
+  # existence gate: a typo'd or yanked SHA passes the static-source
+  # test but fails `gh api repos/<owner>/<repo>/commits/<sha>` here.
+  #
+  # Why action-tag digest pinning matters: a third-party action owner
+  # can re-point a mutable tag (`@v5`, `@main`) to malicious code at
+  # any time. The tj-actions/changed-files compromise (CVE-2025-30066,
+  # March 2025) demonstrated the concrete attack surface — repos
+  # pinning to `@v45` had their secrets exfiltrated when the v45 tag
+  # was force-pushed to a malicious commit. Pinning to a 40-hex
+  # commit SHA freezes the action's code at a point-in-time review.
+  #
+  # YAML-walk extraction (vs the sibling jobs' pure-grep) because
+  # `uses:` can appear at three places in a workflow YAML —
+  # `jobs.<job>.steps[*].uses` (in scope), `jobs.<job>.uses` (in
+  # scope, reusable workflow at job level — none today), and inside
+  # `with:` parameter values for some composite actions (false
+  # positive). Walking structurally avoids false positives.
+  #
+  # Cost: GitHub API roundtrip via `gh api` against the authenticated
+  # GITHUB_TOKEN. Each ref takes ~50-200ms; with dedupe across the
+  # 44 step-level refs in this repo today that's ~6 unique calls,
+  # ~3-5s total. Rate-limit pressure: 1000 req/h authenticated, so
+  # this job consumes <1% of the budget per run.
+  #
+  # Fail-loud guard: if the YAML walk returns zero refs, the job
+  # exits non-zero with a "delete this job or fix the walk" hint
+  # instead of silently passing. The dedup also implicitly guards
+  # against a logic bug that emits the same (action,sha) pair
+  # repeatedly without checking actual ref count.
+  # -------------------------------------------------------------------------
+  gha-action-digest-resolve:
+    runs-on: ubuntu-latest
+    permissions:
+      # `gh api repos/<owner>/<repo>/commits/<sha>` against public
+      # repos requires only `contents:read`. Explicit grant keeps
+      # the job on the principle of least privilege rather than
+      # inheriting the workflow-level default.
+      contents: read
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6
+        with:
+          python-version: "3.12"
+      - name: Install PyYAML
+        # Version-pinned to match the project's transitive PyYAML pin
+        # in services/api/uv.lock (6.0.3) so a CI gate dependency does
+        # not silently drift independently of the application services.
+        # Same convention as gha-services-image-digest-resolve.
+        run: pip install "pyyaml==6.0.3"
+      - name: Resolve every pinned GHA action commit SHA against GitHub
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          FAIL=0
+          SCANNED=0
+          # Dedupe on (action, sha) tuple — many workflows repeat the
+          # same `actions/checkout@<sha>` 14 times across jobs; one
+          # API call covers the whole repo. The sort -u below collapses
+          # duplicates before the inspect loop.
+          while IFS=' ' read -r action sha; do
+            if [ -z "$action" ] || [ -z "$sha" ]; then
+              continue
+            fi
+            SCANNED=$((SCANNED + 1))
+            echo ">>> $action @ $sha"
+            if ! gh api "repos/$action/commits/$sha" --jq '.sha' >/dev/null 2>&1; then
+              echo "FAIL: gh api repos/$action/commits/$sha rejected the SHA"
+              FAIL=1
+            fi
+          done < <(python3 - <<'PY' | sort -u
+          import re
+          from pathlib import Path
+          import yaml
+          SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+          def split_uses(value: str):
+              v = (value or "").strip()
+              if not v or v.startswith("./") or v.startswith("../") or v.startswith("docker://") or "@" not in v:
+                  return None
+              action, _, ref = v.rpartition("@")
+              return action, ref
+          workflows = sorted(Path('.github/workflows').glob('*.yml')) + sorted(
+              Path('.github/workflows').glob('*.yaml')
+          )
+          for wf in workflows:
+              data = yaml.safe_load(wf.read_text(encoding='utf-8')) or {}
+              for job_id, job in (data.get('jobs') or {}).items():
+                  if not isinstance(job, dict):
+                      continue
+                  job_uses = job.get('uses')
+                  if isinstance(job_uses, str):
+                      r = split_uses(job_uses)
+                      if r and SHA_RE.match(r[1]):
+                          print(f"{r[0]} {r[1]}")
+                  for step in (job.get('steps') or []):
+                      if not isinstance(step, dict):
+                          continue
+                      step_uses = step.get('uses')
+                      if not isinstance(step_uses, str):
+                          continue
+                      r = split_uses(step_uses)
+                      if r and SHA_RE.match(r[1]):
+                          print(f"{r[0]} {r[1]}")
+          PY
+          )
+          if [ "$SCANNED" -eq 0 ]; then
+            echo "FAIL: extracted zero pinned action refs from .github/workflows/."
+            echo "Either every workflow legitimately stopped using third-party"
+            echo "actions (in which case delete this job) or the format-gate test"
+            echo "is suppressing refs the existence gate should also see."
             exit 1
           fi
           exit "$FAIL"
