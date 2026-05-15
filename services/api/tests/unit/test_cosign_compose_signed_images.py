@@ -48,15 +48,36 @@ REPO_ROOT = Path(__file__).resolve().parents[4]
 ALLOWLIST_PATH = REPO_ROOT / "data" / "cosign" / "signed-images-compose.yml"
 CI_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "ci.yml"
 
+# Docker manifest image-ref shape: <repo>:<tag>@sha256:<64-hex>.
+# Repo may include registry host with optional `:<port>` (e.g.,
+# myregistry.example.com:5000/python:3.12@sha256:...). Private-registry-
+# with-port support added per PR #60 LOW finding F2 (cycle 14 security-
+# reviewer): a host segment ending in `:<port-digits>/` is part of the
+# registry host, NOT a tag delimiter.
 _IMAGE_REF_RE = re.compile(
-    r"^[A-Za-z0-9][A-Za-z0-9._/\-]*"
-    r":[A-Za-z0-9._\-]+"
-    r"@sha256:[0-9a-f]{64}$"
+    r"^[A-Za-z0-9][A-Za-z0-9.\-]*"          # first host segment
+    r"(?::\d{1,5})?"                         # OPTIONAL registry port
+    r"(?:/[A-Za-z0-9][A-Za-z0-9._\-]*)*"     # 0+ additional path segments
+    r":[A-Za-z0-9._\-]+"                     # tag
+    r"@sha256:[0-9a-f]{64}$"                 # digest
 )
 
 _COSIGN_INSTALLER_PIN_RE = re.compile(
     r"uses:\s*sigstore/cosign-installer@([0-9a-f]{40})\b"
 )
+
+# Known Sigstore OIDC issuers allowlisted for `certificate_oidc_issuer`.
+# Phase 2 hardening per PR #60 LOW finding F7. Kept in sync with Phase 1's
+# `_KNOWN_OIDC_ISSUERS` in `test_cosign_signed_images.py` — adding a new
+# legitimate issuer requires updating BOTH files (per-phase service-local
+# duplication pattern; no cross-import).
+_KNOWN_OIDC_ISSUERS = frozenset({
+    "https://token.actions.githubusercontent.com",
+    "https://oauth2.sigstore.dev/auth",
+    "https://accounts.google.com",
+    "https://gitlab.com",
+    "https://agent.buildkite.com",
+})
 
 
 def _load_allowlist() -> dict:
@@ -254,6 +275,60 @@ def test_ci_compose_cosign_installer_sha_pinned() -> None:
     )
 
 
+def test_ci_compose_cosign_installer_sha_equality_across_all_jobs() -> None:
+    """All `sigstore/cosign-installer@<sha>` pins in ci.yml MUST be identical.
+
+    PR #60 LOW finding F1 (cycle 14 security-reviewer): per-phase pin
+    tests use `re.search()` (first-match), so a future PR diverging the
+    Phase 1 / Phase 2 / Phase 3+ pin would pass both tests because each
+    finds a valid 40-hex SHA somewhere in the body.
+
+    Duplicates the equivalent test in `test_cosign_signed_images.py`
+    per `pattern_service_local_duplication_over_shared` — each phase
+    test owns its own copy; updating either file's `_KNOWN_OIDC_ISSUERS`
+    or this assertion must be done in sync.
+    """
+    body = _ci_workflow_body()
+    matches = _COSIGN_INSTALLER_PIN_RE.findall(body)
+    assert matches, "no sigstore/cosign-installer pin found anywhere in ci.yml."
+    distinct = set(matches)
+    assert len(distinct) == 1, (
+        f"sigstore/cosign-installer pin divergence detected across "
+        f"{len(matches)} reference(s); distinct SHAs: {sorted(distinct)}. "
+        f"All cosign-verify jobs (Phase 1 dockerfile, Phase 2 compose, "
+        f"future Phase 3 GHA services, Phase 4 GHA uses) MUST share the "
+        f"same SHA. Update every pin in lockstep when bumping."
+    )
+
+
+def test_cosign_compose_allowlist_certificate_oidc_issuer_is_known() -> None:
+    """`certificate_oidc_issuer` MUST be one of the known Sigstore issuers.
+
+    PR #60 LOW finding F7 (cycle 14 security-reviewer): the schema check
+    only asserted `certificate_oidc_issuer` is a non-empty string. An
+    attacker who controls a similar-looking OIDC issuer URL could add
+    an entry whose signature verifies under their cert. LOW today with
+    empty allowlist; becomes MED on first entry.
+
+    Mirrors the equivalent assertion in `test_cosign_signed_images.py`
+    per `pattern_service_local_duplication_over_shared`. The
+    `_KNOWN_OIDC_ISSUERS` frozenset is duplicated, not imported, so
+    each phase's test remains self-contained for blame-bisect.
+
+    Vacuously PASS on the empty Phase 2 allowlist.
+    """
+    for idx, entry in enumerate(_entries()):
+        issuer = entry.get("certificate_oidc_issuer", "")
+        assert issuer in _KNOWN_OIDC_ISSUERS, (
+            f"images[{idx}].certificate_oidc_issuer {issuer!r} is not in "
+            f"the known-Sigstore-issuer allowlist. Allowed: "
+            f"{sorted(_KNOWN_OIDC_ISSUERS)}. Adding a new issuer requires "
+            f"updating `_KNOWN_OIDC_ISSUERS` in BOTH "
+            f"`test_cosign_signed_images.py` and `test_cosign_compose_signed_images.py` "
+            f"(per-phase service-local duplication; no cross-import)."
+        )
+
+
 @pytest.mark.parametrize(
     "forbidden_flag",
     [
@@ -296,14 +371,40 @@ def test_ci_compose_cosign_job_reconciles_allowlist_vs_compose_image_refs() -> N
     job_body = match.group(1)
 
     # Positive 1: reconciliation enumerates current compose paths.
+    # Per PR #60 LOW finding F5 (cycle 14 security-reviewer): the runner
+    # uses RECURSIVE globs (`**/docker-compose*.yml` + `**/docker-compose*.yaml`)
+    # to catch nested compose files (e.g., `examples/foo/docker-compose.yml`);
+    # this assertion previously only matched the non-recursive form, so a
+    # future PR narrowing the runner to non-recursive would have passed
+    # silently. Now both recursive AND non-recursive forms are accepted —
+    # the test asserts the GLOB is present in SOME shape, not the specific
+    # recursion depth. The runner's actual glob shape is locked elsewhere
+    # in the job body via the existing `**/docker-compose` literal check
+    # added below.
     assert (
         "Path(\".\").glob(\"docker-compose*.yml\")" in job_body
         or "Path('.').glob('docker-compose*.yml')" in job_body
         or "Path(\".\").glob(\"docker-compose*.yaml\")" in job_body
         or "Path('.').glob('docker-compose*.yaml')" in job_body
+        or "Path(\".\").glob(\"**/docker-compose*.yml\")" in job_body
+        or "Path('.').glob('**/docker-compose*.yml')" in job_body
+        or "Path(\".\").glob(\"**/docker-compose*.yaml\")" in job_body
+        or "Path('.').glob('**/docker-compose*.yaml')" in job_body
     ), (
         "compose-cosign-verify job must enumerate docker-compose*.yml / .yaml "
-        "paths for allowlist↔compose reconciliation."
+        "paths for allowlist↔compose reconciliation (recursive or non-recursive form)."
+    )
+
+    # Positive 1b: pin the RECURSIVE form per actual runner shape (PR #60 F5).
+    # If a future PR drops the `**/` and only walks the top-level, nested
+    # compose files (e.g. `examples/foo/docker-compose.yml`) silently escape
+    # reconciliation. This assertion guards against that narrowing.
+    assert "**/docker-compose" in job_body, (
+        "compose-cosign-verify job must use a RECURSIVE glob (`**/docker-compose*`) "
+        "so nested compose files (e.g., examples/foo/docker-compose.yml) are also "
+        "subject to allowlist reconciliation. PR #60 LOW finding F5: previously "
+        "the runner used recursive but the test allowed non-recursive, so a future "
+        "narrowing PR would pass silently."
     )
 
     # Positive 2: stale-entry fail-loud branch present (allowlist - compose).

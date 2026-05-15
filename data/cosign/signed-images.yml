@@ -21,10 +21,18 @@
 #
 # Anti-patterns explicitly forbidden in this allowlist (per plan §4.5):
 #   - tlog_mode: optional                  (defeats Rekor transparency anchoring)
-#   - --insecure-ignore-tlog passthrough
-#   - --allow-insecure-registry passthrough
+#   - --insecure-ignore-tlog passthrough   (defeats Rekor transparency anchoring)
+#   - --allow-insecure-registry passthrough (allows plain HTTP to registries)
+#   - --allow-http-registry passthrough    (synonym; same plain-HTTP risk)
+#   - --private-infrastructure passthrough (skips tlog verification for private deploys)
+#   - --insecure-ignore-sct passthrough    (skips embedded-SCT / CT log inclusion proof)
 # tlog_mode: optional is rejected by the format-gate test, NOT relied on
-# from cosign CLI defaults alone.
+# from cosign CLI defaults alone. The 5-flag denylist is enforced by the
+# parametrized `test_ci_cosign_no_forbidden_flags` test (extended after
+# Codex r1 cycle 12); Phase 1 yaml comment alignment per PR #60 LOW
+# finding F3 (cycle 14 security-reviewer): Phase 2 already lists all 5
+# flags here; Phase 1 listed only 3 — purely a documentation gap, never
+# affected runtime behavior (the parametrized test always enforced all 5).
 #
 # R0 fold (2026-05-15) additional invariants enforced by both the runner
 # and the format-gate test:
