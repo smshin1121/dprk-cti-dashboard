@@ -9,7 +9,7 @@
 # FROM line carries an `@sha256:` pin so future bumps can't silently drop it.
 # Refresh procedure: `docker pull node:22-alpine` → copy the printed Digest
 # line → replace below + bump the tag in lockstep if the upstream tag moves.
-FROM node:22-alpine@sha256:8ea2348b068a9544dae7317b4f3aafcdc032df1647bb7d768a05a5cad1a7683f AS builder
+FROM node:22-alpine@sha256:968df39aedcea65eeb078fb336ed7191baf48f972b4479711397108be0966920 AS builder
 
 RUN corepack enable && corepack prepare pnpm@9 --activate
 
