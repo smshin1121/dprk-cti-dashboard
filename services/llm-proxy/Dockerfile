@@ -4,7 +4,7 @@
 # FROM line carries an `@sha256:` pin so future bumps can't silently drop it.
 # Refresh procedure: `docker pull python:3.12-slim` → copy the printed Digest
 # line → replace below + bump the tag in lockstep if the upstream tag moves.
-FROM python:3.12-slim@sha256:ec948fa5f90f4f8907e89f4800cfd2d2e91e391a4bce4a6afa77ba265bc3a2fe
+FROM python:3.12-slim@sha256:401f6e1a67dad31a1bd78e9ad22d0ee0a3b52154e6bd30e90be696bb6a3d7461
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
