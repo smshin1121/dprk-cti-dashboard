@@ -1,0 +1,72 @@
+# Cosign signature verification allowlist for docker-compose image refs.
+#
+# Phase 2 (PR #57): docker-compose*.yml top-level `services.<svc>.image:` refs only.
+# Pairs with `data/cosign/signed-images.yml` (PR #56 Phase 1, Dockerfile FROM).
+# Separate per-surface files per PR #57 plan D3:
+#   - preserves PR #56 backward compatibility (its stale-check is surface-scoped
+#     against Dockerfile FROM refs only)
+#   - clean per-surface ownership (compose update cadence != Dockerfile FROM)
+#   - sparse cross-surface duplication today (no current image overlaps)
+# Multi-surface rollout continues with PR #58 (GHA services:) and PR #59 (GHA uses:)
+# per pattern_signature_gate_scope_lock_per_phase. An OPTIONAL global-inventory
+# refactor (PR #60) may later unify all per-surface allowlists into one file with
+# a `surface:` discriminator; per-surface stale-checks remain authoritative until
+# then.
+#
+# Phase 2 ships EMPTY: at the time PR #57 was authored (2026-05-15), none of the
+# 7 image refs in `docker-compose.yml` (pgvector/pgvector:pg16, redis:7-alpine,
+# otel/opentelemetry-collector-contrib:0.104.0, prom/prometheus:v2.54.0,
+# grafana/grafana:11.2.0, busybox:1.36, quay.io/keycloak/keycloak:25.0) carried
+# Sigstore signatures from their upstream Docker Hub / quay.io publishers.
+# `docker-compose.smoke.yml` is an overlay and contains no `image:` keys.
+#
+# This file is a FORWARD-COMPAT scaffold: when any compose `image:` ref is
+# migrated to a signed publisher (e.g., grafana or prometheus publish Sigstore
+# signatures), adding the entry below activates the signature gate WITHOUT any
+# CI YAML edit. The compose-cosign-verify job idles on an empty allowlist
+# (SCANNED=0, exit 0) and starts verifying as soon as entries are added.
+#
+# Schema: identical to data/cosign/signed-images.yml (PR #56). Each entry:
+#   image                    : <repo>:<tag>@sha256:<64hex>          (required)
+#   certificate_identity     : <expected-cosign-subject>             (required)
+#   certificate_oidc_issuer  : <expected-cosign-issuer>              (required)
+#   identity_match           : literal (default) | regexp            (optional)
+#   tlog_mode                : required (only allowed value)         (optional)
+#   annotations              : {}                                    (must be empty or absent in Phase 2)
+#   notes                    : free-form                             (optional)
+#
+# Format-gate test : services/api/tests/unit/test_cosign_compose_signed_images.py
+# Existence-gate   : .github/workflows/ci.yml -> compose-cosign-verify
+#
+# Anti-patterns explicitly forbidden in this allowlist (per PR #57 plan §4.5,
+# carry-forward from PR #56 §4.5 + R0 + Codex r1 fold):
+#   - tlog_mode: optional                  (defeats Rekor transparency anchoring)
+#   - --insecure-ignore-tlog passthrough
+#   - --allow-insecure-registry passthrough
+#   - --allow-http-registry passthrough
+#   - --private-infrastructure passthrough
+#   - --insecure-ignore-sct passthrough
+#   - identity_match: regexp with an unanchored pattern (must be ^...$)
+#   - non-empty annotations (until --annotations passthrough is implemented)
+#   - TAB / LF / CR control chars in any string field
+
+version: 1
+
+# Empty Phase 2; populate per-entry as upstream publishers adopt cosign.
+images: []
+
+# Example entry shape (uncomment + adapt when adding):
+#
+# - image: grafana/grafana:11.2.0@sha256:0000000000000000000000000000000000000000000000000000000000000000
+#   # Identity match mode (default `literal`). Use `regexp` only when the
+#   # publisher's workflow path varies across release branches; regexp pattern
+#   # MUST be anchored ^...$ (substring match allows identity spoofing).
+#   identity_match: literal
+#   certificate_identity: https://github.com/grafana/grafana/.github/workflows/release.yaml@refs/heads/main
+#   certificate_oidc_issuer: https://token.actions.githubusercontent.com
+#   # Transparency-log enforcement: `required` is the only allowed value.
+#   tlog_mode: required
+#   # Annotations to verify (future policy). MUST be empty ({}) or absent until
+#   # the runner forwards --annotations to cosign verify.
+#   annotations: {}
+#   notes: Replace the placeholder digest with the actual digest from docker-compose.yml
