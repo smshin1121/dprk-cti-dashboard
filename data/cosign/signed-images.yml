@@ -1,0 +1,66 @@
+# Cosign signature verification allowlist for Dockerfile FROM image refs.
+#
+# Phase 1 (PR #56): Dockerfile FROM image refs only. Multi-surface rollout
+# (compose / GHA services: / GHA uses:) DEFERRED to PRs #57 / #58 / #59 per
+# pattern_signature_gate_scope_lock_per_phase.
+#
+# Phase 1 ships EMPTY: at the time PR #56 was authored (2026-05-15), none
+# of the four unique FROM refs in this repo (node:22-alpine,
+# nginx:1.27-alpine, python:3.12-slim x3) carried Sigstore signatures from
+# their upstream Docker Hub Official Images publishers. Docker Hub Official
+# Images do not publish cosign signatures today.
+#
+# This file is a FORWARD-COMPAT scaffold: when any FROM ref is migrated to
+# a signed publisher (e.g. python:3.12-slim -> cgr.dev/chainguard/python:3.12),
+# adding the entry below activates the signature gate WITHOUT any CI YAML
+# edit. The dockerfile-cosign-verify job idles on an empty allowlist
+# (SCANNED=0, exit 0) and starts verifying as soon as entries are added.
+#
+# Format-gate test : services/api/tests/unit/test_cosign_signed_images.py
+# Existence-gate   : .github/workflows/ci.yml -> dockerfile-cosign-verify
+#
+# Anti-patterns explicitly forbidden in this allowlist (per plan §4.5):
+#   - tlog_mode: optional                  (defeats Rekor transparency anchoring)
+#   - --insecure-ignore-tlog passthrough
+#   - --allow-insecure-registry passthrough
+# tlog_mode: optional is rejected by the format-gate test, NOT relied on
+# from cosign CLI defaults alone.
+#
+# R0 fold (2026-05-15) additional invariants enforced by both the runner
+# and the format-gate test:
+#   - certificate_identity values with identity_match: regexp MUST be
+#     anchored with ^...$. Unanchored Go regex uses substring matching
+#     and would allow spoofing similar-named publishers.
+#   - annotations MUST be empty ({}) or absent for Phase 1; the runner
+#     does not forward --annotations to cosign verify yet. Refuse-to-scan
+#     beats silent skip.
+#   - No literal TAB / LF / CR in any string field (would mis-split the
+#     runner's TSV temp file).
+
+version: 1
+
+# Empty Phase 1; populate per-entry as upstream publishers adopt cosign.
+images: []
+
+# Example entry shape (uncomment + adapt when adding):
+#
+# - image: cgr.dev/chainguard/python:3.12@sha256:0000000000000000000000000000000000000000000000000000000000000000
+#   # Identity match mode:
+#   #   - `literal` (default): exact-string match against --certificate-identity
+#   #   - `regexp`             : regex match against --certificate-identity-regexp
+#   # Use `regexp` only when the upstream signer's workflow path varies
+#   # across branches/tags. `literal` is preferred for audit clarity.
+#   # If regexp: pattern MUST be anchored with ^...$ (R0 fold; Go's
+#   # regexp.MatchString is substring-matching otherwise).
+#   identity_match: literal
+#   certificate_identity: https://github.com/chainguard-images/images/.github/workflows/release.yaml@refs/heads/main
+#   certificate_oidc_issuer: https://token.actions.githubusercontent.com
+#   # Transparency-log enforcement: `required` is the only allowed value.
+#   # `optional` is rejected by the format-gate test per plan §4.5
+#   # anti-pattern (would defeat Rekor anchoring).
+#   tlog_mode: required
+#   # Annotations to verify (future policy; cosign verify --annotations key=value).
+#   # MUST be empty ({}) or absent until the runner forwards --annotations
+#   # to cosign verify (R0 fold; runner refuses to scan non-empty values).
+#   annotations: {}
+#   notes: Replace the placeholder digest with the actual digest from services/<svc>/Dockerfile
