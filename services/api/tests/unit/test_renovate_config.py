@@ -61,12 +61,32 @@ def test_renovate_config_pin_digests_true():
 
 def test_renovate_config_no_automerge_initially():
     cfg = _load_renovate_json()
-    assert cfg.get("automerge", False) is False, (
-        f"automerge must be false initially; got {cfg.get('automerge')!r}. "
+    # PR #54 R2 LOW-1 closure (2026-05-15): belt-and-suspenders requires
+    # `automerge: false` to be EXPLICITLY pinned at BOTH root + every
+    # packageRule level — not merely defaulted via .get(..., False). The
+    # explicit-presence pin documents intent + survives a future config
+    # rewrite that might silently drop the field, relying on the runtime
+    # default. Use `in` membership checks (not .get) to assert presence.
+    assert "automerge" in cfg, (
+        "renovate.json: top-level `automerge` MUST be explicitly set to `false`. "
+        "Renovate's runtime default is already false, but explicit-pin documents "
+        "intent and prevents silent drift if a future config edit drops the field."
+    )
+    assert cfg["automerge"] is False, (
+        f"automerge must be false initially; got {cfg['automerge']!r}. "
         "Enabling automerge requires a separate PR after cadence is proven stable."
     )
-    for rule in cfg.get("packageRules", []):
-        assert rule.get("automerge", False) is False, (
+    rules = cfg.get("packageRules", [])
+    assert rules, (
+        "renovate.json: packageRules MUST exist with the duplicate `automerge: false` "
+        "pin (belt-and-suspenders defense per PR #54 R2 LOW-1)."
+    )
+    for rule in rules:
+        assert "automerge" in rule, (
+            f"packageRule missing EXPLICIT `automerge` key: {rule!r}. Belt-and-"
+            "suspenders requires the duplicate pin at every packageRule level too."
+        )
+        assert rule["automerge"] is False, (
             f"packageRule has automerge=true: {rule!r}. Forbidden initially."
         )
 
@@ -131,7 +151,19 @@ def test_renovate_workflow_has_least_privilege_permissions():
     # Negative: scopes Renovate must NOT acquire (defensive against scope
     # creep that would expand the GITHUB_TOKEN blast radius beyond what
     # the digest-pin automation actually needs).
-    for forbidden in ("security-events", "packages", "id-token", "deployments", "actions"):
+    # `attestations` + `models` added 2026-05-15 per PR #54 R2 security Q8
+    # follow-up: both are GHA token scopes that became available with
+    # newer GitHub Actions tokens; Renovate's digest-pin automation has
+    # no legitimate use for either, so explicitly forbid.
+    for forbidden in (
+        "security-events",
+        "packages",
+        "id-token",
+        "deployments",
+        "actions",
+        "attestations",
+        "models",
+    ):
         assert not re.search(rf"^\s*{re.escape(forbidden)}:", body, flags=re.MULTILINE), (
             f"renovate.yml: `permissions.{forbidden}` is forbidden — Renovate's "
             f"digest-pin automation never needs this scope. If you genuinely "
