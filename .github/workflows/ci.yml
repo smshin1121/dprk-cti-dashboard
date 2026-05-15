@@ -951,6 +951,276 @@ jobs:
           exit "$FAIL"
 
   # -------------------------------------------------------------------------
+  # dockerfile-cosign-verify — PR #56 (signature gate; layer 3 of supply-chain)
+  #
+  # Third layer of pattern_two_layer_defense_for_addressable_refs ->
+  # three-layer defense for addressable refs:
+  #   layer 1: format gate   (test_dockerfile_digest_pin.py — pin is present)
+  #   layer 2: existence     (dockerfile-digest-resolve   — registry resolves)
+  #   layer 3: signature     (this job                    — publisher signed it)
+  #
+  # A typo'd / yanked digest is caught by layer 2; a LEGITIMATE-BUT-
+  # MALICIOUSLY-REPLACED digest (publisher account compromise, registry
+  # MITM, layer substitution) is what this layer catches via Sigstore
+  # keyless verification (Fulcio cert chain + Rekor transparency log).
+  #
+  # ALLOWLIST: data/cosign/signed-images.yml. Phase 1 ships EMPTY because
+  # none of the four unique FROM refs in this repo (node:22-alpine,
+  # nginx:1.27-alpine, python:3.12-slim x3) currently carry Sigstore
+  # signatures from their upstream Docker Hub Official Images publishers.
+  # The job is a no-op on empty allowlist (SCANNED=0, exit 0) and
+  # activates the moment an entry is added — NO CI YAML edit required.
+  # SCOPE-LOCKED to Dockerfile FROM only; multi-surface rollout (compose
+  # / GHA services: / GHA uses:) DEFERRED to PR #57+ per
+  # pattern_signature_gate_scope_lock_per_phase.
+  #
+  # Anti-patterns explicitly forbidden (per plan §4.5; carried from PR #55):
+  #   - process-substitution around cosign verify (masks exit)
+  #   - bare exit-code capture under `set -euo pipefail` (unreachable)
+  #   - tlog-bypass / insecure-registry flags (defeat Rekor / TLS)
+  # The format-gate test asserts the negatives against this job body.
+  # -------------------------------------------------------------------------
+  dockerfile-cosign-verify:
+    runs-on: ubuntu-latest
+    permissions:
+      # Least privilege: only `actions/checkout` needs `contents: read`;
+      # `cosign verify` against public registries + public Rekor/Fulcio
+      # is anonymous. No `id-token: write` (we are the VERIFIER, not the
+      # signer; keyless verification reads the existing cert + tlog).
+      contents: read
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6  # v4.1.2 (2026-05-07)
+      - name: Ensure PyYAML available for allowlist parser
+        # ubuntu-24.04 runner does not ship PyYAML in the system Python.
+        # Pinned to PyPI version that matches the repo's services/api venv.
+        run: python3 -m pip install --user 'PyYAML==6.0.3'
+      - name: Verify cosign signatures for allowlisted Dockerfile FROM images
+        run: |
+          set -euo pipefail
+          ALLOWLIST="data/cosign/signed-images.yml"
+          if [ ! -f "$ALLOWLIST" ]; then
+            echo "FAIL: allowlist file $ALLOWLIST not found"
+            exit 1
+          fi
+
+          # Parse allowlist into a tab-separated temp file:
+          #   image \t identity \t issuer \t identity_match \t tlog_mode
+          # Uses the PR #55 `if !` guard pattern so a Python crash exit
+          # propagates under `set -euo pipefail` (vs the silent-pass class
+          # closed in PR #55). All schema validation lives here AND in the
+          # format-gate test (defense in depth: the runner check catches
+          # drift after a Renovate auto-bump, the test catches it at
+          # PR-time).
+          inputs="$(mktemp)"
+          trap 'rm -f "$inputs"' EXIT
+          if ! python3 - "$ALLOWLIST" "$inputs" <<'PY'
+          import re
+          import sys
+          from pathlib import Path
+          import yaml
+
+          allowlist = Path(sys.argv[1])
+          out = Path(sys.argv[2])
+          cfg = yaml.safe_load(allowlist.read_text(encoding="utf-8")) or {}
+
+          # Reconciliation against current Dockerfile FROM refs.
+          # Codex r1 finding (2026-05-15): the verify loop without this
+          # check accepts stale allowlist entries (image no longer used)
+          # silently as green, and never alerts on a Dockerfile FROM that
+          # is missing from the allowlist (unverified). Both cases break
+          # plan §5 risk-row "Allowlist drift" intent. Stale entries fail
+          # loud (the allowlist is the policy contract); unlisted FROMs
+          # warn (matches plan D3 "warning not failure for unsigned long
+          # tail").
+          _FROM_RE = re.compile(
+              r"^\s*FROM\s+(?:--\S+\s+)*(?P<ref>\S+)(?:\s+AS\s+\S+)?\s*$",
+              re.IGNORECASE,
+          )
+          dockerfile_paths = sorted(
+              set(Path(".").glob("**/Dockerfile")) | set(Path(".").glob("Dockerfile"))
+          )
+          dockerfile_refs = set()
+          for df in dockerfile_paths:
+              for line in df.read_text(encoding="utf-8").splitlines():
+                  m = _FROM_RE.match(line)
+                  if not m:
+                      continue
+                  ref = m.group("ref").strip()
+                  if not ref or ref == "scratch":
+                      continue
+                  dockerfile_refs.add(ref)
+
+          version = cfg.get("version")
+          if version != 1:
+              sys.stderr.write(
+                  f"FAIL: unsupported allowlist version {version!r}; expected 1.\n"
+              )
+              sys.exit(1)
+
+          entries = cfg.get("images")
+          if entries is None:
+              entries = []
+          if not isinstance(entries, list):
+              sys.stderr.write(
+                  f"FAIL: `images` must be a list; got {type(entries).__name__}.\n"
+              )
+              sys.exit(1)
+
+          # Control chars that would mis-split the downstream TSV reader.
+          # Per R0 security-reviewer Finding 4: \n/\r in string fields can
+          # split a single entry across two lines of the temp file.
+          _BAD_CHARS = ("\t", "\n", "\r")
+
+          with out.open("w", encoding="utf-8") as f:
+              for idx, entry in enumerate(entries):
+                  if not isinstance(entry, dict):
+                      sys.stderr.write(
+                          f"FAIL: images[{idx}] must be a mapping; got {type(entry).__name__}.\n"
+                      )
+                      sys.exit(1)
+                  image = entry.get("image", "")
+                  identity = entry.get("certificate_identity", "")
+                  issuer = entry.get("certificate_oidc_issuer", "")
+                  identity_match = entry.get("identity_match", "literal")
+                  tlog_mode = entry.get("tlog_mode", "required")
+                  annotations = entry.get("annotations") or {}
+                  if not (image and identity and issuer):
+                      sys.stderr.write(
+                          f"FAIL: images[{idx}] is incomplete: {entry!r}\n"
+                      )
+                      sys.exit(1)
+                  if identity_match not in ("literal", "regexp"):
+                      sys.stderr.write(
+                          f"FAIL: images[{idx}].identity_match must be "
+                          f"'literal' or 'regexp'; got {identity_match!r}.\n"
+                      )
+                      sys.exit(1)
+                  # Per R0 security-reviewer Finding 2: regexp identities
+                  # must be anchored with ^...$ or Go's regexp.MatchString
+                  # accepts substring matches, allowing identity spoofing.
+                  if identity_match == "regexp" and not (
+                      identity.startswith("^") and identity.endswith("$")
+                  ):
+                      sys.stderr.write(
+                          f"FAIL: images[{idx}].certificate_identity is a "
+                          f"regexp but is not anchored with ^...$. Substring "
+                          f"matches allow identity spoofing.\n"
+                      )
+                      sys.exit(1)
+                  if tlog_mode != "required":
+                      sys.stderr.write(
+                          f"FAIL: images[{idx}].tlog_mode must be 'required' "
+                          f"(per plan §4.5 anti-pattern); got {tlog_mode!r}.\n"
+                      )
+                      sys.exit(1)
+                  # Per R0 security-reviewer Finding 3: `annotations` is
+                  # documented in the schema but the runner does not yet
+                  # forward --annotations to cosign verify. Refuse-to-scan
+                  # rather than silently skip the policy. Remove this branch
+                  # together with adding --annotations passthrough.
+                  if annotations:
+                      sys.stderr.write(
+                          f"FAIL: images[{idx}].annotations is non-empty "
+                          f"({annotations!r}) but annotation enforcement is "
+                          f"not yet wired into cosign verify. Implement "
+                          f"--annotations passthrough OR remove the field.\n"
+                      )
+                      sys.exit(1)
+                  for bad in _BAD_CHARS:
+                      if bad in image or bad in identity or bad in issuer:
+                          sys.stderr.write(
+                              f"FAIL: images[{idx}] field contains a literal "
+                              f"{bad!r}; refusing to scan rather than mis-split.\n"
+                          )
+                          sys.exit(1)
+                  f.write(
+                      f"{image}\t{identity}\t{issuer}\t{identity_match}\t{tlog_mode}\n"
+                  )
+
+          # Reconcile after schema validation so a malformed allowlist
+          # fails on its own merits, not on a (potentially irrelevant)
+          # reconciliation diff.
+          allowlist_refs = {e.get("image", "") for e in entries if isinstance(e, dict)}
+          allowlist_refs.discard("")
+
+          # Stale allowlist entries (image not used in any current Dockerfile FROM)
+          # fail loud — the allowlist is the policy contract; a stale entry means
+          # the policy says "verify this" for an image we don't actually use.
+          stale = sorted(allowlist_refs - dockerfile_refs)
+          if stale:
+              sys.stderr.write(
+                  "FAIL: cosign allowlist contains entries not found in any "
+                  "current Dockerfile FROM ref:\n"
+              )
+              for s in stale:
+                  sys.stderr.write(f"  - {s}\n")
+              sys.stderr.write(
+                  "Remove the stale entry (the image is no longer used) or "
+                  "update the Dockerfile FROM to the allowlisted digest.\n"
+              )
+              sys.exit(1)
+
+          # Unverified Dockerfile FROM refs (in repo, not in allowlist) warn-not-fail
+          # per plan D3 (long tail of unsigned-by-publisher community images).
+          unlisted = sorted(dockerfile_refs - allowlist_refs)
+          for u in unlisted:
+              sys.stderr.write(
+                  f"WARN: Dockerfile FROM {u!r} is not in the cosign allowlist; "
+                  f"signature verification skipped (per plan D3 warn-not-fail policy).\n"
+              )
+          PY
+          then
+            echo "FAIL: failed to parse $ALLOWLIST"
+            exit 1
+          fi
+
+          # Empty-allowlist no-op path: Phase 1 idles here today.
+          # When upstream publishers adopt cosign and entries are added,
+          # this path becomes unreachable and the verify loop runs.
+          if [ ! -s "$inputs" ]; then
+            echo "INFO: $ALLOWLIST is empty (Phase 1 scaffold; no FROM ref signed today)."
+            echo "SCANNED=0 FAIL=0"
+            exit 0
+          fi
+
+          # Non-empty path: per-entry cosign verify.
+          # The `|| [ -n "$image" ]` guard handles a TSV that ends without a
+          # trailing newline (R0 security-reviewer Finding 1) — without it,
+          # `read` returns non-zero on the final partial line and the verify
+          # loop silently skips that entry.
+          SCANNED=0
+          FAIL=0
+          while IFS=$'\t' read -r image identity issuer identity_match _tlog_mode \
+              || [ -n "$image" ]; do
+            SCANNED=$((SCANNED + 1))
+            echo ">>> verify $image (issuer=$issuer identity-match=$identity_match)"
+            # Capture stderr to distinguish TUF/network errors (transient,
+            # rerun-cures) from genuine signature rejections (publisher
+            # change or compromise). Without this, the log says only
+            # "FAIL: cosign verify rejected $image" for both classes.
+            if [ "$identity_match" = "regexp" ]; then
+              if ! cosign_err=$(cosign verify "$image" \
+                  --certificate-identity-regexp "$identity" \
+                  --certificate-oidc-issuer "$issuer" 2>&1 >/dev/null); then
+                echo "FAIL: cosign verify rejected $image"
+                printf '%s\n' "$cosign_err" | sed 's/^/  | /'
+                FAIL=1
+              fi
+            else
+              if ! cosign_err=$(cosign verify "$image" \
+                  --certificate-identity "$identity" \
+                  --certificate-oidc-issuer "$issuer" 2>&1 >/dev/null); then
+                echo "FAIL: cosign verify rejected $image"
+                printf '%s\n' "$cosign_err" | sed 's/^/  | /'
+                FAIL=1
+              fi
+            fi
+          done < "$inputs"
+          echo "SCANNED=$SCANNED FAIL=$FAIL"
+          exit "$FAIL"
+
+  # -------------------------------------------------------------------------
   # compose-image-digest-resolve — PR #51
   #
   # Sibling to `dockerfile-digest-resolve` (PR #49). The per-service
