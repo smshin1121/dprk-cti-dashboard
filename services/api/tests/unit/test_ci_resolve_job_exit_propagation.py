@@ -26,6 +26,18 @@ JOBS_UNDER_GUARD: Final[tuple[str, ...]] = (
     "gha-services-image-digest-resolve",
     "gha-action-digest-resolve",
 )
+# Subset of JOBS_UNDER_GUARD whose extractor is `git ls-files | xargs
+# grep -H`. The grep `-H` output is `path:line`, parsed downstream by
+# `IFS=':' read -r`. A tracked file path containing a literal `:` would
+# mis-split. The R0 convergent fold added a defensive `git ls-files |
+# grep -q ':'` refuse-to-scan guard for each of these jobs (plan §0.1
+# fold #2). The path-colon guard ONLY applies to grep-based extractors;
+# the Python-heredoc extractors parse YAML directly so they have no
+# colon-collision surface.
+GREP_BASED_JOBS: Final[tuple[str, ...]] = (
+    "dockerfile-digest-resolve",
+    "compose-image-digest-resolve",
+)
 EXCLUDED_JOBS: Final[tuple[str, ...]] = (
     # Different shape: single `npx renovate-config-validator` call,
     # no extractor + consumer-loop split, no SCANNED counter applicable.
@@ -217,6 +229,39 @@ def test_renovate_config_resolve_is_explicitly_excluded() -> None:
         "the same shape as the guarded jobs and should move to "
         "JOBS_UNDER_GUARD (and out of EXCLUDED_JOBS)."
     )
+
+
+def test_grep_based_jobs_have_path_colon_refuse_to_scan_guard() -> None:
+    """Plan §0.1 fold #2 (R0 convergent finding): the 2 grep-based
+    extractors emit `path:line` records that downstream `IFS=':' read -r`
+    parses by splitting on the first colon. A tracked file path that
+    itself contains `:` would silently mis-split into the wrong (path,
+    line) tuple. The R0 fold added a defensive `git ls-files ... |
+    grep -q ':'` refuse-to-scan guard ahead of the extractor. This test
+    pins that guard's presence so a future cleanup pass does not delete
+    it (Codex r-final 2026-05-15 regression-test gap).
+
+    Python-heredoc-based jobs (`gha-services-image-digest-resolve`,
+    `gha-action-digest-resolve`) parse YAML directly, so they have no
+    colon-collision surface and are exempt.
+    """
+    yml = _ci_yml_text()
+    for job in GREP_BASED_JOBS:
+        body = _extract_job_body(yml, job)
+        assert "git ls-files" in body and "grep -q ':'" in body, (
+            f"{job}: missing the path-colon refuse-to-scan guard "
+            "(`git ls-files ... | grep -q ':'`). Plan §0.1 R0 fold "
+            "added this defense; without it, a path with `:` would "
+            "silently mis-split downstream `IFS=':' read -r`."
+        )
+        # Pin the FAIL message string so the guard remains diagnostic
+        # rather than a silent `exit 1`.
+        assert "path contains ':'" in body, (
+            f"{job}: path-colon guard exists but lacks the "
+            "diagnostic `path contains ':'` FAIL message. Without "
+            "the message the guard refuses to scan but doesn't tell "
+            "the operator what to rename."
+        )
 
 
 def test_no_new_resolve_job_added_without_guard() -> None:

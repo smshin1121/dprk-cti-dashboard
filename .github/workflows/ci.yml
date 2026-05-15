@@ -892,9 +892,16 @@ jobs:
           # do NOT check the `xargs|grep` tail's exit code — `grep` exit
           # 1 (no-match across all files) and the resulting `xargs` exit
           # 123 (GNU xargs propagates child non-zero as 123) are both
-          # benign and caught downstream by the SCANNED guard. Any real
-          # failure (e.g. an unreadable file) will leave $inputs empty
-          # or partial → SCANNED=0 → fail-loud (R0 HIGH-1 fold, PR #55).
+          # benign and caught downstream by the SCANNED guard. In the
+          # CI threat model (git-checkout produces readable files for
+          # every tracked path), grep only returns 0 (match) or 1
+          # (no-match) — never 2 (error) — so the no-match branch leaves
+          # $inputs empty → SCANNED=0 → fail-loud. A theoretical
+          # "partial extractor failure" (mid-walk file becomes
+          # unreadable, grep exits 2, xargs reports 123 even with
+          # SCANNED > 0) is unreachable on a clean ubuntu-latest runner;
+          # documented in plan §0.1 R0 fold rationale + Codex r-final
+          # correction (R-final fold, PR #55).
           set +e
           git ls-files -z -- '**/Dockerfile' 'Dockerfile' \
             | xargs -0 -r grep -iIH '^[[:space:]]*FROM[[:space:]]' > "$inputs"
@@ -1002,9 +1009,14 @@ jobs:
           # block + PIPESTATUS capture. `git ls-files` exit MUST be 0.
           # We do NOT check the `xargs|grep` tail's exit code: `grep`
           # exit 1 (no-match) propagates as `xargs` exit 123, both
-          # benign and caught downstream by the SCANNED guard. A real
-          # failure leaves $inputs empty/partial → SCANNED=0 → fail-loud
-          # (R0 HIGH-1 fold, PR #55).
+          # benign and caught downstream by the SCANNED guard. In the
+          # CI threat model (git-checkout produces readable files for
+          # every tracked path), grep only returns 0 (match) or 1
+          # (no-match) — never 2 (error) — so the no-match branch leaves
+          # $inputs empty → SCANNED=0 → fail-loud. A theoretical
+          # "partial extractor failure" is unreachable on a clean
+          # ubuntu-latest runner; documented in plan §0.1 R0 fold
+          # rationale + Codex r-final correction (R-final fold, PR #55).
           set +e
           git ls-files -z -- 'docker-compose*.yml' 'docker-compose*.yaml' \
             | xargs -0 -r grep -EIH '^[[:space:]]+image:' > "$inputs"
