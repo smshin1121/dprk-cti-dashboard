@@ -1140,9 +1140,12 @@ jobs:
 
           # Reconcile after schema validation so a malformed allowlist
           # fails on its own merits, not on a (potentially irrelevant)
-          # reconciliation diff.
+          # reconciliation diff. The per-entry completeness check above
+          # `sys.exit(1)`s on empty `image`, so empty strings cannot
+          # reach this set comprehension. The previous `allowlist_refs.discard("")`
+          # was dead code; removed per PR #60 LOW finding F4 (cycle 14
+          # security-reviewer).
           allowlist_refs = {e.get("image", "") for e in entries if isinstance(e, dict)}
-          allowlist_refs.discard("")
 
           # Stale allowlist entries (image not used in any current Dockerfile FROM)
           # fail loud — the allowlist is the policy contract; a stale entry means
@@ -1511,8 +1514,10 @@ jobs:
           # stale allowlist entries (in allowlist but not in any current
           # compose `image:` ref) fail loud; unlisted compose refs (current
           # ref but no allowlist entry) warn (plan D3 long-tail policy).
+          # Per-entry completeness check above `sys.exit(1)`s on empty
+          # `image`, so the previous `allowlist_refs.discard("")` was
+          # dead code (removed per PR #60 LOW finding F4).
           allowlist_refs = {e.get("image", "") for e in entries if isinstance(e, dict)}
-          allowlist_refs.discard("")
           stale = sorted(allowlist_refs - compose_refs)
           if stale:
               sys.stderr.write(

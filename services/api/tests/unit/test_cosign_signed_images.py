@@ -52,12 +52,20 @@ ALLOWLIST_PATH = REPO_ROOT / "data" / "cosign" / "signed-images.yml"
 CI_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "ci.yml"
 
 # Docker manifest image-ref shape: <repo>:<tag>@sha256:<64-hex>.
-# Repo may include registry host (e.g. cgr.dev/chainguard/python) and
-# repo path separators; tag may include alphanumerics, `.`, `_`, `-`.
+# Repo may include registry host (e.g. cgr.dev/chainguard/python), optional
+# port (e.g. myregistry.example.com:5000/python), and repo path separators;
+# tag may include alphanumerics, `.`, `_`, `-`.
+# Private-registry-with-port support added per PR #60 LOW finding F2
+# (cycle 14 security-reviewer): a host segment ending in `:<port-digits>/`
+# is part of the registry host, NOT a tag delimiter. The regex below
+# explicitly admits an optional `:<digits>/` after the first host segment;
+# the final `:<tag>@sha256:` anchor disambiguates the tag.
 _IMAGE_REF_RE = re.compile(
-    r"^[A-Za-z0-9][A-Za-z0-9._/\-]*"        # registry host + repo path
-    r":[A-Za-z0-9._\-]+"                    # tag
-    r"@sha256:[0-9a-f]{64}$"                # digest
+    r"^[A-Za-z0-9][A-Za-z0-9.\-]*"          # first host segment (registry host or repo prefix)
+    r"(?::\d{1,5})?"                         # OPTIONAL registry port (1-5 digits)
+    r"(?:/[A-Za-z0-9][A-Za-z0-9._\-]*)*"     # 0+ additional path segments
+    r":[A-Za-z0-9._\-]+"                     # tag
+    r"@sha256:[0-9a-f]{64}$"                 # digest
 )
 
 # Cosign-installer SHA-pin shape: 40-hex commit SHA after `@`.
@@ -315,6 +323,87 @@ def test_ci_cosign_installer_sha_pinned() -> None:
     assert len(sha) == 40 and all(c in "0123456789abcdef" for c in sha), (
         f"cosign-installer pin {sha!r} must be a 40-char lowercase hex SHA"
     )
+
+
+def test_ci_cosign_installer_sha_equality_across_all_jobs() -> None:
+    """All `sigstore/cosign-installer@<sha>` pins in ci.yml MUST be identical.
+
+    PR #60 LOW finding F1 (cycle 14 security-reviewer): the per-job
+    `sigstore/cosign-installer@...` pin test uses `re.search()`, which
+    returns the FIRST match. If a future PR diverges the Phase 1 pin
+    from the Phase 2 pin (or any future Phase 3/4 pin), neither single-
+    job test catches it — both stay green because each finds a valid
+    40-hex SHA somewhere in the body.
+
+    Threat: divergent cosign-installer SHAs across surfaces mean the
+    two jobs run different cosign binaries, potentially with different
+    validation behavior for the same signature bundle. This test
+    asserts SHA equality across ALL pinned references — any future
+    divergence fails the gate at PR-time.
+    """
+    body = _ci_workflow_body()
+    matches = _COSIGN_INSTALLER_PIN_RE.findall(body)
+    assert matches, (
+        "no sigstore/cosign-installer pin found anywhere in ci.yml; "
+        "this test should be skipped only if cosign verification is fully removed."
+    )
+    distinct = set(matches)
+    assert len(distinct) == 1, (
+        f"sigstore/cosign-installer pin divergence detected across "
+        f"{len(matches)} reference(s); distinct SHAs: {sorted(distinct)}. "
+        f"All cosign-verify jobs MUST share the same SHA to guarantee "
+        f"identical signature-verification behavior across surfaces. "
+        f"Update every pin in lockstep when bumping cosign-installer."
+    )
+
+
+# Known Sigstore OIDC issuers allowlisted for `certificate_oidc_issuer`.
+# Phase 1 hardening per PR #60 LOW finding F7 (cycle 14 security-reviewer):
+# an attacker-controlled OIDC issuer URL would let an attacker-issued cert
+# match the pinned issuer; constraining the value domain to a known-issuer
+# set raises the bar to "compromise a real Sigstore-recognized issuer".
+# Sourced from https://docs.sigstore.dev/cosign/keyless/ and the Fulcio
+# trusted issuer list.
+_KNOWN_OIDC_ISSUERS = frozenset({
+    # GitHub Actions OIDC (primary issuer for repo-signed images)
+    "https://token.actions.githubusercontent.com",
+    # Sigstore Dex (OAuth2-federated keyless flow)
+    "https://oauth2.sigstore.dev/auth",
+    # Google identity (used by some Google Cloud signed images)
+    "https://accounts.google.com",
+    # GitLab CI OIDC
+    "https://gitlab.com",
+    # Buildkite Agent OIDC
+    "https://agent.buildkite.com",
+})
+
+
+def test_cosign_allowlist_certificate_oidc_issuer_is_known() -> None:
+    """`certificate_oidc_issuer` MUST be one of the known Sigstore issuers.
+
+    PR #60 LOW finding F7 (cycle 14 security-reviewer): the schema check
+    only asserted `certificate_oidc_issuer` is a non-empty string. An
+    attacker who controls a similar-looking OIDC issuer URL (e.g.,
+    `https://attacker-controlled-oidc.example.com`) could add an entry
+    whose signature would verify under a cert issued by their OIDC. The
+    finding was LOW today because the allowlist is empty; it becomes
+    MED the moment any entry is added.
+
+    This test pins the value domain to a frozenset of vetted Sigstore-
+    recognized issuers. Adding a new legitimate issuer requires a PR
+    that consciously updates `_KNOWN_OIDC_ISSUERS`, which surfaces the
+    addition for security review.
+
+    Vacuously PASS on the empty Phase 1 allowlist.
+    """
+    for idx, entry in enumerate(_entries()):
+        issuer = entry.get("certificate_oidc_issuer", "")
+        assert issuer in _KNOWN_OIDC_ISSUERS, (
+            f"images[{idx}].certificate_oidc_issuer {issuer!r} is not in "
+            f"the known-Sigstore-issuer allowlist. Allowed: "
+            f"{sorted(_KNOWN_OIDC_ISSUERS)}. Adding a new issuer requires "
+            f"updating `_KNOWN_OIDC_ISSUERS` in this file (PR review surfaces it)."
+        )
 
 
 @pytest.mark.parametrize(
