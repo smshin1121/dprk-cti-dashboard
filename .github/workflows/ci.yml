@@ -861,29 +861,93 @@ jobs:
         run: |
           set -euo pipefail
           FAIL=0
-          # Walk every Dockerfile tracked by git so a future service Dockerfile
-          # is picked up automatically without a workflow edit.
-          while IFS= read -r dockerfile; do
-            while IFS= read -r raw; do
-              # Strip optional leading "--platform=..." flag(s) and trailing
-              # "AS <stage>" suffix so what's left is the bare image ref.
-              ref="$(printf '%s\n' "$raw" \
-                | sed -E 's/^FROM[[:space:]]+//I' \
-                | sed -E 's/^(--[^[:space:]]+[[:space:]]+)+//' \
-                | sed -E 's/[[:space:]]+AS[[:space:]]+[A-Za-z0-9_-]+[[:space:]]*$//I' \
-                | sed -E 's/[[:space:]]+$//')"
-              if [ -z "$ref" ] || [ "$ref" = "scratch" ]; then
-                continue
-              fi
-              echo ">>> $dockerfile: $ref"
-              if ! docker manifest inspect "$ref" >/dev/null 2>&1; then
-                echo "FAIL: docker manifest inspect rejected $ref"
-                FAIL=1
-              fi
-            # `-i` matches the sed `/I` flags below so a lowercase `from`
-            # line (legal per the Dockerfile spec) is not silently skipped.
-            done < <(grep -iE '^[[:space:]]*FROM[[:space:]]' "$dockerfile")
-          done < <(git ls-files -- '**/Dockerfile' 'Dockerfile')
+          SCANNED=0
+
+          # PR #55 — silent-pass class fix. Buffer extracted refs into a
+          # temp file so the extractor's exit status is observable AND
+          # set-e-safe. Process-substitution `done < <(...)` masks the
+          # extractor's non-zero exit, which can leave a green CI tick on
+          # a partial walk or a zero-walk. The original `done < <(grep ...)`
+          # had no SCANNED counter at all, so a renamed/moved Dockerfile
+          # tree silently passed.
+          inputs="$(mktemp)"
+          trap 'rm -f "$inputs"' EXIT
+
+          # Defensive guard against a tracked Dockerfile path containing
+          # a literal `:` — the `IFS=':' read -r dockerfile raw` split
+          # below would mis-parse `path:line` if the path itself had a
+          # colon. Refuse to scan rather than silently use the wrong ref
+          # (R0 convergent finding fold, PR #55).
+          if git ls-files -- '**/Dockerfile' 'Dockerfile' | grep -q ':'; then
+            echo "FAIL: a tracked Dockerfile path contains ':' which conflicts"
+            echo "with the grep -H output delimiter used downstream. Rename"
+            echo "the file or extend this extractor to a NUL-delim format."
+            echo "(silent-pass guard, PR #55)"
+            exit 1
+          fi
+
+          # Plan §4 set-e-safe form #2: `set +e ... set -e` block around
+          # the extractor pipeline so errexit doesn't abort before the
+          # PIPESTATUS capture runs. `git ls-files` exit MUST be 0. We
+          # do NOT check the `xargs|grep` tail's exit code — `grep` exit
+          # 1 (no-match across all files) and the resulting `xargs` exit
+          # 123 (GNU xargs propagates child non-zero as 123) are both
+          # benign and caught downstream by the SCANNED guard. In the
+          # CI threat model (git-checkout produces readable files for
+          # every tracked path), grep only returns 0 (match) or 1
+          # (no-match) — never 2 (error) — so the no-match branch leaves
+          # $inputs empty → SCANNED=0 → fail-loud. A theoretical
+          # "partial extractor failure" (mid-walk file becomes
+          # unreadable, grep exits 2, xargs reports 123 even with
+          # SCANNED > 0) is unreachable on a clean ubuntu-latest runner;
+          # documented in plan §0.1 R0 fold rationale + Codex r-final
+          # correction (R-final fold, PR #55).
+          set +e
+          git ls-files -z -- '**/Dockerfile' 'Dockerfile' \
+            | xargs -0 -r grep -iIH '^[[:space:]]*FROM[[:space:]]' > "$inputs"
+          ls_files_rc=${PIPESTATUS[0]:-0}
+          set -e
+
+          if [ "$ls_files_rc" -ne 0 ]; then
+            echo "FAIL: git ls-files extractor exited $ls_files_rc (silent-pass guard, PR #55)"
+            exit 1
+          fi
+
+          # Each input line: <dockerfile>:<raw FROM line> (grep -H output).
+          # Use IFS=':' with read -r so the dockerfile path (LHS of the
+          # first colon) and the raw FROM line (RHS, including any colons
+          # like `registry:5000/image@sha256:...`) split correctly into
+          # exactly 2 fields. The path-colon guard above ensures the LHS
+          # never contains a colon.
+          # `-i` on grep matches the sed `/I` flags below so a lowercase
+          # `from` line (legal per the Dockerfile spec) is not silently skipped.
+          while IFS=':' read -r dockerfile raw; do
+            # Strip optional leading "--platform=..." flag(s) and trailing
+            # "AS <stage>" suffix so what's left is the bare image ref.
+            ref="$(printf '%s\n' "$raw" \
+              | sed -E 's/^[[:space:]]+//' \
+              | sed -E 's/^FROM[[:space:]]+//I' \
+              | sed -E 's/^(--[^[:space:]]+[[:space:]]+)+//' \
+              | sed -E 's/[[:space:]]+AS[[:space:]]+[A-Za-z0-9_-]+[[:space:]]*$//I' \
+              | sed -E 's/[[:space:]]+$//')"
+            if [ -z "$ref" ] || [ "$ref" = "scratch" ]; then
+              continue
+            fi
+            SCANNED=$((SCANNED + 1))
+            echo ">>> $dockerfile: $ref"
+            if ! docker manifest inspect "$ref" >/dev/null 2>&1; then
+              echo "FAIL: docker manifest inspect rejected $ref"
+              FAIL=1
+            fi
+          done < "$inputs"
+
+          if [ "$SCANNED" -eq 0 ]; then
+            echo "FAIL: extracted zero pinned digest refs from Dockerfiles."
+            echo "Either every Dockerfile legitimately stopped using a"
+            echo "FROM directive (in which case delete this job) or the"
+            echo "extractor walk is broken. (silent-pass guard, PR #55)"
+            exit 1
+          fi
           exit "$FAIL"
 
   # -------------------------------------------------------------------------
@@ -919,26 +983,77 @@ jobs:
         run: |
           set -euo pipefail
           FAIL=0
-          # Walk every compose file tracked by git so a future overlay
-          # (e.g. docker-compose.prod.yml) is picked up automatically.
-          while IFS= read -r compose_file; do
-            while IFS= read -r raw; do
-              # Strip the leading `<whitespace>image:<whitespace>` and any
-              # trailing whitespace so what's left is the bare image ref.
-              ref="$(printf '%s\n' "$raw" \
-                | sed -E 's/^[[:space:]]*image:[[:space:]]*//' \
-                | sed -E 's/[[:space:]]+$//' \
-                | sed -E 's/^["'\'']//; s/["'\'']$//')"
-              if [ -z "$ref" ] || [ "$ref" = "scratch" ]; then
-                continue
-              fi
-              echo ">>> $compose_file: $ref"
-              if ! docker manifest inspect "$ref" >/dev/null 2>&1; then
-                echo "FAIL: docker manifest inspect rejected $ref"
-                FAIL=1
-              fi
-            done < <(grep -E '^[[:space:]]+image:' "$compose_file")
-          done < <(git ls-files -- 'docker-compose*.yml' 'docker-compose*.yaml')
+          SCANNED=0
+
+          # PR #55 — silent-pass class fix. Same idiom as the sibling
+          # `dockerfile-digest-resolve`. Original `done < <(grep ...)`
+          # masked extractor exit AND lacked a SCANNED counter, so a
+          # renamed/moved compose-file tree silently passed.
+          inputs="$(mktemp)"
+          trap 'rm -f "$inputs"' EXIT
+
+          # Defensive guard against a tracked compose-file path containing
+          # a literal `:` — the `IFS=':' read -r` split below would
+          # mis-parse `path:line` if the path itself had a colon. Refuse
+          # to scan rather than silently use the wrong ref (R0 convergent
+          # finding fold, PR #55).
+          if git ls-files -- 'docker-compose*.yml' 'docker-compose*.yaml' | grep -q ':'; then
+            echo "FAIL: a tracked compose-file path contains ':' which conflicts"
+            echo "with the grep -H output delimiter used downstream. Rename"
+            echo "the file or extend this extractor to a NUL-delim format."
+            echo "(silent-pass guard, PR #55)"
+            exit 1
+          fi
+
+          # Plan §4 set-e-safe form #2: explicit `set +e ... set -e`
+          # block + PIPESTATUS capture. `git ls-files` exit MUST be 0.
+          # We do NOT check the `xargs|grep` tail's exit code: `grep`
+          # exit 1 (no-match) propagates as `xargs` exit 123, both
+          # benign and caught downstream by the SCANNED guard. In the
+          # CI threat model (git-checkout produces readable files for
+          # every tracked path), grep only returns 0 (match) or 1
+          # (no-match) — never 2 (error) — so the no-match branch leaves
+          # $inputs empty → SCANNED=0 → fail-loud. A theoretical
+          # "partial extractor failure" is unreachable on a clean
+          # ubuntu-latest runner; documented in plan §0.1 R0 fold
+          # rationale + Codex r-final correction (R-final fold, PR #55).
+          set +e
+          git ls-files -z -- 'docker-compose*.yml' 'docker-compose*.yaml' \
+            | xargs -0 -r grep -EIH '^[[:space:]]+image:' > "$inputs"
+          ls_files_rc=${PIPESTATUS[0]:-0}
+          set -e
+
+          if [ "$ls_files_rc" -ne 0 ]; then
+            echo "FAIL: git ls-files extractor exited $ls_files_rc (silent-pass guard, PR #55)"
+            exit 1
+          fi
+
+          # Each input line: <compose_file>:<raw image: line> (grep -H output).
+          while IFS=':' read -r compose_file raw; do
+            # Strip the leading `<whitespace>image:<whitespace>` and any
+            # trailing whitespace so what's left is the bare image ref.
+            ref="$(printf '%s\n' "$raw" \
+              | sed -E 's/^[[:space:]]*image:[[:space:]]*//' \
+              | sed -E 's/[[:space:]]+$//' \
+              | sed -E 's/^["'\'']//; s/["'\'']$//')"
+            if [ -z "$ref" ] || [ "$ref" = "scratch" ]; then
+              continue
+            fi
+            SCANNED=$((SCANNED + 1))
+            echo ">>> $compose_file: $ref"
+            if ! docker manifest inspect "$ref" >/dev/null 2>&1; then
+              echo "FAIL: docker manifest inspect rejected $ref"
+              FAIL=1
+            fi
+          done < "$inputs"
+
+          if [ "$SCANNED" -eq 0 ]; then
+            echo "FAIL: extracted zero compose-image refs from docker-compose*.yml/yaml."
+            echo "Either every compose file legitimately stopped declaring a"
+            echo "top-level image: line (in which case delete this job) or"
+            echo "the extractor walk is broken. (silent-pass guard, PR #55)"
+            exit 1
+          fi
           exit "$FAIL"
 
   # -------------------------------------------------------------------------
@@ -993,17 +1108,19 @@ jobs:
           set -euo pipefail
           FAIL=0
           SCANNED=0
-          while IFS=' ' read -r workflow job_id svc_name ref; do
-            if [ -z "$ref" ] || [ "$ref" = "scratch" ]; then
-              continue
-            fi
-            SCANNED=$((SCANNED + 1))
-            echo ">>> $workflow ($job_id/$svc_name): $ref"
-            if ! docker manifest inspect "$ref" >/dev/null 2>&1; then
-              echo "FAIL: docker manifest inspect rejected $ref"
-              FAIL=1
-            fi
-          done < <(python3 - <<'PY'
+
+          # PR #55 — silent-pass class fix. Buffer Python extractor output
+          # into a temp file so the extractor's exit status is observable
+          # AND set-e-safe. Process-substitution `done < <(python3 ...)`
+          # masked Python's exit code: a crash mid-walk with N rows already
+          # emitted leaves SCANNED=N>0 and a green tick on a partial scan.
+          inputs="$(mktemp)"
+          trap 'rm -f "$inputs"' EXIT
+
+          # Plan §4 set-e-safe form #1: `if !` guard around the Python
+          # heredoc. errexit does NOT abort the if-condition on failure,
+          # so the fail-loud branch always runs.
+          if ! python3 - <<'PY' > "$inputs"
           from pathlib import Path
           import yaml
           workflows = sorted(Path('.github/workflows').glob('*.yml')) + sorted(
@@ -1024,7 +1141,23 @@ jobs:
                       if isinstance(img, str) and img.strip():
                           print(f"{wf.name} {job_id} {svc_name} {img.strip()}")
           PY
-          )
+          then
+            echo "FAIL: Python extractor exited non-zero (silent-pass guard, PR #55)"
+            exit 1
+          fi
+
+          while IFS=' ' read -r workflow job_id svc_name ref; do
+            if [ -z "$ref" ] || [ "$ref" = "scratch" ]; then
+              continue
+            fi
+            SCANNED=$((SCANNED + 1))
+            echo ">>> $workflow ($job_id/$svc_name): $ref"
+            if ! docker manifest inspect "$ref" >/dev/null 2>&1; then
+              echo "FAIL: docker manifest inspect rejected $ref"
+              FAIL=1
+            fi
+          done < "$inputs"
+
           if [ "$SCANNED" -eq 0 ]; then
             echo "FAIL: extracted zero services-image refs from .github/workflows/."
             echo "Either every workflow legitimately stopped using a services: block"
@@ -1098,21 +1231,26 @@ jobs:
           set -euo pipefail
           FAIL=0
           SCANNED=0
-          # Dedupe on (action, sha) tuple — many workflows repeat the
-          # same `actions/checkout@<sha>` 14 times across jobs; one
-          # API call covers the whole repo. The sort -u below collapses
-          # duplicates before the inspect loop.
-          while IFS=' ' read -r action sha; do
-            if [ -z "$action" ] || [ -z "$sha" ]; then
-              continue
-            fi
-            SCANNED=$((SCANNED + 1))
-            echo ">>> $action @ $sha"
-            if ! gh api "repos/$action/commits/$sha" --jq '.sha' >/dev/null 2>&1; then
-              echo "FAIL: gh api repos/$action/commits/$sha rejected the SHA"
-              FAIL=1
-            fi
-          done < <(python3 - <<'PY' | sort -u
+
+          # PR #55 — silent-pass class fix. Buffer the Python+sort pipeline
+          # output into a temp file so the extractor's exit status is
+          # observable AND set-e-safe. Process-substitution
+          # `done < <(python3 ... | sort -u)` masked Python's exit (sort
+          # would still exit 0 for the rows it received). With pipefail
+          # already set, the `if !` guard catches a non-zero in any
+          # pipeline element — including a Python crash mid-walk.
+          inputs="$(mktemp)"
+          trap 'rm -f "$inputs"' EXIT
+
+          # Plan §4 set-e-safe form #1 with pipeline: `if !` around the
+          # full `python3 ... | sort -u > "$inputs"` pipeline. `set -o
+          # pipefail` (already set above) makes the pipeline's effective
+          # exit reflect any non-zero element, so a Python crash trips
+          # the if-true branch reliably.
+          # Dedupe on (action, sha) tuple via sort -u — many workflows
+          # repeat the same `actions/checkout@<sha>` across jobs; one
+          # API call covers the whole repo.
+          if ! python3 - <<'PY' | sort -u > "$inputs"
           import re
           from pathlib import Path
           import yaml
@@ -1146,7 +1284,23 @@ jobs:
                       if r and SHA_RE.match(r[1]):
                           print(f"{r[0]} {r[1]}")
           PY
-          )
+          then
+            echo "FAIL: Python | sort -u extractor pipeline exited non-zero (silent-pass guard, PR #55)"
+            exit 1
+          fi
+
+          while IFS=' ' read -r action sha; do
+            if [ -z "$action" ] || [ -z "$sha" ]; then
+              continue
+            fi
+            SCANNED=$((SCANNED + 1))
+            echo ">>> $action @ $sha"
+            if ! gh api "repos/$action/commits/$sha" --jq '.sha' >/dev/null 2>&1; then
+              echo "FAIL: gh api repos/$action/commits/$sha rejected the SHA"
+              FAIL=1
+            fi
+          done < "$inputs"
+
           if [ "$SCANNED" -eq 0 ]; then
             echo "FAIL: extracted zero pinned action refs from .github/workflows/."
             echo "Either every workflow legitimately stopped using third-party"
