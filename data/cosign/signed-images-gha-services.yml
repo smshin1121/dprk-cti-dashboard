@@ -1,0 +1,92 @@
+# Cosign signature verification allowlist for GHA `services:` image refs.
+#
+# Phase 3 (PR #61): `.github/workflows/*.yml` `jobs.<job>.services.<svc>.image:`
+# refs only. Pairs with:
+#   - `data/cosign/signed-images.yml` (PR #56 Phase 1, Dockerfile FROM)
+#   - `data/cosign/signed-images-compose.yml` (PR #57 Phase 2, compose image:)
+#
+# Separate per-surface files per PR #61 plan D3 (carry-forward from PR #57 D3):
+#   - preserves PR #56 + PR #57 backward compatibility (each stale-check is
+#     surface-scoped)
+#   - clean per-surface ownership (GHA-services update cadence != compose
+#     != Dockerfile FROM)
+#   - cross-surface duplication on `pgvector/pgvector:pg16` + `redis:7-alpine`
+#     (both also in docker-compose.yml) is acceptable today; objective trigger
+#     for promoting the cross-surface reconcile-all refactor from OPTIONAL to
+#     REQUIRED is defined in PR #61 plan §4.6 (`>=3` unique signed duplicated
+#     refs OR 2 consecutive lockstep edit cycles).
+#
+# Multi-surface rollout completes with PR #62 (GHA `uses: action@sha` Phase 4)
+# per pattern_signature_gate_scope_lock_per_phase. The OPTIONAL post-Phase-4
+# reconcile-all refactor may later unify all per-surface allowlists into one
+# file with a `surface:` discriminator; per-surface stale-checks remain
+# authoritative until then.
+#
+# Phase 3 ships EMPTY: at the time PR #61 was authored (2026-05-17), neither
+# of the 2 unique image refs in GHA services blocks (`pgvector/pgvector:pg16`,
+# `redis:7-alpine`) carried Sigstore signatures from their upstream Docker
+# Hub publishers. Surface inventory: 9 refs total across 6 jobs in `ci.yml`
+# (`frontend-e2e`, `db-migrations`, `data-quality-tests`, `api-integration`,
+# `contract-verify`, `correlation-perf-smoke`).
+#
+# This file is a FORWARD-COMPAT scaffold: when any GHA services-block ref is
+# migrated to a signed publisher (the most likely near-term candidates are
+# the same as compose — postgres / redis variants do not currently publish
+# Sigstore signatures), adding the entry below activates the signature gate
+# WITHOUT any CI YAML edit. The gha-services-cosign-verify job idles on an
+# empty allowlist (SCANNED=0, exit 0) and starts verifying as soon as entries
+# are added.
+#
+# Schema: identical to data/cosign/signed-images.yml (PR #56) and
+# data/cosign/signed-images-compose.yml (PR #57). Each entry:
+#   image                    : <repo>:<tag>@sha256:<64hex>          (required)
+#   certificate_identity     : <expected-cosign-subject>             (required)
+#   certificate_oidc_issuer  : <expected-cosign-issuer>              (required)
+#   identity_match           : literal (default) | regexp            (optional)
+#   tlog_mode                : required (only allowed value)         (optional)
+#   annotations              : {}                                    (must be empty or absent in Phase 3)
+#   notes                    : free-form                             (optional)
+#
+# Format-gate test : services/api/tests/unit/test_cosign_gha_services_signed_images.py
+# Existence-gate   : .github/workflows/ci.yml -> gha-services-cosign-verify
+#
+# Anti-patterns explicitly forbidden in this allowlist (per PR #61 plan §4.5,
+# carry-forward from PR #56/#57 §4.5 + R0 + Codex r1 fold + PR #60 cleanup):
+#   - tlog_mode: optional                          (defeats Rekor transparency anchoring)
+#   - --insecure-ignore-tlog passthrough
+#   - --allow-insecure-registry passthrough
+#   - --allow-http-registry passthrough
+#   - --private-infrastructure passthrough
+#   - --insecure-ignore-sct passthrough
+#   - identity_match: regexp with an unanchored pattern (must be ^...$)
+#   - non-empty annotations (until --annotations passthrough is implemented)
+#   - TAB / LF / CR control chars in any string field
+#   - certificate_oidc_issuer outside the _KNOWN_OIDC_ISSUERS allowlist
+#     (currently the 5 known Sigstore issuers — see _KNOWN_OIDC_ISSUERS in
+#     services/api/tests/unit/test_cosign_signed_images.py /
+#     test_cosign_compose_signed_images.py /
+#     test_cosign_gha_services_signed_images.py for the canonical list;
+#     expanding the set requires explicit per-surface test edits in lockstep
+#     — PR #61 adds a cross-phase static-source parity assertion via AST
+#     parsing to catch drift)
+
+version: 1
+
+# Empty Phase 3; populate per-entry as upstream publishers adopt cosign.
+images: []
+
+# Example entry shape (uncomment + adapt when adding):
+#
+# - image: pgvector/pgvector:pg16@sha256:0000000000000000000000000000000000000000000000000000000000000000
+#   # Identity match mode (default `literal`). Use `regexp` only when the
+#   # publisher's workflow path varies across release branches; regexp pattern
+#   # MUST be anchored ^...$ (substring match allows identity spoofing).
+#   identity_match: literal
+#   certificate_identity: https://github.com/pgvector/pgvector/.github/workflows/release.yaml@refs/heads/master
+#   certificate_oidc_issuer: https://token.actions.githubusercontent.com
+#   # Transparency-log enforcement: `required` is the only allowed value.
+#   tlog_mode: required
+#   # Annotations to verify (future policy). MUST be empty ({}) or absent until
+#   # the runner forwards --annotations to cosign verify.
+#   annotations: {}
+#   notes: Replace the placeholder digest with the actual digest from ci.yml

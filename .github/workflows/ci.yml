@@ -1694,6 +1694,272 @@ jobs:
           exit "$FAIL"
 
   # -------------------------------------------------------------------------
+  # gha-services-cosign-verify — PR #61 (signature gate layer 3 for GHA-services surface)
+  #
+  # Phase 3 of pattern_signature_gate_scope_lock_per_phase — extending the
+  # three-layer defense to `jobs.<job>.services.<svc>.image:` refs in
+  # `.github/workflows/*.yml`:
+  #   layer 1: format gate   (test_gha_services_image_digest_pin.py — pin is present)
+  #   layer 2: existence     (gha-services-image-digest-resolve     — registry resolves)
+  #   layer 3: signature     (this job                              — publisher signed it)
+  #
+  # SCOPE-LOCKED to `.github/workflows/*.yml` `jobs.<job>.services.<svc>.image:`
+  # refs only. NOT Dockerfile FROM (covered by PR #56), NOT docker-compose
+  # `image:` (covered by PR #57), NOT GHA `uses: action@sha` (deferred to
+  # PR #62), NOT `jobs.<job>.container.image:` (no refs in repo today).
+  #
+  # ALLOWLIST: data/cosign/signed-images-gha-services.yml (separate per-surface
+  # file; see PR #61 plan D3 for the separate-vs-shared rationale + objective
+  # promotion trigger for the OPTIONAL post-Phase-4 reconcile-all refactor).
+  # Phase 3 ships EMPTY because neither of the 2 unique services-image refs
+  # (`pgvector/pgvector:pg16`, `redis:7-alpine`) currently carries Sigstore
+  # signatures from its upstream Docker Hub publisher. The job idles on empty
+  # allowlist (SCANNED=0, exit 0) and activates the moment an entry is added
+  # — NO CI YAML edit required.
+  #
+  # Anti-patterns explicitly forbidden (per PR #61 plan §4.5; carry-forward
+  # from PR #56/#57 R0 + Codex r1):
+  #   - process-substitution around cosign verify (masks exit)
+  #   - bare exit-code capture under `set -euo pipefail` (unreachable)
+  #   - tlog-bypass / sct-bypass / insecure-registry / http-registry /
+  #     private-infrastructure flag passthrough
+  #   - certificate_oidc_issuer outside the _KNOWN_OIDC_ISSUERS allowlist
+  #     (PR #60 cycle-14 cleanup; cross-phase static-source parity test in
+  #     test_cosign_gha_services_signed_images.py catches drift)
+  # The format-gate test asserts the negatives against this job body.
+  # -------------------------------------------------------------------------
+  gha-services-cosign-verify:
+    runs-on: ubuntu-latest
+    permissions:
+      # Least privilege: cosign verify against public Rekor/Fulcio is
+      # anonymous. No id-token: write (verifier, not signer).
+      contents: read
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6  # v4.1.2 (2026-05-07)
+      - name: Ensure PyYAML available for allowlist + workflow parser
+        # ubuntu-24.04 runner does not ship PyYAML in the system Python.
+        # Pinned to match the repo's services/api venv.
+        run: python3 -m pip install --user 'PyYAML==6.0.3'
+      - name: Verify cosign signatures for allowlisted GHA services-block image refs
+        run: |
+          set -euo pipefail
+          ALLOWLIST="data/cosign/signed-images-gha-services.yml"
+          if [ ! -f "$ALLOWLIST" ]; then
+            echo "FAIL: allowlist file $ALLOWLIST not found"
+            exit 1
+          fi
+
+          # Parse allowlist + reconcile against current GHA workflow
+          # `jobs.<job>.services.<svc>.image:` refs in a single Python pass.
+          # Same idiom as PR #56/#57 (if-bang guard around the heredoc parser;
+          # PR #55 silent-pass class fix carried forward). The workflow walker
+          # mirrors the existing `gha-services-image-digest-resolve` job's
+          # extractor shape exactly — `Path('.github/workflows').glob('*.yml')`
+          # + `.yaml` — for cross-job consistency.
+          inputs="$(mktemp)"
+          trap 'rm -f "$inputs"' EXIT
+          if ! python3 - "$ALLOWLIST" "$inputs" <<'PY'
+          import sys
+          from pathlib import Path
+          import yaml
+
+          allowlist = Path(sys.argv[1])
+          out = Path(sys.argv[2])
+          cfg = yaml.safe_load(allowlist.read_text(encoding="utf-8")) or {}
+
+          version = cfg.get("version")
+          if version != 1:
+              sys.stderr.write(
+                  f"FAIL: unsupported allowlist version {version!r}; expected 1.\n"
+              )
+              sys.exit(1)
+
+          entries = cfg.get("images")
+          if entries is None:
+              entries = []
+          if not isinstance(entries, list):
+              sys.stderr.write(
+                  f"FAIL: `images` must be a list; got {type(entries).__name__}.\n"
+              )
+              sys.exit(1)
+
+          # Reconciliation against current GHA services-block image refs.
+          # Walk every .github/workflows/*.yml + .yaml via PyYAML safe_load
+          # and extract every `jobs.<job>.services.<svc>.image` value.
+          # Same shape as the gha-services-image-digest-resolve job's
+          # extractor for cross-job consistency.
+          workflow_paths = sorted(
+              set(Path(".github/workflows").glob("*.yml"))
+              | set(Path(".github/workflows").glob("*.yaml"))
+          )
+          services_refs = set()
+          for wf in workflow_paths:
+              data = yaml.safe_load(wf.read_text(encoding="utf-8")) or {}
+              jobs = data.get("jobs") or {}
+              if not isinstance(jobs, dict):
+                  continue
+              for job_id, job in jobs.items():
+                  if not isinstance(job, dict):
+                      continue
+                  services = job.get("services") or {}
+                  if not isinstance(services, dict):
+                      continue
+                  for svc_name, svc in services.items():
+                      if not isinstance(svc, dict):
+                          continue
+                      img = svc.get("image")
+                      if isinstance(img, str) and img.strip():
+                          services_refs.add(img.strip())
+
+          # Control chars that would mis-split the downstream TSV reader
+          # (carry-forward from PR #56 R0 security-reviewer Finding 4).
+          _BAD_CHARS = ("\t", "\n", "\r")
+
+          with out.open("w", encoding="utf-8") as f:
+              for idx, entry in enumerate(entries):
+                  if not isinstance(entry, dict):
+                      sys.stderr.write(
+                          f"FAIL: images[{idx}] must be a mapping; got {type(entry).__name__}.\n"
+                      )
+                      sys.exit(1)
+                  image = entry.get("image", "")
+                  identity = entry.get("certificate_identity", "")
+                  issuer = entry.get("certificate_oidc_issuer", "")
+                  identity_match = entry.get("identity_match", "literal")
+                  tlog_mode = entry.get("tlog_mode", "required")
+                  # Use explicit `in (None, {})` (NOT `or {}`) so a falsy
+                  # non-dict annotations value (False / 0 / "") is REJECTED
+                  # rather than silently normalized to {}. Mirrors the
+                  # format-gate test's predicate verbatim — R0 security-
+                  # reviewer Finding 4 (defense-in-depth runner/test parity).
+                  annotations = entry.get("annotations")
+                  if not (image and identity and issuer):
+                      sys.stderr.write(
+                          f"FAIL: images[{idx}] is incomplete: {entry!r}\n"
+                      )
+                      sys.exit(1)
+                  if identity_match not in ("literal", "regexp"):
+                      sys.stderr.write(
+                          f"FAIL: images[{idx}].identity_match must be "
+                          f"'literal' or 'regexp'; got {identity_match!r}.\n"
+                      )
+                      sys.exit(1)
+                  # Regexp identities MUST be anchored ^...$ (carry-forward
+                  # from PR #56 R0 security-reviewer Finding 2).
+                  if identity_match == "regexp" and not (
+                      identity.startswith("^") and identity.endswith("$")
+                  ):
+                      sys.stderr.write(
+                          f"FAIL: images[{idx}].certificate_identity is a "
+                          f"regexp but is not anchored with ^...$. Substring "
+                          f"matches allow identity spoofing.\n"
+                      )
+                      sys.exit(1)
+                  if tlog_mode != "required":
+                      sys.stderr.write(
+                          f"FAIL: images[{idx}].tlog_mode must be 'required' "
+                          f"(plan §4.5 anti-pattern); got {tlog_mode!r}.\n"
+                      )
+                      sys.exit(1)
+                  # Annotations forwarding not yet wired into cosign verify;
+                  # refuse-to-scan beats silent-skip. Strict equality check
+                  # (NOT truthy) so a malformed annotations: false / 0 / ""
+                  # is REJECTED rather than silently normalized — mirrors
+                  # the format-gate test predicate. R0 security-reviewer
+                  # Finding 4 carry-forward + PR #57 R0 strict-parity fold.
+                  if annotations not in (None, {}):
+                      sys.stderr.write(
+                          f"FAIL: images[{idx}].annotations must be {{}} or "
+                          f"absent (Phase 3 — runner does not yet forward "
+                          f"--annotations to cosign verify); got "
+                          f"{annotations!r}. Implement --annotations passthrough "
+                          f"OR remove / empty the field.\n"
+                      )
+                      sys.exit(1)
+                  for bad in _BAD_CHARS:
+                      if bad in image or bad in identity or bad in issuer:
+                          sys.stderr.write(
+                              f"FAIL: images[{idx}] field contains a literal "
+                              f"{bad!r}; refusing to scan rather than mis-split.\n"
+                          )
+                          sys.exit(1)
+                  f.write(
+                      f"{image}\t{identity}\t{issuer}\t{identity_match}\t{tlog_mode}\n"
+                  )
+
+          # Reconcile after schema validation (mirror PR #56/#57 order):
+          # stale allowlist entries (in allowlist but not in any current GHA
+          # services-block `image:` ref) fail loud; unlisted services refs
+          # (current ref but no allowlist entry) warn (plan D3 long-tail
+          # policy).
+          allowlist_refs = {e.get("image", "") for e in entries if isinstance(e, dict)}
+          stale = sorted(allowlist_refs - services_refs)
+          if stale:
+              sys.stderr.write(
+                  "FAIL: cosign GHA-services allowlist contains entries not found in any "
+                  "current `jobs.<job>.services.<svc>.image:` ref:\n"
+              )
+              for s in stale:
+                  sys.stderr.write(f"  - {s}\n")
+              sys.stderr.write(
+                  "Remove the stale entry (the image is no longer used) or "
+                  "update .github/workflows/*.yml to the allowlisted digest.\n"
+              )
+              sys.exit(1)
+          unlisted = sorted(services_refs - allowlist_refs)
+          for u in unlisted:
+              sys.stderr.write(
+                  f"WARN: GHA services `image:` {u!r} is not in the cosign "
+                  f"GHA-services allowlist; signature verification skipped "
+                  f"(plan D3 warn-not-fail policy).\n"
+              )
+          PY
+          then
+            echo "FAIL: failed to parse $ALLOWLIST"
+            exit 1
+          fi
+
+          # Empty-allowlist no-op path (Phase 3 idle today).
+          if [ ! -s "$inputs" ]; then
+            echo "INFO: $ALLOWLIST is empty (Phase 3 scaffold; no GHA services image signed today)."
+            echo "SCANNED=0 FAIL=0"
+            exit 0
+          fi
+
+          # Non-empty path: per-entry cosign verify.
+          # The `|| [ -n "$image" ]` guard handles a TSV with no trailing
+          # newline (PR #56 R0 security-reviewer Finding 1).
+          SCANNED=0
+          FAIL=0
+          while IFS=$'\t' read -r image identity issuer identity_match _tlog_mode \
+              || [ -n "$image" ]; do
+            SCANNED=$((SCANNED + 1))
+            echo ">>> verify $image (issuer=$issuer identity-match=$identity_match)"
+            # Capture stderr to distinguish TUF/network errors from genuine
+            # signature rejections (PR #56 R0 code-reviewer Finding 5).
+            if [ "$identity_match" = "regexp" ]; then
+              if ! cosign_err=$(cosign verify "$image" \
+                  --certificate-identity-regexp "$identity" \
+                  --certificate-oidc-issuer "$issuer" 2>&1 >/dev/null); then
+                echo "FAIL: cosign verify rejected $image"
+                printf '%s\n' "$cosign_err" | sed 's/^/  | /'
+                FAIL=1
+              fi
+            else
+              if ! cosign_err=$(cosign verify "$image" \
+                  --certificate-identity "$identity" \
+                  --certificate-oidc-issuer "$issuer" 2>&1 >/dev/null); then
+                echo "FAIL: cosign verify rejected $image"
+                printf '%s\n' "$cosign_err" | sed 's/^/  | /'
+                FAIL=1
+              fi
+            fi
+          done < "$inputs"
+          echo "SCANNED=$SCANNED FAIL=$FAIL"
+          exit "$FAIL"
+
+  # -------------------------------------------------------------------------
   # gha-action-digest-resolve — supply-chain hardening sweep follow-up
   #
   # Sibling to `dockerfile-digest-resolve` (PR #49),
